@@ -46,6 +46,14 @@ pub struct Cli {
     #[arg(short = 't', long, action = clap::ArgAction::SetTrue)]
     pub no_gitignore: bool,
 
+    /// Include files detected as binary/non-text (default is to skip them).
+    #[arg(short = 'B', long, action = clap::ArgAction::SetTrue)] // <-- ADDED short = 'B'
+    pub include_binary: bool,
+
+    /// Skip common lockfiles (e.g., Cargo.lock, package-lock.json).
+    #[arg(short = 'K', long, action = clap::ArgAction::SetTrue)] // <-- ADDED short = 'K'
+    pub no_lockfiles: bool,
+
     // --- Content Processing Options ---
     /// Remove C/C++ style comments (// and /* ... */) from the output.
     #[arg(short = 'c', long, action = clap::ArgAction::SetTrue)]
@@ -75,7 +83,8 @@ pub struct Cli {
 
     /// Copy the output to the system clipboard instead of printing to stdout or a file. Requires 'clipboard' feature.
     #[arg(short = 'p', long, action = clap::ArgAction::SetTrue)]
-    // REMOVED: requires = "clipboard_feature"
+    #[cfg_attr(feature = "clipboard", arg(requires = "clipboard_feature"))]
+    // Conditionally add requires
     pub paste: bool,
 
     /// Print a summary list of processed files at the end of the output.
@@ -83,7 +92,8 @@ pub struct Cli {
     pub summary: bool,
 
     /// Include line, character (byte), and word counts in the summary (implies -s).
-    #[arg(long, action = clap::ArgAction::SetTrue, requires = "summary")]
+    #[arg(short = 'C', long, action = clap::ArgAction::SetTrue, requires = "summary")]
+    // <-- ADDED short = 'C'
     pub counts: bool,
 
     // --- Processing Order ---

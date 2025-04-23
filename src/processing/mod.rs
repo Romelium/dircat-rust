@@ -2,10 +2,11 @@
 
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::AppError;
-use anyhow::Result;
+use crate::errors::{io_error_with_path, AppError};
+use anyhow::{Context, Result};
 use log::debug;
 use rayon::prelude::*;
+use std::fs; // Import fs for read
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -15,7 +16,7 @@ mod counter;
 
 // Use the new robust comment removal function
 use content_filters::{remove_comments, remove_empty_lines};
-use content_reader::read_file_content;
+use content_reader::read_file_content; // Still used for text files
 use counter::calculate_counts;
 
 /// Reads and processes the content of a batch of discovered files based on config.
@@ -40,14 +41,59 @@ pub fn process_batch(
                 return Err(AppError::Interrupted.into());
             }
 
-            debug!("Processing file: {}", file_info.absolute_path.display());
+            debug!(
+                "Processing file: {} (Binary: {})",
+                file_info.absolute_path.display(),
+                file_info.is_binary
+            );
 
-            // --- Read File Content ---
-            let original_content = read_file_content(&file_info.absolute_path)?;
+            // --- Read File Content (adapt for binary) ---
+            let original_content_str: String;
+            let original_content_bytes: Vec<u8>; // Store raw bytes for binary counts
 
-            // --- Calculate Counts (on original content) ---
+            if file_info.is_binary {
+                // Read as bytes for binary files
+                original_content_bytes = fs::read(&file_info.absolute_path)
+                    .map_err(|e| io_error_with_path(e, &file_info.absolute_path))
+                    .with_context(|| {
+                        format!(
+                            "Failed to read binary file content: {}",
+                            file_info.absolute_path.display()
+                        )
+                    })?;
+                // Convert to lossy string for processing/output
+                original_content_str = String::from_utf8_lossy(&original_content_bytes).to_string();
+                debug!(
+                    "Read {} bytes from binary file {}",
+                    original_content_bytes.len(),
+                    file_info.relative_path.display()
+                );
+            } else {
+                // Read as string for text files
+                original_content_str = read_file_content(&file_info.absolute_path)?;
+                original_content_bytes = original_content_str.as_bytes().to_vec(); // Get bytes for consistent counting
+                debug!(
+                    "Read {} bytes from text file {}",
+                    original_content_bytes.len(),
+                    file_info.relative_path.display()
+                );
+            }
+
+            // --- Calculate Counts ---
+            // Always calculate counts if requested, but adapt for binary.
             if config.counts {
-                file_info.counts = Some(calculate_counts(&original_content));
+                if file_info.is_binary {
+                    // For binary, only character (byte) count is meaningful.
+                    // Lines/words are typically 0 or misleading.
+                    file_info.counts = Some(crate::core_types::FileCounts {
+                        lines: 0, // Or maybe 1 if not empty? Let's stick to 0 for binary.
+                        characters: original_content_bytes.len(),
+                        words: 0,
+                    });
+                } else {
+                    // For text, calculate all counts from the original string content.
+                    file_info.counts = Some(calculate_counts(&original_content_str));
+                }
                 debug!(
                     "Calculated counts for {}: {:?}",
                     file_info.relative_path.display(),
@@ -55,22 +101,29 @@ pub fn process_batch(
                 );
             }
 
-            // --- Apply Content Filters ---
-            let mut processed_content = original_content; // Start with original
+            // --- Apply Content Filters (only if not binary) ---
+            let mut processed_content = original_content_str; // Start with original (or lossy) string
 
-            if config.remove_comments {
-                // Use the robust comment removal function
-                processed_content = remove_comments(&processed_content);
-                debug!(
-                    "Applied comment removal to {}",
-                    file_info.relative_path.display()
-                );
-            }
+            if !file_info.is_binary {
+                if config.remove_comments {
+                    // Use the robust comment removal function
+                    processed_content = remove_comments(&processed_content);
+                    debug!(
+                        "Applied comment removal to {}",
+                        file_info.relative_path.display()
+                    );
+                }
 
-            if config.remove_empty_lines {
-                processed_content = remove_empty_lines(&processed_content);
+                if config.remove_empty_lines {
+                    processed_content = remove_empty_lines(&processed_content);
+                    debug!(
+                        "Applied empty line removal to {}",
+                        file_info.relative_path.display()
+                    );
+                }
+            } else {
                 debug!(
-                    "Applied empty line removal to {}",
+                    "Skipping content filters for binary file {}",
                     file_info.relative_path.display()
                 );
             }

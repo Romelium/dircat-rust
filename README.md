@@ -46,6 +46,8 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Goal: Concatenate specific config files only](#goal-concatenate-specific-config-files-only)
       - [Goal: Copy Python code (no comments/empty lines) to clipboard](#goal-copy-python-code-no-commentsempty-lines-to-clipboard)
       - [Goal: Pipe output to `glow` for terminal rendering](#goal-pipe-output-to-glow-for-terminal-rendering)
+      - [Goal: Include binary files (e.g., images) in the output](#goal-include-binary-files-eg-images-in-the-output)
+      - [Goal: Exclude lockfiles from the output](#goal-exclude-lockfiles-from-the-output)
   - [Tips \& Considerations](#tips--considerations)
   - [Comparison with Alternatives](#comparison-with-alternatives)
   - [Development Status \& Standards](#development-status--standards)
@@ -68,7 +70,7 @@ Are you tired of:
 ### Philosophy
 
 - **Markdown First:** Outputting Markdown provides a universally readable, portable, and easily parsable format suitable for humans, documentation systems, and AI tools.
-- **Developer Focus:** Deep integration with `.gitignore` rules (via the excellent `ignore` crate) ensures the output accurately reflects the relevant parts of a typical software project.
+- **Developer Focus:** Deep integration with `.gitignore` rules (via the excellent `ignore` crate) ensures the output accurately reflects the relevant parts of a typical software project. Sensible defaults like skipping binary files and an option to skip lockfiles enhance usability.
 - **Performance:** Built in Rust with parallel processing (via `rayon`) to handle large directories efficiently without unnecessary overhead.
 
 ### Markdown Output Benefits
@@ -85,6 +87,8 @@ Are you tired of:
 - **Recursive Traversal:** Walks through directories recursively by default (`-n` to disable).
 - **Comprehensive `.gitignore` Support:** Natively respects rules from `.gitignore`, `.ignore`, global git config files, and parent directories using the `ignore` crate. (`-t` to disable).
 - **Custom Ignore Patterns:** Specify additional glob patterns to ignore files or directories (`-i`).
+- **Binary File Skipping:** Skips files detected as binary/non-text by default (`--include-binary` to override).
+- **Lockfile Skipping:** Option to easily skip common lockfiles (`--no-lockfiles`).
 
 ### Flexible Filtering
 
@@ -105,7 +109,7 @@ Are you tired of:
 - **Filename Only Header:** Option to show only the filename in headers instead of the relative path (`-f`).
 - **Line Numbers:** Prepend line numbers to each line of file content (`-L`).
 - **Backticks:** Wrap filenames in headers and summaries with backticks (`-b`).
-- **Summary:** Append a list of processed files, optionally with line, character, and word counts (`-s`, `--counts`).
+- **Summary:** Append a list of processed files, optionally with line, character, and word counts (`-s`, `-C`).
 
 ### Performance
 
@@ -183,7 +187,7 @@ Expand-Archive -Path $OUTPUT -DestinationPath .
 If you have the Rust toolchain installed (`rustup`), you can install `dircat-rust` using `cargo`:
 
 ```bash
-    cargo install dircat
+cargo install dircat
 ```
 
 *(Requires Rust 1.70 or later - check project's `Cargo.toml` for exact MSRV if specified).*
@@ -208,7 +212,8 @@ cargo build --release
 2. **Run it** in your project directory:
 
     ```bash
-    # Concatenate all relevant files in the current directory into output.md
+    # Concatenate all relevant text files in the current directory into output.md
+    # (skips binaries, respects .gitignore by default)
     dircat . > output.md
     ```
 
@@ -242,17 +247,23 @@ dircat [OPTIONS] [INPUT_PATH]
 **Basic Examples:**
 
 ```bash
-# Process the current directory, print to stdout
+# Process the current directory (text files, respecting .gitignore), print to stdout
 dircat
 
 # Process the 'src' subdirectory
 dircat src
 
-# Process only a single file
+# Process only a single file (binary check still applies unless --include-binary)
 dircat src/main.rs
 
 # Process the current directory and save to a file
 dircat . -o project_snapshot.md
+
+# Process the current directory, including binary files
+dircat . --include-binary > output_with_binaries.md
+
+# Process the current directory, excluding common lockfiles
+dircat . --no-lockfiles > output_without_locks.md
 ```
 
 ### Command-Line Options
@@ -271,6 +282,8 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--regex REGEX`    | `-r`  | Include *only* files whose full path matches any of these regexes (case-insensitive, repeatable).       | `-r "src/.*\.rs$"`          |
 | `--filename-regex REGEX` | `-d` | Include *only* files whose filename matches any of these regexes (case-insensitive, repeatable). | `-d "^test_.*"`             |
 | `--no-gitignore`   | `-t`  | Process all files, ignoring `.gitignore`, `.ignore`, hidden files, etc.                                 | `-t`                        |
+| `--include-binary` | `-B`   | Include files detected as binary/non-text (default is to skip them).                                    | `--include-binary`          |
+| `--no-lockfiles`   | `-K`   | Skip common lockfiles (e.g., `Cargo.lock`, `package-lock.json`).                                        | `--no-lockfiles`            |
 
 #### Content Processing Options
 
@@ -284,7 +297,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | Option             | Alias | Description                                                                       |
 | :----------------- | :---- | :-------------------------------------------------------------------------------- |
 | `--filename-only`  | `-f`  | Show only the filename (basename) in `## File:` headers, not the relative path. |
-| `--line-numbers`   | `-L`  | Add line numbers (`N | `) to the beginning of each content line.                |
+| `--line-numbers`   | `-L`  | Add line numbers to the beginning of each content line.                |
 | `--backticks`      | `-b`  | Wrap filenames in headers and summary list with backticks (`).                    |
 
 #### Output Destination & Summary Options
@@ -294,7 +307,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--output FILE` | `-o`  | Write output to the specified file instead of stdout.                     |
 | `--paste`     | `-p`  | Copy output to the system clipboard (requires `clipboard` feature).       |
 | `--summary`   | `-s`  | Print a summary list of processed files at the end.                       |
-| `--counts`    |       | Include line, character (byte), and word counts in the summary (implies `-s`). |
+| `--counts`    | `-C`   | Include line, character (byte), and word counts in the summary (implies `-s`). |
 
 #### Processing Order Options
 
@@ -338,7 +351,7 @@ dircat . -e rs -r "^(src|tests)/" > rust_code.md
     #### Goal: Create context for an LLM, excluding tests, logs, and comments
 
     ```bash
-        dircat . -e rs -e py -e toml -x log -i "tests/*" -c -o llm_context.md
+        dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_context.md
     ```
 
     *Output Snippet:*
@@ -434,9 +447,23 @@ dircat src -e py -c -l -p
 dircat src -e rs | glow -
 ```
 
+#### Goal: Include binary files (e.g., images) in the output
+
+```bash
+dircat assets --include-binary > assets_output.md
+```
+
+#### Goal: Exclude lockfiles from the output
+
+```bash
+dircat . --no-lockfiles > project_without_locks.md
+```
+
 ## Tips & Considerations
 
 - **Large Output:** Running `dircat` on large directories can produce significant output. Consider using filters (`-m`, `-e`, `-r`, etc.) or the dry-run (`-D`) option first. Use `-o FILE` to redirect large outputs to a file instead of overwhelming your terminal.
+- **Binary Files:** By default, `dircat` attempts to skip binary files. Use `-B` if you need to include them (e.g., for embedding small images represented as text, though this is generally not recommended for large binaries). The detection is heuristic and might not be perfect.
+- **Lockfiles:** Use `-K` to easily exclude common dependency lockfiles. This is often desirable when generating context for LLMs.
 - **Path Handling:**
   - **Display:** File paths shown in `## File:` headers and the summary (`-s`) are relative to the *input path* you provided (or the current directory if none was given).
   - **Filtering:**
@@ -453,6 +480,8 @@ dircat src -e rs | glow -
 | **Concatenate Content** | ✅ Yes                 | ✅ Yes (files) | ✅ Yes                    | ❌ No          |
 | **Gitignore Aware**     | ✅ Yes (Built-in)      | ❌ No          | Manual (complex)          | Manual         |
 | **Markdown Output**     | ✅ Yes                 | ❌ No          | ❌ No                     | ❌ No          |
+| **Skip Binaries**       | ✅ Yes (Default)       | Reads all      | Manual (e.g., `file`)     | N/A            |
+| **Skip Lockfiles**      | ✅ Yes (`-K`)| ❌ No          | Manual (`-name`)          | Manual         |
 | **Filtering (Size)**    | ✅ Yes (`-m`)          | ❌ No          | Manual (`-size`)          | Manual         |
 | **Filtering (Ext/Regex)**| ✅ Yes (`-e`/`-x`/`-r`/`-d`) | ❌ No          | Manual (`-name`/`-regex`) | Manual         |
 | **Content Processing**  | ✅ Yes (`-c`/`-l`)      | ❌ No          | Manual (e.g., `sed`)      | ❌ No          |

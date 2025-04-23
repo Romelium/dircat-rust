@@ -96,6 +96,7 @@ fn calculate_line_number_width(line_count: usize, config: &Config) -> usize {
 mod tests {
     use super::*;
     use crate::config::{Config, OutputDestination};
+    // Removed unused FileCounts import
     use std::io::Cursor;
 
     // Mock Config for testing purposes - using a helper function now
@@ -103,7 +104,7 @@ mod tests {
         Config {
             input_path: PathBuf::from("/base"),
             base_path_display: "/base".to_string(),
-            input_is_file: false, // <-- ADDED: Default to false for tests
+            input_is_file: false,
             line_numbers,
             filename_only_header: filename_only,
             backticks,
@@ -116,6 +117,8 @@ mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false,
+            skip_lockfiles: false,
             remove_comments: false,
             remove_empty_lines: false,
             output_destination: OutputDestination::Stdout,
@@ -137,6 +140,7 @@ mod tests {
             counts: None,
             is_process_last: false,
             process_last_order: None,
+            is_binary: false, // <-- ADDED default
         }
     }
 

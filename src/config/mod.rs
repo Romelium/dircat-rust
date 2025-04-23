@@ -18,7 +18,7 @@ pub struct Config {
     /// and potentially for calculating relative paths if `input_path` stripping fails.
     pub base_path_display: String,
     /// Flag indicating if the resolved input_path points to a file rather than a directory.
-    pub input_is_file: bool, // <-- ADDED FLAG
+    pub input_is_file: bool,
     /// Maximum file size in bytes. Files larger than this will be skipped.
     pub max_size: Option<u128>, // Changed from u64 to u128
     /// Whether to recurse into subdirectories.
@@ -35,6 +35,10 @@ pub struct Config {
     pub filename_regex: Option<Vec<Regex>>,
     /// Whether to respect `.gitignore`, `.ignore`, and other VCS ignore files.
     pub use_gitignore: bool,
+    /// Whether to include files detected as binary/non-text.
+    pub include_binary: bool, // <-- ADDED FIELD
+    /// Whether to skip common lockfiles.
+    pub skip_lockfiles: bool, // <-- ADDED FIELD
     /// Whether to remove C/C++ style comments (`//`, `/* ... */`) from file content.
     pub remove_comments: bool,
     /// Whether to remove lines containing only whitespace from file content.

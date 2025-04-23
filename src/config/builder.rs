@@ -37,7 +37,7 @@ impl TryFrom<Cli> for Config {
         Ok(Config {
             input_path: absolute_input_path,
             base_path_display: cli.input_path, // Store original for display
-            input_is_file,                     // <-- ADDED: Set the flag based on the check
+            input_is_file,
             max_size,
             recursive: !cli.no_recursive,
             extensions,
@@ -46,6 +46,8 @@ impl TryFrom<Cli> for Config {
             path_regex,
             filename_regex,
             use_gitignore: !cli.no_gitignore,
+            include_binary: cli.include_binary, // <-- Map from CLI
+            skip_lockfiles: cli.no_lockfiles,   // <-- Map from CLI
             remove_comments: cli.remove_comments,
             remove_empty_lines: cli.remove_empty_lines,
             filename_only_header: cli.filename_only,
@@ -76,6 +78,24 @@ mod tests {
         assert!(config.recursive);
         assert!(config.use_gitignore);
         assert!(!config.input_is_file); // Current directory is not a file
+        assert!(!config.include_binary); // Default is false
+        assert!(!config.skip_lockfiles); // Default is false
+        Ok(())
+    }
+
+    #[test]
+    fn test_include_binary_flag() -> Result<()> {
+        let cli = Cli::parse_from(["dircat", ".", "--include-binary"]);
+        let config = Config::try_from(cli)?;
+        assert!(config.include_binary);
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_lockfiles_flag() -> Result<()> {
+        let cli = Cli::parse_from(["dircat", ".", "--no-lockfiles"]);
+        let config = Config::try_from(cli)?;
+        assert!(config.skip_lockfiles);
         Ok(())
     }
 

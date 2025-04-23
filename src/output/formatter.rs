@@ -25,7 +25,7 @@ mod tests {
         Config {
             input_path: PathBuf::from("."),
             base_path_display: ".".to_string(),
-            input_is_file: false, // Default to false for tests
+            input_is_file: false,
             backticks,
             // Other fields defaulted
             max_size: None,
@@ -36,6 +36,8 @@ mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false, // <-- ADDED field
+            skip_lockfiles: false, // <-- ADDED field
             remove_comments: false,
             remove_empty_lines: false,
             filename_only_header: false,

@@ -1,6 +1,6 @@
 // src/filtering/extension.rs
 
-use crate::config::Config;
+use crate::config::Config; // Removed unused OutputDestination
 use std::path::Path;
 
 /// Checks if a path passes the include/exclude extension filters defined in Config.
@@ -50,7 +50,7 @@ mod tests {
             // Fill required fields with defaults, focus on filter fields
             input_path: PathBuf::from("."),
             base_path_display: ".".to_string(),
-            input_is_file: false, // <-- ADDED: Default to false for tests
+            input_is_file: false,
             max_size: None,
             recursive: true,
             extensions: extensions.map(|v| v.iter().map(|s| s.to_lowercase()).collect()),
@@ -60,6 +60,8 @@ mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false,
+            skip_lockfiles: false,
             remove_comments: false,
             remove_empty_lines: false,
             filename_only_header: false,

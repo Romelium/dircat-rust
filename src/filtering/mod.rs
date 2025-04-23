@@ -1,25 +1,18 @@
 // src/filtering/mod.rs
 
-// This module contains functions that implement specific filtering logic
-// based on the application's configuration. They are typically called
-// during the file discovery phase.
-
-// Declare the modules containing the filtering functions
+// Declare the sub-modules within the filtering module
 mod extension;
 mod file_type;
+mod lockfile; // <-- ADDED
 mod process_last;
-// Removed: mod regex;
 mod size;
+mod text_detection; // <-- ADDED
 
-// Make the functions available within the crate (used by discovery module)
+// Re-export the functions needed by other parts of the crate (like discovery)
+// Use pub(crate) to make them accessible within the crate but not outside.
 pub(crate) use extension::passes_extension_filters;
 pub(crate) use file_type::is_file_type;
+pub(crate) use lockfile::is_lockfile; // <-- ADDED export
 pub(crate) use process_last::check_process_last;
-// Removed: pub(crate) use regex::passes_regex_filters;
 pub(crate) use size::passes_size_filter;
-
-// Removed unused pub(crate) use statements as they are not needed for re-exporting
-// pub(crate) use extension::passes_extension_filters; // Now used directly
-// pub(crate) use file_type::is_file_type; // Now used directly
-// pub(crate) use process_last::check_process_last; // Now used directly
-// pub(crate) use size::passes_size_filter; // Now used directly
+pub(crate) use text_detection::is_likely_text; // <-- ADDED export

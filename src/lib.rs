@@ -5,8 +5,8 @@ pub mod constants;
 pub mod core_types;
 pub mod discovery;
 pub mod errors;
-// filtering module is used internally by discovery
-mod filtering;
+// filtering module is now correctly declared and contains submodules
+mod filtering; // <-- Keep this declaration
 pub mod output;
 pub mod processing;
 pub mod signal;
@@ -50,9 +50,6 @@ use std::sync::Arc; // Add Arc to the top-level imports
 ///
 /// Returns `Ok(())` on successful completion.
 pub fn run(config: Config) -> Result<()> {
-    // REMOVE the inner imports:
-    // use std::sync::atomic::AtomicBool; // <-- REMOVE THIS
-    // use std::sync::Arc;                // <-- REMOVE THIS
     info!("Starting dircat run with config: {:?}", config);
 
     // 1. Set up signal handling (Ctrl+C) - Conditionally compiled

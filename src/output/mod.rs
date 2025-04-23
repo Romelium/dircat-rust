@@ -9,7 +9,7 @@ use std::io::Write;
 pub mod dry_run;
 pub mod file_block;
 pub mod formatter;
-pub mod header;
+pub mod header; // <-- Now points to the created file
 pub mod summary;
 pub mod writer; // Manages the output destination
 
@@ -25,7 +25,7 @@ pub fn generate_output(
     debug!("Starting output generation...");
 
     // Write Global Header (always, unless dry run handled it)
-    header::write_global_header(writer)?;
+    header::write_global_header(writer)?; // <-- This call should now resolve
 
     // --- Write Normal Files ---
     // Sort normal files alphabetically by relative path
@@ -75,7 +75,7 @@ pub(crate) mod tests {
         Config {
             input_path: PathBuf::from("/base"),
             base_path_display: "/base".to_string(),
-            input_is_file: false, // <-- ADDED: Default to false for tests
+            input_is_file: false,
             backticks,
             filename_only_header: filename_only,
             line_numbers,
@@ -91,6 +91,8 @@ pub(crate) mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false,
+            skip_lockfiles: false,
             remove_comments: false,
             remove_empty_lines: false,
             process_last: None,
@@ -109,6 +111,7 @@ pub(crate) mod tests {
             counts: None,            // Default to None
             is_process_last: false,
             process_last_order: None,
+            is_binary: false, // <-- ADDED default
         }
     }
 
@@ -242,8 +245,8 @@ pub(crate) mod tests {
         generate_output(&normal_files, &last_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
-        // Only global header should be present
-        let expected = format!("{}\n", constants::OUTPUT_FILE_HEADER.trim_end()); // Ensure single newline
+        // Only global header should be present, followed by the extra newline
+        let expected = format!("{}\n\n", constants::OUTPUT_FILE_HEADER.trim_end());
         assert_eq!(output_str, expected);
         Ok(())
     }

@@ -40,7 +40,7 @@ pub fn write_dry_run_output(
 mod tests {
     use super::*;
     use crate::config::{Config, OutputDestination};
-    use crate::core_types::FileInfo;
+    use crate::core_types::FileInfo; // Removed unused FileCounts import
     use std::io::Cursor;
     use std::path::PathBuf;
 
@@ -49,7 +49,7 @@ mod tests {
         Config {
             input_path: PathBuf::from("/base"), // Mock base path
             base_path_display: "/base".to_string(),
-            input_is_file: false, // Default to false for tests
+            input_is_file: false,
             backticks,
             // Other fields defaulted
             max_size: None,
@@ -60,6 +60,8 @@ mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false,
+            skip_lockfiles: false,
             remove_comments: false,
             remove_empty_lines: false,
             filename_only_header: false,
@@ -83,6 +85,7 @@ mod tests {
             counts: None,
             is_process_last: false,
             process_last_order: None,
+            is_binary: false, // <-- ADDED default
         }
     }
 

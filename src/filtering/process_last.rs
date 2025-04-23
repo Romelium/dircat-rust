@@ -47,7 +47,7 @@ mod tests {
         Config {
             input_path: PathBuf::from("/base"), // Mock base path
             base_path_display: "/base".to_string(),
-            input_is_file: false, // Default to false for tests
+            input_is_file: false,
             process_last: process_last.map(|v| v.iter().map(|s| s.to_string()).collect()),
             // Other fields defaulted
             max_size: None,
@@ -58,6 +58,8 @@ mod tests {
             path_regex: None,
             filename_regex: None,
             use_gitignore: true,
+            include_binary: false, // <-- ADDED field
+            skip_lockfiles: false, // <-- ADDED field
             remove_comments: false,
             remove_empty_lines: false,
             filename_only_header: false,

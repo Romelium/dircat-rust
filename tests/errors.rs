@@ -122,23 +122,25 @@ fn test_error_paste_feature_disabled() -> Result<(), Box<dyn std::error::Error>>
 }
 
 #[test]
-fn test_error_non_utf8_content() -> Result<(), Box<dyn std::error::Error>> {
+fn test_include_invalid_utf8_lossy() -> Result<(), Box<dyn std::error::Error>> {
+    // Renamed test: This now tests successful inclusion with lossy conversion
     let temp = tempdir()?;
     let file_path = temp.path().join("invalid_utf8.bin");
-    // Write invalid UTF-8 bytes (0x80 is not a valid start byte)
-    fs::File::create(&file_path)?.write_all(&[0x48, 0x65, 0x6c, 0x6c, 0x80, 0x6f])?; // "Hell\x80o"
+    let invalid_bytes = &[0x48, 0x65, 0x6c, 0x6c, 0x80, 0x6f]; // "Hell\x80o"
+    fs::File::create(&file_path)?.write_all(invalid_bytes)?;
+
+    // Expected lossy conversion (0x80 becomes U+FFFD REPLACEMENT CHARACTER)
+    let expected_lossy_content = "Hell\u{FFFD}o";
 
     dircat_cmd()
         .arg(file_path.to_str().unwrap())
+        .arg("--include-binary") // Force inclusion
         .current_dir(temp.path())
         .assert()
-        .failure()
-        // Check for the error originating from read_to_string, wrapped by our context
-        .stderr(predicate::str::contains("Failed to read file content"))
-        .stderr(predicate::str::contains("invalid_utf8.bin"))
-        .stderr(predicate::str::contains(
-            "stream did not contain valid UTF-8",
-        ));
+        .success() // Expect success because lossy conversion handles the error
+        .stdout(predicate::str::contains("## File: invalid_utf8.bin")) // Check header
+        .stdout(predicate::str::contains(expected_lossy_content)); // Check for lossy content
+                                                                   // Removed: .stderr("") - Do not assert empty stderr as logs might be present
 
     temp.close()?;
     Ok(())

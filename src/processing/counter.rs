@@ -3,6 +3,7 @@
 use crate::core_types::FileCounts;
 
 /// Calculates line, character (byte), and word counts for the given content.
+/// Assumes the input is text. For binary files, only character count is reliable.
 /// Words are split by whitespace.
 #[inline]
 pub(super) fn calculate_counts(content: &str) -> FileCounts {
