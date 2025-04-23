@@ -1,0 +1,71 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+# Exclude generated files or directories if necessary
+# exclude: '^target/' # Usually handled by .gitignore, but can be explicit
+
+repos:
+  # Standard file checks (run first)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0 # Use a recent, stable tag
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  # Local hooks for cargo commands (ordered for fix -> check flow)
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Cargo Format
+        description: Format Rust code using 'cargo fmt'.
+        # Apply formatting directly
+        entry: cargo fmt --all --
+        language: system
+        types: [rust]
+        # fmt operates well on specific files if needed, but running on --all is safer
+        # pass_filenames: true # Default is true, fmt handles filenames after --
+        stages: [pre-commit] # Ensure it runs on commit
+
+      - id: cargo-fix
+        name: Cargo Fix
+        description: Apply compiler suggestions using 'cargo fix'.
+        # Apply fixes, allowing runs even if workdir or stage is dirty
+        entry: cargo fix --allow-dirty --allow-staged
+        language: system
+        types: [rust]
+        pass_filenames: false # Needs project context
+        stages: [pre-commit]
+
+      - id: cargo-clippy
+        name: Cargo Clippy (Fix + Check)
+        description: Lint Rust code using 'cargo clippy --fix' and check for remaining issues.
+        # Apply auto-fixes AND check for remaining issues (-D warnings)
+        # Allow running on dirty workdir/stage
+        entry: cargo clippy --fix --allow-dirty --allow-staged --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false # Clippy needs project context
+        verbose: true # Show clippy output if it fails the check part
+        stages: [pre-commit]
+
+      - id: cargo-test
+        name: Cargo Test
+        description: Run Rust tests using 'cargo test'.
+        entry: cargo test --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false # Tests run on the whole project
+        verbose: true # Show test output on failure
+        stages: [pre-commit]
+
+  # Rust specific checks (run last after fixes and tests)
+  - repo: https://github.com/crate-ci/committed
+    rev: v1.1.7 # Use a recent, stable tag (or consider updating)
+    hooks:
+      - id: committed # <-- CORRECTED ID
+        name: Check Cargo.lock consistency
+        description: Check that Cargo.lock matches Cargo.toml and is committed.

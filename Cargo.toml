@@ -1,0 +1,96 @@
+[package]
+name = "dircat"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance Rust utility that concatenates and displays directory contents, similar to the C++ DirCat."
+authors = ["Romelium author@romelium.com>"]
+license = "MIT"
+repository = "https://github.com/romelium/dircat-rust"
+readme = "README.md"
+keywords = ["cli", "directory", "concatenate", "cat", "utility", "filesystem", "find", "grep", "gitignore", "parallel"]
+categories = ["command-line-utilities"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# --- Core Functionality & Utilities ---
+# Filesystem traversal (recursive)
+walkdir = "2.5"
+# Regex matching for filtering
+regex = "1.10"
+# .gitignore handling (respecting ignore rules)
+ignore = "0.4" # Note: Integrates well with walkdir
+# Parsing human-readable byte sizes (e.g., "1M", "512k")
+byte-unit = "5.1" # Added for robust size parsing
+# Glob pattern matching (for --process-last)
+glob = "0.3" # Added dependency
+# Static Regex compilation helper
+once_cell = "1.19" # Added dependency
+
+# --- Performance ---
+# Parallel iteration/processing
+rayon = "1.10"
+# Parallel directory walking (used by ignore crate)
+# num_cpus = "1.16" # Added for walker thread configuration (optional, ignore uses it internally)
+# Channel for discovery producer/consumer
+crossbeam-channel = "0.5" # Added dependency
+
+# --- Command Line Interface ---
+# Argument parsing
+clap = { version = "4.5", features = ["derive", "cargo"] } # Enable derive macro and cargo env vars
+
+# --- Error Handling ---
+# Application-level error handling (simpler Result management)
+anyhow = "1.0"
+# Deriving std::error::Error for custom error types
+thiserror = "1.0"
+
+# --- Concurrency & Signals ---
+# Ctrl+C / Signal handling for graceful shutdown
+ctrlc = { version = "3.4", features = ["termination"] } # termination feature simplifies setup
+
+# --- Input/Output & Formatting ---
+# (Using std::fs, std::io, std::path primarily)
+# Optional: For cross-platform clipboard access (-p/--paste option)
+arboard = { version = "3.4", optional = true }
+# Optional: For displaying progress bars during long operations
+indicatif = { version = "0.17", optional = true }
+
+# --- Logging (Optional but Recommended) ---
+# Logging facade
+log = "0.4"
+# Simple logger implementation controlled by RUST_LOG env var
+env_logger = "0.11"
+# Tracing facade (added for regex.rs instrumentation)
+tracing = "0.1" # <-- ADDED TRACING DEPENDENCY
+
+# --- Platform Specific (If needed later) ---
+# Example: Might need platform-specific crates for certain features if std lib isn't enough
+# [target.'cfg(windows)'.dependencies]
+# winapi = "0.3"
+# [target.'cfg(unix)'.dependencies]
+# libc = "0.2"
+
+[features]
+# Define features to enable optional dependencies
+clipboard = ["dep:arboard"]
+progress = ["dep:indicatif"]
+# Default features (can be empty if none are default)
+default = []
+
+[[bin]]
+name = "dircat"
+path = "src/main.rs"
+
+# Dependencies for running tests and benchmarks
+[dev-dependencies]
+# Integration testing CLI applications
+assert_cmd = "2.0"
+# Assertions for assert_cmd output/status
+predicates = "3.1"
+# Creating temporary files/directories for tests
+tempfile = "3.10"
+# Benchmarking harness
+criterion = { version = "0.5", features = ["html_reports"] }
+# For capturing stdout in tests (optional)
+# gag = "1.0"
