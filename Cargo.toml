@@ -7,7 +7,7 @@ authors = ["Romelium author@romelium.com>"]
 license = "MIT"
 repository = "https://github.com/romelium/dircat-rust"
 readme = "README.md"
-keywords = ["cli", "directory", "concatenate", "cat", "utility", "filesystem", "find", "grep", "gitignore", "parallel"]
+keywords = ["cli", "ai", "cat", "utility", "llm"]
 categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
