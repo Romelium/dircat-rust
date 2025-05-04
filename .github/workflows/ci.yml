@@ -30,10 +30,10 @@ jobs:
 
       - name: Get changed files
         id: changed_files
-        uses: tj-actions/changed-files@v44
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
         with:
-          # Define file sets. Output will be like steps.changed_files.outputs.any_code_changed == 'true'
-          files: |
+          # Define file sets. Output will be like steps.changed-files-yaml.outputs.code_any_changed == 'true'
+          files_yaml: |
             rust_code:
               - src/**/*.rs
               - tests/**/*.rs
@@ -41,7 +41,7 @@ jobs:
               - Cargo.toml
               - Cargo.lock
             # Combined group for convenience
-            any_code:
+            code:
               - src/**/*.rs
               - tests/**/*.rs
               - Cargo.toml
@@ -64,23 +64,23 @@ jobs:
 
       - name: Check Formatting (cargo fmt)
         # Only run if Rust code or manifest files changed
-        if: steps.changed_files.outputs.any_code_changed == 'true'
+        if: steps.changed-files-yaml.outputs.code_any_changed == 'true'
         run: cargo fmt --all -- --check
 
       - name: Linting (cargo clippy)
-        if: steps.changed_files.outputs.any_code_changed == 'true'
+        if: steps.changed-files-yaml.outputs.code_any_changed == 'true'
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run Tests (cargo test)
-        if: steps.changed_files.outputs.any_code_changed == 'true'
+        if: steps.changed-files-yaml.outputs.code_any_changed == 'true'
         run: cargo test --all-targets --verbose
 
       - name: Build (Debug)
-        if: steps.changed_files.outputs.any_code_changed == 'true'
+        if: steps.changed-files-yaml.outputs.code_any_changed == 'true'
         run: cargo build --verbose
 
       - name: Build (Release)
-        if: steps.changed_files.outputs.any_code_changed == 'true'
+        if: steps.changed-files-yaml.outputs.code_any_changed == 'true'
         run: cargo build --release --verbose
 
       - name: Indicate checks skipped (if applicable)
