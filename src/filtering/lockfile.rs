@@ -16,11 +16,11 @@ const LOCKFILE_NAMES: &[&str] = &[
     "composer.lock",         // Composer
 
     // --- Ruby ---
-    "Gemfile.lock",          // Bundler (Note: Capital 'G')
+    "gemfile.lock",          // Bundler (Note: Capital 'G' in original, lowercase here for comparison)
 
     // --- Python ---
     "poetry.lock",           // Poetry
-    "Pipfile.lock",          // Pipenv (Note: Capital 'P')
+    "pipfile.lock",          // Pipenv (Note: Capital 'P' in original, lowercase here)
     "pdm.lock",              // PDM
     "uv.lock",               // uv
     "conda-lock.yml",        // conda-lock tool (used with Conda)
@@ -28,7 +28,7 @@ const LOCKFILE_NAMES: &[&str] = &[
 
     // --- Go ---
     "go.sum",                // Go Modules (checksums, acts like a lock)
-    "Gopkg.lock",            // dep (older Go package manager)
+    "gopkg.lock",            // dep (older Go package manager) (Note: Capital 'G' in original)
     "glide.lock",            // Glide (older Go package manager)
 
     // --- Java ---
@@ -42,9 +42,9 @@ const LOCKFILE_NAMES: &[&str] = &[
     "project.assets.json",   // NuGet internal build artifact, sometimes checked in, contains resolved graph
 
     // --- Swift / Objective-C (Apple Ecosystem) ---
-    "Package.resolved",      // Swift Package Manager (SPM)
-    "Podfile.lock",          // CocoaPods
-    "Cartfile.resolved",     // Carthage
+    "package.resolved",      // Swift Package Manager (SPM) (Note: Capital 'P')
+    "podfile.lock",          // CocoaPods (Note: Capital 'P')
+    "cartfile.resolved",     // Carthage (Note: Capital 'C')
 
     // --- Elixir ---
     "mix.lock",              // Mix
@@ -60,22 +60,22 @@ const LOCKFILE_NAMES: &[&str] = &[
     "cabal.project.freeze",  // Cabal (newer versions)
 
     // --- Rust ---
-    "Cargo.lock",            // Cargo (Note: Capital 'C')
+    "cargo.lock",            // Cargo (Note: Capital 'C' in original, lowercase here)
 
     // --- Nix / NixOS ---
     "flake.lock",            // Nix Flakes
 
     // --- Perl ---
     "cpanfile.snapshot",     // Carton / cpanm --installdeps .
-    "META.json",             // Can contain resolved dependencies, though more a manifest
-    "MYMETA.json",           // Similar to META.json
+    "meta.json",             // Can contain resolved dependencies, though more a manifest
+    "mymeta.json",           // Similar to META.json
 
     // --- R ---
     "renv.lock",             // renv package manager
     "packrat/packrat.lock",  // packrat package manager
 
     // --- Julia ---
-    "Manifest.toml",         // Julia Pkg manager (Project.toml is the manifest)
+    "manifest.toml",         // Julia Pkg manager (Project.toml is the manifest) (Note: Capital 'M')
 
     // --- Infrastructure as Code ---
     ".terraform.lock.hcl",   // Terraform provider lock file
@@ -98,7 +98,7 @@ const LOCKFILE_NAMES: &[&str] = &[
 
     // --- Bazel ---
     // Bazel often relies on WORKSPACE pinning or bzlmod lockfiles (`MODULE.bazel.lock` potentially)
-    "MODULE.bazel.lock",     // Bazel bzlmod lockfile (experimental/newer)
+    "module.bazel.lock",     // Bazel bzlmod lockfile (experimental/newer) (Note: Capital 'M')
 
     // Add even more niche or specific tool lockfiles if encountered
 ];
@@ -111,7 +111,8 @@ pub(crate) fn is_lockfile(path: &Path) -> bool {
             let lower_name = name_str.to_lowercase();
             LOCKFILE_NAMES
                 .iter()
-                .any(|&lockfile| lower_name == lockfile)
+                // *** Fix: Compare lowercase filename with lowercase lockfile name from list ***
+                .any(|&lockfile| lower_name == lockfile.to_lowercase())
         })
         .unwrap_or(false)
 }
@@ -128,6 +129,12 @@ mod tests {
         assert!(is_lockfile(&PathBuf::from("Yarn.lock"))); // Case insensitive
         assert!(is_lockfile(&PathBuf::from("PNPM-LOCK.YAML"))); // Case insensitive
         assert!(is_lockfile(&PathBuf::from("go.sum")));
+        assert!(is_lockfile(&PathBuf::from("Gemfile.lock"))); // Check original case
+        assert!(is_lockfile(&PathBuf::from("gemfile.lock"))); // Check lowercase
+        assert!(is_lockfile(&PathBuf::from("Pipfile.lock"))); // Check original case
+        assert!(is_lockfile(&PathBuf::from("pipfile.lock"))); // Check lowercase
+        assert!(is_lockfile(&PathBuf::from("Manifest.toml"))); // Check original case
+        assert!(is_lockfile(&PathBuf::from("manifest.toml"))); // Check lowercase
     }
 
     #[test]
