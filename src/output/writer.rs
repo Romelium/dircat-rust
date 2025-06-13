@@ -99,7 +99,7 @@ impl Write for ArcMutexVecWriter {
         let mut buffer = self
             .0 // Access the inner Arc<Mutex<Vec<u8>>>
             .lock()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Mutex poisoned: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("Mutex poisoned: {}", e)))?;
         // Write data to the underlying Vec<u8>
         buffer.write(buf)
     }
@@ -109,7 +109,7 @@ impl Write for ArcMutexVecWriter {
         let mut buffer = self
             .0 // Access the inner Arc<Mutex<Vec<u8>>>
             .lock()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Mutex poisoned: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("Mutex poisoned: {}", e)))?;
         // Flush the underlying Vec<u8> (no-op, but required by trait)
         buffer.flush()
     }

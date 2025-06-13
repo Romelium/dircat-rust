@@ -61,7 +61,7 @@ pub fn generate_output(
 pub(crate) mod tests {
     // Make module public within the crate for use by siblings
     use super::*;
-    use crate::config::{Config, OutputDestination}; // Keep Config, OutputDestination
+    use crate::config::Config; // Keep Config, OutputDestination
     use crate::constants;
     use crate::core_types::{FileCounts, FileInfo};
     use std::path::PathBuf;
@@ -72,33 +72,14 @@ pub(crate) mod tests {
         line_numbers: bool,
         summary: bool,
     ) -> Config {
-        Config {
-            input_path: PathBuf::from("/base"),
-            base_path_display: "/base".to_string(),
-            input_is_file: false,
-            backticks,
-            filename_only_header: filename_only,
-            line_numbers,
-            summary,       // Also controls if counts are checked if enabled later
-            counts: false, // Default counts to false for basic tests
-            output_destination: OutputDestination::Stdout, // Default or irrelevant
-            // other fields defaulted or irrelevant
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.input_path = PathBuf::from("/base");
+        config.base_path_display = "/base".to_string();
+        config.backticks = backticks;
+        config.filename_only_header = filename_only;
+        config.line_numbers = line_numbers;
+        config.summary = summary; // Also controls if counts are checked if enabled later
+        config
     }
 
     pub(crate) fn create_mock_file_info(relative_path: &str, size: u64) -> FileInfo {

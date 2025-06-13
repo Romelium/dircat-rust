@@ -17,40 +17,15 @@ pub(crate) fn passes_size_filter(metadata: &Metadata, config: &Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
+    use crate::config::Config;
     use std::fs;
-    use std::path::PathBuf;
     use tempfile::tempdir;
 
     fn create_test_config(max_size: Option<u128>) -> Config {
         // Changed to u128
-        Config {
-            input_path: PathBuf::from("."),
-            base_path_display: ".".to_string(),
-            input_is_file: false,
-            max_size,
-            // Other fields defaulted
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false, // <-- ADDED field
-            skip_lockfiles: false, // <-- ADDED field
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            backticks: false,
-            output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.max_size = max_size;
+        config
     }
 
     #[test]

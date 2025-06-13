@@ -39,41 +39,18 @@ pub(crate) fn passes_extension_filters(path: &Path, config: &Config) -> bool {
 mod tests {
     use super::*;
     use crate::config::Config; // Need a mock or partial Config
-    use std::path::PathBuf;
+    use std::path::Path;
 
     // Helper to create a minimal Config for testing filters
     fn create_test_config(
         extensions: Option<Vec<&str>>,
         exclude_extensions: Option<Vec<&str>>,
     ) -> Config {
-        Config {
-            // Fill required fields with defaults, focus on filter fields
-            input_path: PathBuf::from("."),
-            base_path_display: ".".to_string(),
-            input_is_file: false,
-            max_size: None,
-            recursive: true,
-            extensions: extensions.map(|v| v.iter().map(|s| s.to_lowercase()).collect()),
-            exclude_extensions: exclude_extensions
-                .map(|v| v.iter().map(|s| s.to_lowercase()).collect()),
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            backticks: false,
-            output_destination: crate::config::OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.extensions = extensions.map(|v| v.iter().map(|s| s.to_lowercase()).collect());
+        config.exclude_extensions =
+            exclude_extensions.map(|v| v.iter().map(|s| s.to_lowercase()).collect());
+        config
     }
 
     #[test]

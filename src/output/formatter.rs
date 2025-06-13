@@ -18,37 +18,13 @@ pub fn format_path_for_display(path: &Path, config: &Config) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
-    use std::path::PathBuf;
+    use crate::config::Config;
+    use std::path::Path;
 
     fn create_test_config(backticks: bool) -> Config {
-        Config {
-            input_path: PathBuf::from("."),
-            base_path_display: ".".to_string(),
-            input_is_file: false,
-            backticks,
-            // Other fields defaulted
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false, // <-- ADDED field
-            skip_lockfiles: false, // <-- ADDED field
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.backticks = backticks;
+        config
     }
 
     #[test]

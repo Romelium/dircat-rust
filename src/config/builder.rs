@@ -7,8 +7,10 @@ use super::{
     Config, OutputDestination,
 };
 use crate::cli::Cli;
+use crate::git;
 use anyhow::Result;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 impl TryFrom<Cli> for Config {
     type Error = anyhow::Error;
@@ -16,50 +18,65 @@ impl TryFrom<Cli> for Config {
     fn try_from(cli: Cli) -> Result<Self, Self::Error> {
         validate_cli_options(&cli)?;
 
-        let absolute_input_path = resolve_input_path(&cli.input_path)?;
-        // Determine if the resolved path is a file
-        let input_is_file = absolute_input_path.is_file();
+        let mut _temp_dir: Option<TempDir> = None;
+        let absolute_input_path: PathBuf;
+        let base_path_display: String;
 
-        let max_size = parse_max_size(cli.max_size)?;
-        let path_regex = compile_regex_vec(cli.path_regex, "path")?;
-        let filename_regex = compile_regex_vec(cli.filename_regex, "filename")?;
-        let extensions = normalize_extensions(cli.extensions);
-        let exclude_extensions = normalize_extensions(cli.exclude_extensions);
-
-        let output_destination = if cli.paste {
-            OutputDestination::Clipboard
-        } else if let Some(file_path_str) = cli.output_file {
-            OutputDestination::File(PathBuf::from(file_path_str))
-        } else {
-            OutputDestination::Stdout
-        };
-
-        Ok(Config {
-            input_path: absolute_input_path,
-            base_path_display: cli.input_path, // Store original for display
-            input_is_file,
-            max_size,
+        let mut config = Config {
+            // Initialize with defaults that will be overwritten
+            input_path: PathBuf::new(),
+            base_path_display: String::new(),
+            input_is_file: false,
+            max_size: parse_max_size(cli.max_size)?,
             recursive: !cli.no_recursive,
-            extensions,
-            exclude_extensions,
+            extensions: normalize_extensions(cli.extensions),
+            exclude_extensions: normalize_extensions(cli.exclude_extensions),
             ignore_patterns: cli.ignore_patterns,
-            path_regex,
-            filename_regex,
+            path_regex: compile_regex_vec(cli.path_regex, "path")?,
+            filename_regex: compile_regex_vec(cli.filename_regex, "filename")?,
             use_gitignore: !cli.no_gitignore,
-            include_binary: cli.include_binary, // <-- Map from CLI
-            skip_lockfiles: cli.no_lockfiles,   // <-- Map from CLI
+            include_binary: cli.include_binary,
+            skip_lockfiles: cli.no_lockfiles,
             remove_comments: cli.remove_comments,
             remove_empty_lines: cli.remove_empty_lines,
             filename_only_header: cli.filename_only,
             line_numbers: cli.line_numbers,
             backticks: cli.backticks,
-            output_destination,
-            summary: cli.summary || cli.counts, // --counts implies -s
+            output_destination: if cli.paste {
+                OutputDestination::Clipboard
+            } else if let Some(file_path_str) = cli.output_file {
+                OutputDestination::File(PathBuf::from(file_path_str))
+            } else {
+                OutputDestination::Stdout
+            },
+            summary: cli.summary || cli.counts,
             counts: cli.counts,
             process_last: cli.process_last,
             only_last: cli.only_last,
             dry_run: cli.dry_run,
-        })
+            git_branch: cli.git_branch,
+            git_depth: cli.git_depth,
+            _temp_dir: None,
+        };
+
+        // Check if the input is a git URL
+        if git::is_git_url(&cli.input_path) {
+            let (temp_dir_holder, cloned_path) = git::clone_repo(&cli.input_path, &config)?;
+            _temp_dir = Some(temp_dir_holder);
+            absolute_input_path = cloned_path;
+            base_path_display = cli.input_path;
+        } else {
+            // Otherwise, treat it as a local path
+            absolute_input_path = resolve_input_path(&cli.input_path)?;
+            base_path_display = cli.input_path;
+        }
+
+        config.input_path = absolute_input_path;
+        config.base_path_display = base_path_display;
+        config.input_is_file = config.input_path.is_file();
+        config._temp_dir = _temp_dir;
+
+        Ok(config)
     }
 }
 
@@ -80,6 +97,7 @@ mod tests {
         assert!(!config.input_is_file); // Current directory is not a file
         assert!(!config.include_binary); // Default is false
         assert!(!config.skip_lockfiles); // Default is false
+        assert!(config._temp_dir.is_none()); // Should be none for local path
         Ok(())
     }
 

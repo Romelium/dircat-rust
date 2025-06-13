@@ -95,39 +95,20 @@ fn calculate_line_number_width(line_count: usize, config: &Config) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
+    use crate::config::Config;
     // Removed unused FileCounts import
     use std::io::Cursor;
+    use std::path::PathBuf;
 
     // Mock Config for testing purposes - using a helper function now
     fn create_test_config(line_numbers: bool, filename_only: bool, backticks: bool) -> Config {
-        Config {
-            input_path: PathBuf::from("/base"),
-            base_path_display: "/base".to_string(),
-            input_is_file: false,
-            line_numbers,
-            filename_only_header: filename_only,
-            backticks,
-            // Other fields defaulted
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
-            output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.input_path = PathBuf::from("/base");
+        config.base_path_display = "/base".to_string();
+        config.line_numbers = line_numbers;
+        config.filename_only_header = filename_only;
+        config.backticks = backticks;
+        config
     }
 
     // Helper to create dummy FileInfo

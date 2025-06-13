@@ -40,37 +40,15 @@ pub(crate) fn check_process_last(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
-    use std::path::PathBuf;
+    use crate::config::Config;
+    use std::path::{Path, PathBuf};
 
     fn create_test_config(process_last: Option<Vec<&str>>) -> Config {
-        Config {
-            input_path: PathBuf::from("/base"), // Mock base path
-            base_path_display: "/base".to_string(),
-            input_is_file: false,
-            process_last: process_last.map(|v| v.iter().map(|s| s.to_string()).collect()),
-            // Other fields defaulted
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false, // <-- ADDED field
-            skip_lockfiles: false, // <-- ADDED field
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            backticks: false,
-            output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.input_path = PathBuf::from("/base");
+        config.base_path_display = "/base".to_string();
+        config.process_last = process_last.map(|v| v.iter().map(|s| s.to_string()).collect());
+        config
     }
 
     #[test]

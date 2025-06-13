@@ -35,6 +35,7 @@ It's designed for speed, developer convenience, and seamless integration with to
   - [Quick Start](#quick-start)
   - [Usage](#usage)
     - [Command-Line Options](#command-line-options)
+      - [Input Options](#input-options)
       - [Filtering Options](#filtering-options)
       - [Content Processing Options](#content-processing-options)
       - [Output Formatting Options](#output-formatting-options)
@@ -48,6 +49,7 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Goal: Pipe output to `glow` for terminal rendering](#goal-pipe-output-to-glow-for-terminal-rendering)
       - [Goal: Include binary files (e.g., images) in the output](#goal-include-binary-files-eg-images-in-the-output)
       - [Goal: Exclude lockfiles from the output](#goal-exclude-lockfiles-from-the-output)
+      - [Goal: Concatenate a remote git repository](#goal-concatenate-a-remote-git-repository)
   - [Tips \& Considerations](#tips--considerations)
   - [Comparison with Alternatives](#comparison-with-alternatives)
   - [Development Status \& Standards](#development-status--standards)
@@ -84,6 +86,10 @@ Are you tired of:
 
 ### Intelligent File Discovery
 
+- **Git Repository Cloning:** Process remote git repositories directly by providing a URL. `dircat` will clone the repo into a temporary location and process it.
+  - **Private Repos:** Automatically uses your SSH agent or default SSH keys for authentication.
+  - **Branch Selection:** Clone a specific branch with `--git-branch`.
+  - **Shallow Clone:** Perform a shallow clone with `--git-depth` to save time and data.
 - **Recursive Traversal:** Walks through directories recursively by default (`-n` to disable).
 - **Comprehensive `.gitignore` Support:** Natively respects rules from `.gitignore`, `.ignore`, global git config files, and parent directories using the `ignore` crate. (`-t` to disable).
 - **Custom Ignore Patterns:** Specify additional glob patterns to ignore files or directories (`-i`).
@@ -120,6 +126,7 @@ Are you tired of:
 ### User Experience
 
 - **Cross-Platform:** Provides pre-compiled binaries for Linux, macOS, and Windows.
+- **Clone Progress:** Displays a progress bar when cloning git repositories (requires `progress` feature).
 - **Multiple Output Options:** Write to stdout (default), a file (`-o`), or the system clipboard (`-p`, requires `clipboard` feature).
 - **Dry Run:** Preview which files *would* be processed without reading or concatenating content (`-D`).
 - **User-Friendly Errors:** Clear error messages for issues like invalid paths, incorrect arguments, or file access problems.
@@ -187,7 +194,11 @@ Expand-Archive -Path $OUTPUT -DestinationPath .
 If you have the Rust toolchain installed (`rustup`), you can install `dircat-rust` using `cargo`:
 
 ```bash
+# Basic installation
 cargo install dircat
+
+# To include progress bars for git cloning
+cargo install dircat --features progress
 ```
 
 *(Requires Rust 1.70 or later - check project's `Cargo.toml` for exact MSRV if specified).*
@@ -199,8 +210,8 @@ cargo install dircat
 git clone https://github.com/romelium/dircat-rust.git
 cd dircat-rust
 
-# Build the release binary
-cargo build --release
+# Build the release binary (with all features)
+cargo build --release --features progress,clipboard
 
 # The executable will be in ./target/release/dircat
 ./target/release/dircat --version
@@ -239,10 +250,10 @@ cargo build --release
 ## Usage
 
 ```text
-dircat [OPTIONS] [INPUT_PATH]
+dircat [OPTIONS] [INPUT]
 ```
 
-- `INPUT_PATH`: The directory or specific file to process. Defaults to the current directory (`.`).
+- `INPUT`: The directory, specific file, or git repository URL to process. Defaults to the current directory (`.`).
 
 **Basic Examples:**
 
@@ -255,6 +266,12 @@ dircat src
 
 # Process only a single file (binary check still applies unless --include-binary)
 dircat src/main.rs
+
+# Process a remote git repository by cloning it to a temporary directory
+dircat https://github.com/romelium/dircat-rust.git
+
+# Process a specific branch of a remote repository
+dircat https://github.com/some/repo.git --git-branch develop
 
 # Process the current directory and save to a file
 dircat . -o project_snapshot.md
@@ -269,6 +286,14 @@ dircat . --no-lockfiles > output_without_locks.md
 ### Command-Line Options
 
 Below are the most common options. For a full, definitive list, run `dircat --help`.
+
+#### Input Options
+
+| Option                | Description                                                              |
+| :-------------------- | :----------------------------------------------------------------------- |
+| `[INPUT]`             | Path to a directory/file, or a git URL. Defaults to `.`.                 |
+| `--git-branch BRANCH` | For git URL inputs, clone a specific branch instead of the default.      |
+| `--git-depth DEPTH`   | For git URL inputs, perform a shallow clone with a limited history depth. |
 
 #### Filtering Options
 
@@ -457,6 +482,21 @@ dircat assets --include-binary > assets_output.md
 
 ```bash
 dircat . --no-lockfiles > project_without_locks.md
+```
+
+#### Goal: Concatenate a remote git repository
+
+```bash
+# Clones the repo to a temporary directory and processes it.
+# Automatically uses SSH keys for private repos.
+# Displays a progress bar if the 'progress' feature is enabled.
+dircat git@github.com:romelium/dircat-rust.git > repo_content.md
+
+# Clone a specific branch
+dircat https://github.com/some/repo.git --git-branch develop
+
+# Perform a shallow clone of depth 1
+dircat https://github.com/some/repo.git --git-depth 1
 ```
 
 ## Tips & Considerations

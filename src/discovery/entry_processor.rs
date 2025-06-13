@@ -246,7 +246,7 @@ fn passes_regex_filters(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
+    use crate::config::Config;
     use regex::Regex;
     use std::fs::{self, File};
     use std::path::PathBuf;
@@ -270,32 +270,10 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        Config {
-            input_path: PathBuf::from("."), // Mock path
-            base_path_display: ".".to_string(),
-            input_is_file: false,
-            path_regex,
-            filename_regex,
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            backticks: false,
-            output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.path_regex = path_regex;
+        config.filename_regex = filename_regex;
+        config
     }
 
     // Helper to create paths for testing

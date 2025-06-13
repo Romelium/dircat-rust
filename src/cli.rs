@@ -9,9 +9,18 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
-    /// Path to the directory or file to process.
+    /// Path to the directory/file to process, or a git repository URL to clone.
     #[arg(default_value = ".")]
     pub input_path: String,
+
+    // --- Git Options ---
+    /// For git URL inputs, clone a specific branch instead of the default.
+    #[arg(long, value_name = "BRANCH")]
+    pub git_branch: Option<String>,
+
+    /// For git URL inputs, perform a shallow clone with a limited history depth.
+    #[arg(long, value_name = "DEPTH")]
+    pub git_depth: Option<u32>,
 
     // --- Filtering Options ---
     /// Maximum file size to include (e.g., "1M", "512k", "1024"). Files larger than this are skipped.

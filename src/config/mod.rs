@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 pub mod builder;
 mod parsing;
@@ -61,6 +62,50 @@ pub struct Config {
     pub only_last: bool,
     /// If `true`, perform a dry run: print the list of files that would be processed, but not their content.
     pub dry_run: bool,
+    /// The specific git branch to clone.
+    pub git_branch: Option<String>,
+    /// The depth for a shallow git clone.
+    pub git_depth: Option<u32>,
+    /// If the input was a git repo, this holds the temporary directory
+    /// it was cloned into. The directory is automatically cleaned up
+    /// when this struct is dropped.
+    _temp_dir: Option<TempDir>,
+}
+
+#[cfg(test)]
+impl Config {
+    /// Creates a default `Config` for testing purposes.
+    pub fn new_for_test() -> Self {
+        Self {
+            input_path: PathBuf::from("."),
+            base_path_display: ".".to_string(),
+            input_is_file: false,
+            max_size: None,
+            recursive: true,
+            extensions: None,
+            exclude_extensions: None,
+            ignore_patterns: None,
+            path_regex: None,
+            filename_regex: None,
+            use_gitignore: true,
+            include_binary: false,
+            skip_lockfiles: false,
+            remove_comments: false,
+            remove_empty_lines: false,
+            filename_only_header: false,
+            line_numbers: false,
+            backticks: false,
+            output_destination: OutputDestination::Stdout,
+            summary: false,
+            counts: false,
+            process_last: None,
+            only_last: false,
+            dry_run: false,
+            git_branch: None,
+            git_depth: None,
+            _temp_dir: None,
+        }
+    }
 }
 
 /// Represents the destination for the generated output.

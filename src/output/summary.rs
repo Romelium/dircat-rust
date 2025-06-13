@@ -62,40 +62,20 @@ pub fn write_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, OutputDestination};
+    use crate::config::Config;
     use crate::core_types::{FileCounts, FileInfo};
     use std::io::Cursor;
     use std::path::PathBuf;
 
     // Helper to create a minimal Config for testing
     fn create_test_config(counts: bool, backticks: bool) -> Config {
-        Config {
-            input_path: PathBuf::from("/base"), // Mock base path
-            base_path_display: "/base".to_string(),
-            input_is_file: false,
-            counts,
-            backticks,
-            summary: true, // Summary must be true for these tests
-            // Other fields defaulted
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
-            filename_only_header: false,
-            line_numbers: false,
-            output_destination: OutputDestination::Stdout,
-            process_last: None,
-            only_last: false,
-            dry_run: false,
-        }
+        let mut config = Config::new_for_test();
+        config.input_path = PathBuf::from("/base");
+        config.base_path_display = "/base".to_string();
+        config.counts = counts;
+        config.backticks = backticks;
+        config.summary = true; // Summary must be true for these tests
+        config
     }
 
     // Helper to create dummy FileInfo

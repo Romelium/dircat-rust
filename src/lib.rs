@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod errors;
 // filtering module is now correctly declared and contains submodules
 mod filtering; // <-- Keep this declaration
+pub mod git;
 pub mod output;
 pub mod processing;
 pub mod signal;
