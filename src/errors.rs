@@ -23,10 +23,8 @@ pub enum AppError {
     #[error("Invalid configuration: {0}")]
     ConfigError(String),
 
-    // --- Clipboard Errors (Conditional) ---
+    // --- Clipboard Errors ---
     /// Error related to clipboard operations (copying).
-    /// Only available when the `clipboard` feature is enabled.
-    #[cfg(feature = "clipboard")]
     #[error("Clipboard error: {0}")]
     ClipboardError(String), // arboard::Error doesn't implement std::error::Error directly
 

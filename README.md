@@ -126,8 +126,8 @@ Are you tired of:
 ### User Experience
 
 - **Cross-Platform:** Provides pre-compiled binaries for Linux, macOS, and Windows.
-- **Clone Progress:** Displays a progress bar when cloning git repositories (requires `progress` feature).
-- **Multiple Output Options:** Write to stdout (default), a file (`-o`), or the system clipboard (`-p`, requires `clipboard` feature).
+- **Clone Progress:** Displays a progress bar when cloning git repositories.
+- **Multiple Output Options:** Write to stdout (default), a file (`-o`), or the system clipboard (`-p`).
 - **Dry Run:** Preview which files *would* be processed without reading or concatenating content (`-D`).
 - **User-Friendly Errors:** Clear error messages for issues like invalid paths, incorrect arguments, or file access problems.
 
@@ -194,11 +194,7 @@ Expand-Archive -Path $OUTPUT -DestinationPath .
 If you have the Rust toolchain installed (`rustup`), you can install `dircat-rust` using `cargo`:
 
 ```bash
-# Basic installation
 cargo install dircat
-
-# To include progress bars for git cloning
-cargo install dircat --features progress
 ```
 
 *(Requires Rust 1.70 or later - check project's `Cargo.toml` for exact MSRV if specified).*
@@ -210,8 +206,8 @@ cargo install dircat --features progress
 git clone https://github.com/romelium/dircat-rust.git
 cd dircat-rust
 
-# Build the release binary (with all features)
-cargo build --release --features progress,clipboard
+# Build the release binary
+cargo build --release
 
 # The executable will be in ./target/release/dircat
 ./target/release/dircat --version
@@ -330,7 +326,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | Option        | Alias | Description                                                                 |
 | :------------ | :---- | :-------------------------------------------------------------------------- |
 | `--output FILE` | `-o`  | Write output to the specified file instead of stdout.                     |
-| `--paste`     | `-p`  | Copy output to the system clipboard (requires `clipboard` feature).       |
+| `--paste`     | `-p`  | Copy output to the system clipboard.                                        |
 | `--summary`   | `-s`  | Print a summary list of processed files at the end.                       |
 | `--counts`    | `-C`   | Include line, character (byte), and word counts in the summary (implies `-s`). |
 
@@ -462,7 +458,6 @@ dircat . -z "config/*.toml" -z ".env.example" -Z > config_files.md
 #### Goal: Copy Python code (no comments/empty lines) to clipboard
 
 ```bash
-# Requires 'clipboard' feature enabled during build/install
 dircat src -e py -c -l -p
 ```
 
@@ -489,7 +484,7 @@ dircat . --no-lockfiles > project_without_locks.md
 ```bash
 # Clones the repo to a temporary directory and processes it.
 # Automatically uses SSH keys for private repos.
-# Displays a progress bar if the 'progress' feature is enabled.
+# Displays a progress bar for long clones.
 dircat git@github.com:romelium/dircat-rust.git > repo_content.md
 
 # Clone a specific branch

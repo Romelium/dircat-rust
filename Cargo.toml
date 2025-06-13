@@ -57,10 +57,10 @@ ctrlc = { version = "3.4", features = ["termination"] } # termination feature si
 
 # --- Input/Output & Formatting ---
 # (Using std::fs, std::io, std::path primarily)
-# Optional: For cross-platform clipboard access (-p/--paste option)
-arboard = { version = "3.5", optional = true }
-# Optional: For displaying progress bars during long operations
-indicatif = { version = "0.17", optional = true }
+# For cross-platform clipboard access (-p/--paste option)
+arboard = "3.5"
+# For displaying progress bars during long operations
+indicatif = "0.17"
 
 # --- Logging (Optional but Recommended) ---
 # Logging facade
@@ -77,13 +77,6 @@ tempfile = "3.20"
 # winapi = "0.3"
 # [target.'cfg(unix)'.dependencies]
 # libc = "0.2"
-
-[features]
-# Define features to enable optional dependencies
-clipboard = ["dep:arboard"]
-progress = ["dep:indicatif"]
-# Default features (can be empty if none are default)
-default = []
 
 [[bin]]
 name = "dircat"

@@ -5,7 +5,6 @@ mod common;
 use assert_cmd::prelude::*;
 use common::dircat_cmd;
 use predicates::prelude::*;
-// Removed unused: use std::fs;
 use std::fs;
 use std::io::Write;
 use tempfile::tempdir; // Added for writing non-UTF8 bytes
@@ -95,26 +94,6 @@ fn test_error_no_files_found() -> Result<(), Box<dyn std::error::Error>> {
         .stdout("") // No files processed, so stdout should be empty
         .stderr(predicate::str::contains(
             "dircat: No files found matching the specified criteria.",
-        ));
-
-    temp.close()?;
-    Ok(())
-}
-
-#[test]
-#[cfg(not(feature = "clipboard"))] // Only run this test if clipboard feature is NOT enabled
-fn test_error_paste_feature_disabled() -> Result<(), Box<dyn std::error::Error>> {
-    let temp = tempdir()?;
-    fs::write(temp.path().join("a.txt"), "A")?;
-
-    dircat_cmd()
-        .arg("-p") // Use paste flag
-        .current_dir(temp.path())
-        .assert()
-        .failure()
-        // Check for the specific error message from finalize_output -> copy_to_clipboard
-        .stderr(predicate::str::contains(
-            "Clipboard feature is not enabled, cannot use --paste.",
         ));
 
     temp.close()?;

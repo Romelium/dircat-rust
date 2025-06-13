@@ -40,12 +40,9 @@ mod tests {
         let cli_file = Cli::parse_from(["dircat", ".", "-o", "out.txt"]);
         validate_cli_options(&cli_file)?;
 
-        // Assumes clipboard feature is enabled for this test run
-        #[cfg(feature = "clipboard")]
-        {
-            let cli_paste = Cli::parse_from(["dircat", ".", "-p"]);
-            validate_cli_options(&cli_paste)?;
-        }
+        // Clipboard feature is always enabled now.
+        let cli_paste = Cli::parse_from(["dircat", ".", "-p"]);
+        validate_cli_options(&cli_paste)?;
 
         Ok(())
     }

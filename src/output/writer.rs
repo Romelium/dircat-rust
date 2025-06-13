@@ -68,23 +68,14 @@ pub fn finalize_output(
     Ok(())
 }
 
-#[cfg(feature = "clipboard")]
 fn copy_to_clipboard(content: &str) -> Result<()> {
-    use crate::errors::AppError; // Import AppError only when needed
+    use crate::errors::AppError;
     use arboard::Clipboard;
     let mut clipboard = Clipboard::new().map_err(|e| AppError::ClipboardError(e.to_string()))?;
     clipboard
         .set_text(content)
         .map_err(|e| AppError::ClipboardError(e.to_string()))?;
     Ok(())
-}
-
-#[cfg(not(feature = "clipboard"))]
-fn copy_to_clipboard(_content: &str) -> Result<()> {
-    // This should ideally be caught earlier by clap's `requires` or config validation
-    Err(anyhow!(
-        "Clipboard feature is not enabled, cannot use --paste."
-    ))
 }
 
 // --- Wrapper struct for Arc<Mutex<Vec<u8>>> to implement Write ---
@@ -235,30 +226,16 @@ mod tests {
         let writer = Box::new(ArcMutexVecWriter(buffer_arc.clone())); // Writer is the buffer wrapper
         let clipboard_buffer = Some(buffer_arc.clone());
 
-        // This will call copy_to_clipboard internally, which might fail if feature not enabled,
-        // or succeed (or fail depending on env) if enabled. We just check if it runs without panic.
+        // This will call copy_to_clipboard internally.
         let result = finalize_output(writer, clipboard_buffer, &config);
 
-        // If clipboard feature IS enabled, this might fail if clipboard context unavailable.
-        // If clipboard feature IS NOT enabled, this *should* fail with the specific anyhow error.
-        #[cfg(not(feature = "clipboard"))]
-        {
-            assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("Clipboard feature is not enabled"));
-        }
-        #[cfg(feature = "clipboard")]
-        {
+        // In a test environment without a clipboard service, arboard might return an error.
+        // We accept Ok or a specific ClipboardError here.
+        if let Err(e) = result {
             use crate::errors::AppError; // Need AppError for matching
-                                         // In a test environment without a clipboard service, arboard might return an error.
-                                         // We accept Ok or a specific ClipboardError here.
-            if let Err(e) = result {
-                assert!(e
-                    .downcast_ref::<AppError>()
-                    .map_or(false, |ae| matches!(ae, AppError::ClipboardError(_))));
-            }
+            assert!(e
+                .downcast_ref::<AppError>()
+                .is_some_and(|ae| matches!(ae, AppError::ClipboardError(_))));
         }
     }
 

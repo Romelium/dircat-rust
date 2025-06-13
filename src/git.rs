@@ -58,8 +58,7 @@ pub fn clone_repo(url: &str, config: &Config) -> Result<(TempDir, PathBuf)> {
         ))
     });
 
-    // Progress reporting (only if 'progress' feature is enabled)
-    #[cfg(feature = "progress")]
+    // Progress reporting
     let progress_bar = {
         let pb = indicatif::ProgressBar::new(0);
         pb.set_style(
@@ -71,16 +70,17 @@ pub fn clone_repo(url: &str, config: &Config) -> Result<(TempDir, PathBuf)> {
         pb
     };
 
-    #[cfg(feature = "progress")]
-    callbacks.transfer_progress(|stats| {
+    // Clone the progress bar and move the clone into the closure.
+    let pb_clone = progress_bar.clone();
+    callbacks.transfer_progress(move |stats| {
         if stats.received_objects() == stats.total_objects() {
-            progress_bar.set_length(stats.total_deltas() as u64);
-            progress_bar.set_position(stats.indexed_deltas() as u64);
-            progress_bar.set_message("Resolving deltas...");
+            pb_clone.set_length(stats.total_deltas() as u64);
+            pb_clone.set_position(stats.indexed_deltas() as u64);
+            pb_clone.set_message("Resolving deltas...");
         } else if stats.total_objects() > 0 {
-            progress_bar.set_length(stats.total_objects() as u64);
-            progress_bar.set_position(stats.received_objects() as u64);
-            progress_bar.set_message("Receiving objects...");
+            pb_clone.set_length(stats.total_objects() as u64);
+            pb_clone.set_position(stats.received_objects() as u64);
+            pb_clone.set_message("Receiving objects...");
         }
         true
     });
@@ -105,7 +105,6 @@ pub fn clone_repo(url: &str, config: &Config) -> Result<(TempDir, PathBuf)> {
         .clone(url, &repo_path)
         .with_context(|| format!("Failed to clone git repository from URL: {}", url))?;
 
-    #[cfg(feature = "progress")]
     progress_bar.finish_with_message("Clone complete.");
 
     log::info!("Successfully cloned repository.");

@@ -90,10 +90,8 @@ pub struct Cli {
     #[arg(short = 'o', long, value_name = "FILE")]
     pub output_file: Option<String>, // Using String, convert to PathBuf later
 
-    /// Copy the output to the system clipboard instead of printing to stdout or a file. Requires 'clipboard' feature.
+    /// Copy the output to the system clipboard instead of printing to stdout or a file.
     #[arg(short = 'p', long, action = clap::ArgAction::SetTrue)]
-    #[cfg_attr(feature = "clipboard", arg(requires = "clipboard_feature"))]
-    // Conditionally add requires
     pub paste: bool,
 
     /// Print a summary list of processed files at the end of the output.
@@ -118,10 +116,4 @@ pub struct Cli {
     /// Perform a dry run. Print the files that would be processed (respecting filters and order) but not their content.
     #[arg(short = 'D', long, action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
-
-    // --- Feature Flags (for conditional compilation/requires) ---
-    /// Dummy argument to enforce clipboard feature requirement for -p. Not intended for user interaction.
-    #[arg(long, hide = true, action = clap::ArgAction::SetTrue)]
-    #[cfg(feature = "clipboard")]
-    clipboard_feature: bool, // This argument only exists if the feature is enabled
 }
