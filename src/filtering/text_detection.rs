@@ -1,33 +1,39 @@
 // src/filtering/text_detection.rs
 
 use content_inspector::ContentType;
-use std::{fs::File, io::Read, path::Path, str}; // Import str module
+use std::{fs::File, io::Read, path::Path, str};
 
 // Define a reasonable buffer size for content type detection
 const READ_BUFFER_SIZE: usize = 1024;
 
-/// Checks if the file content is likely text-based.
-/// Reads the beginning of the file to inspect its content type.
-/// Returns Ok(true) if likely text (valid UTF_8 or UTF_8_BOM), Ok(false) otherwise, Err on I/O error.
-pub(crate) fn is_likely_text(path: &Path) -> std::io::Result<bool> {
-    let mut file = File::open(path)?;
-    let mut buffer = [0; READ_BUFFER_SIZE];
-    let bytes_read = file.read(&mut buffer)?;
-    let buffer_slice = &buffer[..bytes_read];
-
+/// Checks if a byte buffer is likely text-based.
+/// This is the core logic used by both `is_likely_text` and the main processing loop.
+pub(crate) fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
     // Inspect the bytes read
     let content_type = content_inspector::inspect(buffer_slice);
 
     // Consider it text ONLY if explicitly detected as UTF_8_BOM,
     // OR if detected as UTF_8 AND the buffer slice is actually valid UTF-8.
     // All other types (BINARY, etc.) are treated as non-text.
-    Ok(match content_type {
+    match content_type {
         ContentType::UTF_8_BOM => true,
         ContentType::UTF_8 => str::from_utf8(buffer_slice).is_ok(), // Verify UTF-8 validity
         ContentType::BINARY => false,
         // Handle other potential future types conservatively as non-text
         _ => false,
-    })
+    }
+}
+
+/// Checks if the file content is likely text-based by reading its head.
+/// This function is suitable for checks where the file content is not already in memory (e.g., dry run).
+/// Returns Ok(true) if likely text, Ok(false) otherwise, Err on I/O error.
+pub(crate) fn is_likely_text(path: &Path) -> std::io::Result<bool> {
+    let mut file = File::open(path)?;
+    let mut buffer = [0; READ_BUFFER_SIZE];
+    let bytes_read = file.read(&mut buffer)?;
+    let buffer_slice = &buffer[..bytes_read];
+
+    Ok(is_likely_text_from_buffer(buffer_slice))
 }
 
 #[cfg(test)]
@@ -36,6 +42,32 @@ mod tests {
     use std::{fs, io::Write};
     use tempfile::tempdir;
 
+    // --- Tests for is_likely_text_from_buffer ---
+    #[test]
+    fn test_buffer_detect_utf8_text() {
+        let buffer = b"This is plain UTF-8 text.";
+        assert!(is_likely_text_from_buffer(buffer));
+    }
+
+    #[test]
+    fn test_buffer_detect_utf8_bom_text() {
+        let buffer = &[0xEF, 0xBB, 0xBF, b'h', b'i'];
+        assert!(is_likely_text_from_buffer(buffer));
+    }
+
+    #[test]
+    fn test_buffer_detect_binary_null_byte() {
+        let buffer = b"Binary data with a \0 null byte.";
+        assert!(!is_likely_text_from_buffer(buffer));
+    }
+
+    #[test]
+    fn test_buffer_detect_invalid_utf8_sequence() {
+        let buffer = &[0x48, 0x65, 0x6c, 0x6c, 0x80, 0x6f]; // "Hell\x80o"
+        assert!(!is_likely_text_from_buffer(buffer));
+    }
+
+    // --- Tests for is_likely_text (file-based) ---
     #[test]
     fn test_detect_utf8_text() -> std::io::Result<()> {
         let temp = tempdir()?;

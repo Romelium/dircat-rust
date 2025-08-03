@@ -2,11 +2,10 @@
 
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::{io_error_with_path, AppError};
+use crate::errors::AppError;
 // Corrected import path using the new filtering module structure
 use crate::filtering::{
-    check_process_last, is_file_type, is_likely_text, is_lockfile, passes_extension_filters,
-    passes_size_filter,
+    check_process_last, is_file_type, is_lockfile, passes_extension_filters, passes_size_filter,
 };
 use anyhow::Result;
 use ignore::DirEntry;
@@ -129,41 +128,7 @@ pub(crate) fn process_direntry(
     }
     trace!("File passed regex filters: {}", absolute_path.display());
 
-    // --- 9. Filter by Content Type (Text/Binary) ---
-    // This requires reading the start of the file.
-    // Determine if the file is likely binary *before* deciding whether to skip.
-    let file_is_likely_binary = match is_likely_text(&absolute_path) {
-        Ok(true) => {
-            trace!("File detected as text: {}", absolute_path.display());
-            false // Not binary
-        }
-        Ok(false) => {
-            trace!("File detected as binary: {}", absolute_path.display());
-            true // Is binary
-        }
-        Err(e) => {
-            // Treat read errors during text detection as a reason to skip.
-            warn!(
-                "Skipping file due to error during text detection for '{}': {}",
-                absolute_path.display(),
-                e
-            );
-            // Convert the std::io::Error from is_likely_text into AppError::IoError
-            return Err(io_error_with_path(e, &absolute_path));
-        }
-    };
-
-    // Now, decide whether to skip based on config and detection result.
-    if file_is_likely_binary && !config.include_binary {
-        debug!(
-            "Skipping binary file (use --include-binary to include): {}",
-            absolute_path.display()
-        );
-        return Ok(None);
-    }
-    trace!("File passed binary filter: {}", absolute_path.display());
-
-    // --- 10. Check if it matches a "process last" pattern ---
+    // --- 9. Check if it matches a "process last" pattern ---
     let (is_last, last_order) =
         check_process_last(&relative_path, absolute_path.file_name(), config);
     if is_last {
@@ -174,7 +139,7 @@ pub(crate) fn process_direntry(
         );
     }
 
-    // --- 11. Construct FileInfo ---
+    // --- 10. Construct FileInfo ---
     let file_info = FileInfo {
         absolute_path,
         relative_path,
@@ -183,13 +148,12 @@ pub(crate) fn process_direntry(
         counts: None,            // Counts are calculated later
         is_process_last: is_last,
         process_last_order: last_order,
-        is_binary: file_is_likely_binary, // <-- SET THE FLAG
+        is_binary: false, // Will be determined during the processing stage
     };
 
     debug!(
-        "Entry passed all filters: {} (Binary: {})",
-        file_info.relative_path.display(),
-        file_info.is_binary
+        "Entry passed metadata filters: {}",
+        file_info.relative_path.display()
     );
     Ok(Some(file_info))
 }

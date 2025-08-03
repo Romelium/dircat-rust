@@ -5,6 +5,7 @@ pub mod constants;
 pub mod core_types;
 pub mod discovery;
 pub mod errors;
+use crate::filtering::is_likely_text;
 // filtering module is now correctly declared and contains submodules
 mod filtering; // <-- Keep this declaration
 pub mod git;
@@ -17,6 +18,7 @@ use crate::core_types::FileInfo;
 use anyhow::Result;
 use log::debug;
 use log::info;
+use rayon::prelude::*;
 use std::io::Write; // Import Write trait
 use std::sync::atomic::{AtomicBool, Ordering}; // Keep this top-level import
 use std::sync::Arc; // Add Arc to the top-level imports
@@ -76,21 +78,15 @@ pub fn run(config: Config) -> Result<()> {
     info!("Signal handler setup complete (real or dummy).");
 
     // 2. Discover files based on config
-    let (mut normal_files, mut last_files) =
-        discovery::discover_files(&config, stop_signal.clone())?; // Arc::clone works
+    let (normal_files, last_files) = discovery::discover_files(&config, stop_signal.clone())?; // Arc::clone works
     info!(
         "Discovered {} normal files and {} files to process last.",
         normal_files.len(),
         last_files.len()
     );
 
-    // Exit early if no files are found or if doing a dry run (dry run handled in output)
-    if normal_files.is_empty() && last_files.is_empty() && !config.dry_run {
-        info!("No files found matching criteria. Exiting.");
-        // Print a message to stderr for clarity
-        eprintln!("dircat: No files found matching the specified criteria.");
-        return Ok(());
-    }
+    // Combine all candidate files into a single list for processing
+    let all_candidates: Vec<FileInfo> = normal_files.into_iter().chain(last_files).collect();
 
     // 3. Set up the output writer (might be stdout, file, or a buffer for clipboard)
     // We need the writer setup before processing if dry_run is enabled.
@@ -102,26 +98,57 @@ pub fn run(config: Config) -> Result<()> {
 
         // 4. Handle Dry Run - If dry run, print file list and exit early.
         if config.dry_run {
-            info!("Performing dry run.");
-            // Combine normal and last files for dry run display
-            // Sorting happens within write_dry_run_output
-            let all_files_refs: Vec<&FileInfo> =
-                normal_files.iter().chain(last_files.iter()).collect();
-            output::dry_run::write_dry_run_output(&mut writer, &all_files_refs, &config)?;
-            info!("Dry run output generated.");
-        } else {
-            // 5. Process files (read content, apply filters, count) - only if not dry run
-            info!("Starting file content processing...");
-            // Process normal and last files separately but using the same logic
-            processing::process_batch(&mut normal_files, &config, stop_signal.clone())?; // Arc::clone works
-            processing::process_batch(&mut last_files, &config, stop_signal)?; // Arc works
-            info!("File content processing complete.");
+            info!("Performing dry run, filtering for binary files...");
+            // To provide an accurate dry run, we must check for binary files here.
+            // This is a small, parallel read of the head of each file.
+            let filtered_files: Vec<FileInfo> = all_candidates
+                .into_par_iter()
+                .filter(|fi| {
+                    if config.include_binary {
+                        return true;
+                    }
+                    match is_likely_text(&fi.absolute_path) {
+                        Ok(is_text) => is_text,
+                        Err(e) => {
+                            log::warn!(
+                                "Dry run: Could not check file type for '{}', skipping. Error: {}",
+                                fi.absolute_path.display(),
+                                e
+                            );
+                            false
+                        }
+                    }
+                })
+                .collect();
 
-            // 6. Generate output (headers, content, summary)
-            info!("Generating final output...");
-            // Pass slices to generate_output
-            output::generate_output(&normal_files, &last_files, &config, &mut writer)?;
-            info!("Final output generated.");
+            if filtered_files.is_empty() {
+                info!("Dry run: No files found matching criteria after filtering.");
+                eprintln!("dircat: No files found matching the specified criteria.");
+            } else {
+                let file_refs: Vec<&FileInfo> = filtered_files.iter().collect();
+                output::dry_run::write_dry_run_output(&mut writer, &file_refs, &config)?;
+                info!("Dry run output generated.");
+            }
+        } else {
+            // 5. Process and filter files (read content, filter binaries, apply transformations)
+            info!("Starting file content processing...");
+            let processed_files =
+                processing::process_and_filter_files(all_candidates, &config, stop_signal)?;
+
+            if processed_files.is_empty() {
+                info!("No files found matching criteria (or all were filtered out). Exiting.");
+                eprintln!("dircat: No files found matching the specified criteria.");
+            } else {
+                let (last_files, normal_files): (Vec<_>, Vec<_>) = processed_files
+                    .into_iter()
+                    .partition(|fi| fi.is_process_last);
+                info!("File content processing complete.");
+
+                // 6. Generate output (headers, content, summary)
+                info!("Generating final output...");
+                output::generate_output(&normal_files, &last_files, &config, &mut writer)?;
+                info!("Final output generated.");
+            }
         }
 
         // 7. Finalize output (e.g., copy to clipboard if needed)

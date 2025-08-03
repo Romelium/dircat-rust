@@ -15,4 +15,4 @@ pub(crate) use file_type::is_file_type;
 pub(crate) use lockfile::is_lockfile; // <-- ADDED export
 pub(crate) use process_last::check_process_last;
 pub(crate) use size::passes_size_filter;
-pub(crate) use text_detection::is_likely_text; // <-- ADDED export
+pub(crate) use text_detection::{is_likely_text, is_likely_text_from_buffer}; // <-- ADDED export
