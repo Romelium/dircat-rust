@@ -29,7 +29,8 @@ It's designed for speed, developer convenience, and seamless integration with to
     - [Performance](#performance)
     - [User Experience](#user-experience)
   - [Installation](#installation)
-    - [Pre-compiled Binaries (Recommended)](#pre-compiled-binaries-recommended)
+    - [Via `cargo-binstall` (Recommended)](#via-cargo-binstall-recommended)
+    - [Pre-compiled Binaries](#pre-compiled-binaries)
     - [Via Cargo](#via-cargo)
     - [From Source](#from-source)
   - [Quick Start](#quick-start)
@@ -133,9 +134,19 @@ Are you tired of:
 
 ## Installation
 
-### Pre-compiled Binaries (Recommended)
+### Via `cargo-binstall` (Recommended)
 
-Download the appropriate binary for your system from the [Latest Release](https://github.com/romelium/dircat-rust/releases/latest) page.
+For users of the Rust toolchain, the fastest way to install is with [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall), which installs pre-compiled binaries directly.
+
+```bash
+cargo binstall dircat
+```
+
+*If you don't have `cargo-binstall`, you can install it by following the [quick installation instructions](https://github.com/cargo-bins/cargo-binstall#quickly) on its page.*
+
+### Pre-compiled Binaries
+
+You can download a pre-compiled binary for your system directly from the [Latest Release](https://github.com/romelium/dircat-rust/releases/latest) page. This method does not require the Rust toolchain.
 
 *(Note: Binaries are self-contained and do not require installing Rust or any other language runtime.)*
 
