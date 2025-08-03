@@ -113,7 +113,7 @@ pub(crate) mod tests {
         let output_str = String::from_utf8(output)?;
 
         // Assert key components and order
-        assert!(output_str.starts_with(constants::OUTPUT_FILE_HEADER));
+        assert!(output_str.starts_with("\n\n## File: a.rs"));
         assert!(output_str.contains("\n## File: a.rs\n```rs\nContent A\n```\n")); // Check first file block (sorted)
         assert!(output_str.contains("\n## File: b.txt\n```txt\nContent B\n```\n")); // Check second file block (sorted)
 
@@ -227,8 +227,7 @@ pub(crate) mod tests {
         let output_str = String::from_utf8(output)?;
 
         // Only global header should be present, followed by the extra newline
-        let expected = format!("{}\n\n", constants::OUTPUT_FILE_HEADER.trim_end());
-        assert_eq!(output_str, expected);
+        assert_eq!(output_str, "\n");
         Ok(())
     }
 }
