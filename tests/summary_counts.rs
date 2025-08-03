@@ -43,8 +43,7 @@ fn test_summary_with_counts() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(temp.path().join("file.txt"), content)?;
 
     dircat_cmd()
-        .arg("--counts") // Counts
-        .arg("-s") // Explicitly add -s to satisfy clap's 'requires' rule
+        .arg("--counts") // Counts (should imply summary)
         .current_dir(temp.path())
         .assert()
         .success()

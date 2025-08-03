@@ -43,7 +43,7 @@ pub struct Cli {
     #[arg(short = 'i', long = "ignore", value_name = "GLOB", num_args = 1..)]
     pub ignore_patterns: Option<Vec<String>>,
 
-    /// Include only files whose full path matches any of these regular expressions (case-insensitive).
+    /// Include only files whose relative path (from the input directory) matches any of these regular expressions (case-insensitive).
     #[arg(short = 'r', long = "regex", value_name = "REGEX", num_args = 1..)]
     pub path_regex: Option<Vec<String>>,
 
@@ -99,8 +99,7 @@ pub struct Cli {
     pub summary: bool,
 
     /// Include line, character (byte), and word counts in the summary (implies -s).
-    #[arg(short = 'C', long, action = clap::ArgAction::SetTrue, requires = "summary")]
-    // <-- ADDED short = 'C'
+    #[arg(short = 'C', long, action = clap::ArgAction::SetTrue)]
     pub counts: bool,
 
     // --- Processing Order ---

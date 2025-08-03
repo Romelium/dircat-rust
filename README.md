@@ -142,25 +142,25 @@ Download the appropriate binary for your system from the [Latest Release](https:
 **Linux (x86_64 / aarch64) / macOS (Intel x86_64 / Apple Silicon arm64):**
 
 ```bash
-# --- Adjust VERSION and TARGET ---
-VERSION="v0.1.0" # Replace with the desired version
-# TARGET options: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin
+# 1. Get the latest version tag from the releases page:
+#    https://github.com/romelium/dircat-rust/releases/latest
+#
+# 2. Set the VERSION and TARGET variables.
+#    - VERSION should be the tag name (e.g., v0.4.1).
+#    - TARGET options: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin
+VERSION="<latest_version>"
 TARGET="x86_64-unknown-linux-gnu"
-# --- --- --- --- --- --- --- ---
 
-# Download (using curl)
+# 3. Download the binary.
 curl -L "https://github.com/romelium/dircat-rust/releases/download/${VERSION}/dircat-${VERSION}-${TARGET}.tar.gz" -o dircat.tar.gz
 
-# OR Download (using wget)
-# wget "https://github.com/romelium/dircat-rust/releases/download/${VERSION}/dircat-${VERSION}-${TARGET}.tar.gz" -O dircat.tar.gz
-
-# Extract
+# 4. Extract the archive.
 tar xzf dircat.tar.gz
 
-# Make executable
+# 5. Make the binary executable.
 chmod +x dircat
 
-# Optional: Move to a directory in your PATH
+# 6. Optional: Move the binary to a directory in your system's PATH.
 # sudo mv dircat /usr/local/bin/
 # OR (if you have a ~/bin directory in your PATH)
 # mkdir -p ~/bin && mv dircat ~/bin/
@@ -169,24 +169,24 @@ chmod +x dircat
 **Windows (x86_64):**
 
 ```powershell
-# --- Adjust VERSION ---
-$VERSION = "v0.1.0" # Replace with the desired version
+# 1. Get the latest version tag from the releases page:
+#    https://github.com/romelium/dircat-rust/releases/latest
+#
+# 2. Set the VERSION variable.
+#    - VERSION should be the tag name (e.g., v0.4.0).
+$VERSION = "<latest_version>"
 $TARGET = "x86_64-pc-windows-msvc"
-# --- --- --- --- ---
 
-# Download (using Invoke-WebRequest)
+# 3. Download the binary.
 $URL = "https://github.com/romelium/dircat-rust/releases/download/${VERSION}/dircat-${VERSION}-${TARGET}.zip"
 $OUTPUT = "dircat.zip"
 Invoke-WebRequest -Uri $URL -OutFile $OUTPUT
 
-# OR Download (using curl, if available)
-# curl.exe -L $URL -o $OUTPUT
-
-# Extract
+# 4. Extract the archive.
 Expand-Archive -Path $OUTPUT -DestinationPath .
 
-# Optional: Add the directory containing dircat.exe to your system's PATH environment variable
-# Or move dircat.exe to a directory already in your PATH
+# 5. Optional: Add the directory containing dircat.exe to your system's PATH environment variable
+#    or move dircat.exe to a directory already in your PATH.
 ```
 
 ### Via Cargo
@@ -493,7 +493,7 @@ dircat https://github.com/some/repo.git --git-depth 1
 - **Path Handling:**
   - **Display:** File paths shown in `## File:` headers and the summary (`-s`) are relative to the *input path* you provided (or the current directory if none was given).
   - **Filtering:**
-    - Path Regex (`-r`): Matches against the full path, normalized to use `/` separators.
+    - Path Regex (`-r`): Matches against the **relative path** (from the input directory), normalized to use `/` separators.
     - Filename Regex (`-d`): Matches against the filename (basename) only.
     - Ignore/Last Globs (`-i`, `-z`): Match against the path relative to the *input path*.
 - **Performance:** While `dircat-rust` is designed for speed, processing extremely large files or a vast number of files will still take time. Use filters to narrow down the scope when possible.

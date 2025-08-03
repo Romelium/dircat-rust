@@ -119,12 +119,18 @@ mod tests {
 
     #[test]
     fn test_counts_implies_summary() -> Result<()> {
-        // Parse with both flags to satisfy clap's `requires` rule
-        let cli = Cli::parse_from(["dircat", ".", "--counts", "--summary"]);
+        // Test that --counts alone implies --summary.
+        let cli = Cli::parse_from(["dircat", ".", "--counts"]);
         let config = Config::try_from(cli)?;
-        // Check that the resulting Config has both flags set correctly
-        assert!(config.summary); // Should be true because --summary was passed AND because --counts implies it
-        assert!(config.counts); // Should be true because --counts was passed
+        assert!(config.summary);
+        assert!(config.counts);
+
+        // Test that --summary alone does not imply --counts.
+        let cli_summary_only = Cli::parse_from(["dircat", ".", "--summary"]);
+        let config_summary_only = Config::try_from(cli_summary_only)?;
+        assert!(config_summary_only.summary);
+        assert!(!config_summary_only.counts);
+
         Ok(())
     }
 
