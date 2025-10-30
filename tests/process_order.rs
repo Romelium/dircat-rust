@@ -177,3 +177,99 @@ fn test_only_last_glob() -> Result<(), Box<dyn std::error::Error>> {
     temp.close()?;
     Ok(())
 }
+
+#[test]
+fn test_last_overrides_gitignore_and_keeps_others() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    fs::write(temp.path().join(".gitignore"), "*.log")?;
+    fs::write(temp.path().join("important.log"), "IMPORTANT LOG")?;
+    fs::write(temp.path().join("main.rs"), "fn main() {}")?;
+
+    // Use --last to specifically request the ignored file.
+    // It should be included at the end, and main.rs should be included normally.
+    dircat_cmd()
+        .arg("-z")
+        .arg("*.log")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::function(|output: &str| {
+            let pos_main = output.find("## File: main.rs").unwrap_or(usize::MAX);
+            let pos_log = output.find("## File: important.log").unwrap_or(usize::MAX);
+
+            // Check that both files are present and the log file comes last.
+            pos_main != usize::MAX && pos_log != usize::MAX && pos_main < pos_log
+        }));
+
+    Ok(())
+}
+
+#[test]
+fn test_only_last_overrides_gitignore() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    fs::write(temp.path().join(".gitignore"), "*.log")?;
+    fs::write(temp.path().join("important.log"), "IMPORTANT LOG")?;
+    fs::write(temp.path().join("main.rs"), "fn main() {}")?;
+
+    // Use --last and --only-last to include only the ignored file.
+    dircat_cmd()
+        .arg("-z")
+        .arg("*.log")
+        .arg("-Z")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: important.log"))
+        .stdout(predicate::str::contains("IMPORTANT LOG"))
+        .stdout(predicate::str::contains("## File: main.rs").not());
+
+    Ok(())
+}
+
+#[test]
+fn test_last_overrides_nested_gitignore() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let sub = temp.path().join("sub");
+    fs::create_dir(&sub)?;
+
+    // Nested .gitignore ignores *.tmp in the subdirectory
+    fs::write(sub.join(".gitignore"), "*.tmp")?;
+    fs::write(sub.join("config.tmp"), "SECRET TMP")?;
+    fs::write(temp.path().join("main.rs"), "fn main() {}")?;
+
+    // Use --last with a relative path to pull in the ignored file.
+    dircat_cmd()
+        .arg("-z")
+        .arg("sub/config.tmp")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: sub/config.tmp"))
+        .stdout(predicate::str::contains("SECRET TMP"))
+        .stdout(predicate::str::contains("## File: main.rs"));
+
+    Ok(())
+}
+
+#[test]
+fn test_last_does_not_override_custom_ignore_i() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    fs::write(temp.path().join("config.toml"), "CONFIG")?;
+    fs::write(temp.path().join("main.rs"), "fn main() {}")?;
+
+    // Use -i to ignore *.toml, and -z to try to re-include it.
+    // The -i filter should take precedence.
+    dircat_cmd()
+        .arg("-i")
+        .arg("*.toml") // Custom ignore pattern
+        .arg("-z")
+        .arg("*.toml") // Try to process it last
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: main.rs"))
+        .stdout(predicate::str::contains("## File: config.toml").not())
+        .stdout(predicate::str::contains("CONFIG").not());
+
+    Ok(())
+}

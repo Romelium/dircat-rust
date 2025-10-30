@@ -365,7 +365,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 
 | Option        | Alias | Description                                                                                             | Example                  |
 | :------------ | :---- | :------------------------------------------------------------------------------------------------------ | :----------------------- |
-| `--last GLOB` | `-z`  | Process files matching these glob patterns (relative path/filename) last, in the order specified. Repeatable. | `-z README.md`           |
+| `--last GLOB` | `-z`  | Process files matching these glob patterns last, in the order specified. **This can override `.gitignore` rules for the matched files.** Repeatable. | `-z README.md`           |
 | `--only GLOB` | `-O`  | A shorthand for `--last <GLOB>... --only-last`. Process only files matching these glob patterns. Conflicts with `-z` and `-Z`. | `-O *.rs`              |
 | `--only-last` | `-Z`  | Only process files specified with `-z`/`--last`. Skip all others (requires `-z`).                       | `-Z`                     |
 

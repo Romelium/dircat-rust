@@ -65,6 +65,15 @@ pub(crate) fn process_direntry(
     };
     trace!("Calculated relative path: {}", relative_path.display());
 
+    // --- 2a. Check "process last" status early, as it affects other filters ---
+    let (is_last, last_order) =
+        check_process_last(&relative_path, absolute_path.file_name(), config);
+
+    // Manual gitignore override logic is no longer needed here.
+    // The walker is now configured with `OverrideBuilder` when --last/--only is used,
+    // which correctly yields gitignored files that match an override pattern.
+    // The walker will simply not yield other gitignored files, so no manual check is required.
+
     // --- 3. Get Metadata ---
     let metadata = match entry.metadata() {
         Ok(md) => md,
@@ -125,17 +134,6 @@ pub(crate) fn process_direntry(
         return Ok(None);
     }
     trace!("File passed regex filters: {}", absolute_path.display());
-
-    // --- 9. Check if it matches a "process last" pattern ---
-    let (is_last, last_order) =
-        check_process_last(&relative_path, absolute_path.file_name(), config);
-    if is_last {
-        trace!(
-            "File marked as 'process last' (order {:?}): {}",
-            last_order,
-            relative_path.display()
-        );
-    }
 
     // --- 10. Construct FileInfo ---
     let file_info = FileInfo {

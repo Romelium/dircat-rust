@@ -1,6 +1,7 @@
 use crate::config::Config;
 use anyhow::Result;
 use glob::Pattern;
+use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use log::debug; // Ensure debug is imported
 
@@ -8,13 +9,34 @@ use log::debug; // Ensure debug is imported
 pub(super) fn build_walker(config: &Config) -> Result<ignore::Walk> {
     let mut walker_builder = WalkBuilder::new(&config.input_path);
 
-    // Configure based on gitignore settings using standard_filters.
-    // This handles .gitignore, .ignore, hidden files, parent ignores, global gitignore, etc.
-    debug!(
-        "Configuring WalkBuilder: standard_filters enabled = {}",
-        config.use_gitignore
-    );
-    walker_builder.standard_filters(config.use_gitignore);
+    // If --last or --only is used, we can add those patterns as overrides.
+    // This will cause the walker to yield matching files even if they are
+    // covered by a .gitignore rule, which is the desired behavior.
+    if config.use_gitignore {
+        walker_builder.standard_filters(true);
+        debug!("Configuring WalkBuilder: standard_filters enabled.");
+
+        if let Some(last_patterns) = &config.process_last {
+            let mut ov_builder = OverrideBuilder::new(&config.input_path);
+            // Add a general "whitelist everything" pattern first. This has the
+            // lowest precedence and defeats the `ignore` crate's default
+            // behavior of treating an override as a global whitelist.
+            // Now, all non-gitignored files will be yielded, as expected.
+            ov_builder.add("**")?;
+            for pattern in last_patterns {
+                // Now add the user's patterns. These have higher precedence
+                // and will successfully override any gitignore rules.
+                ov_builder.add(pattern)?;
+            }
+            let overrides = ov_builder.build()?;
+            walker_builder.overrides(overrides);
+            debug!("Added 'process_last' patterns as overrides to walker.");
+        }
+    } else {
+        // If gitignore is disabled entirely, then disable standard filters.
+        walker_builder.standard_filters(false);
+        debug!("Configuring WalkBuilder: standard_filters disabled (gitignore usage off).");
+    }
     // Explicitly disable require_git to ensure .gitignore files are
     // processed even if the test environment doesn't look like a full repo.
     walker_builder.require_git(false);

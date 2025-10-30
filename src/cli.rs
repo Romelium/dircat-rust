@@ -107,7 +107,8 @@ pub struct Cli {
     pub counts: bool,
 
     // --- Processing Order ---
-    /// Process files matching these glob patterns (relative path/filename) last, in the order specified.
+    /// Process files matching these glob patterns last, in the order specified.
+    /// This can override .gitignore rules for the matched files.
     #[arg(short = 'z', long = "last", value_name = "GLOB", num_args = 1..)]
     pub process_last: Option<Vec<String>>,
 
@@ -116,6 +117,7 @@ pub struct Cli {
     pub only_last: bool,
 
     /// A shorthand for '--last <GLOB>... --only-last'. Process only files matching these glob patterns.
+    /// This can override .gitignore rules for the matched files.
     #[arg(short = 'O', long = "only", value_name = "GLOB", num_args = 1.., conflicts_with_all = &["process_last", "only_last"])]
     pub only: Option<Vec<String>>,
 
