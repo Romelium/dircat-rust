@@ -660,30 +660,25 @@ mod tests {
 
 /// Downloads a directory's contents from the GitHub API into a temporary directory.
 /// This is much faster than a full `git clone` for large repositories.
-pub fn download_directory_via_api(
-    url_parts: &ParsedGitUrl,
-    config: &Config,
-) -> Result<PathBuf> {
+pub fn download_directory_via_api(url_parts: &ParsedGitUrl, config: &Config) -> Result<PathBuf> {
     // 1. Setup
-    let temp_dir = TempDirBuilder::new()
-        .prefix("dircat-git-api-")
-        .tempdir()?;
+    let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
     let client = build_reqwest_client()?;
     let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
 
     // 2. Resolve branch
     let branch_to_use = if let Some(cli_branch) = &config.git_branch {
         // Always prioritize the branch specified on the command line.
-            log::debug!("Using branch from --git-branch flag: {}", cli_branch);
-            cli_branch.clone()
+        log::debug!("Using branch from --git-branch flag: {}", cli_branch);
+        cli_branch.clone()
     } else if url_parts.branch != "HEAD" {
         // Otherwise, use the branch from the URL if it's not a root URL.
-            log::debug!("Using branch from URL: {}", url_parts.branch);
-            url_parts.branch.clone()
+        log::debug!("Using branch from URL: {}", url_parts.branch);
+        url_parts.branch.clone()
     } else {
         // Finally, fall back to the repository's default branch.
-            log::debug!("Fetching default branch for {}/{}", owner, repo);
-            fetch_default_branch(&owner, &repo, &client)?
+        log::debug!("Fetching default branch for {}/{}", owner, repo);
+        fetch_default_branch(&owner, &repo, &client)?
     };
     log::info!("Processing repository on branch: {}", branch_to_use);
 
@@ -802,8 +797,12 @@ fn download_and_write_file(
         })?;
     }
 
-    fs::write(&local_path, content)
-        .with_context(|| format!("Failed to write downloaded content to '{}'", local_path.display()))
+    fs::write(&local_path, content).with_context(|| {
+        format!(
+            "Failed to write downloaded content to '{}'",
+            local_path.display()
+        )
+    })
 }
 
 /// Helper to get owner/repo from a clone URL like "https://github.com/user/repo.git"

@@ -1,4 +1,3 @@
-
 mod common;
 
 use assert_cmd::prelude::*;
@@ -33,7 +32,8 @@ fn test_api_download_public_directory() -> Result<(), Box<dyn std::error::Error>
 /// This is a known limitation we are asserting.
 #[test]
 #[ignore = "requires network access and is slow"]
-fn test_sloppy_url_with_reserved_keyword_is_not_parsed_as_folder() -> Result<(), Box<dyn std::error::Error>> {
+fn test_sloppy_url_with_reserved_keyword_is_not_parsed_as_folder(
+) -> Result<(), Box<dyn std::error::Error>> {
     // This "sloppy" URL (missing /tree/) should be rejected by the folder parser because 'releases' is a reserved keyword.
     // dircat will then treat it as a generic git URL and attempt to clone it, which will fail.
     let repo_folder_url = "https://github.com/some-user/some-repo/releases/v1.0";

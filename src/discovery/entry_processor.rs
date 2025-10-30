@@ -320,11 +320,7 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Include everything in "src/", but exclude "main.rs"
-        let config = create_config_with_regex(
-            Some(vec!["^src/"]),
-            Some(vec!["main\\.rs$"]),
-            None,
-        );
+        let config = create_config_with_regex(Some(vec!["^src/"]), Some(vec!["main\\.rs$"]), None);
 
         assert!(!passes_regex_filters(&abs_path1, &rel_path1, &config)?); // main.rs is excluded
         assert!(passes_regex_filters(&abs_path2, &rel_path2, &config)?); // lib.rs is included
@@ -382,7 +378,7 @@ mod tests {
 
         // Regexes that should match path1
         let config = create_config_with_regex(
-            Some(vec!["^target_dir/"]),       // Matches relative path
+            Some(vec!["^target_dir/"]), // Matches relative path
             None,
             Some(vec![r"^target_file\.rs$"]), // Matches filename
         );
@@ -401,7 +397,7 @@ mod tests {
         let current_dir_rel = PathBuf::from(".");
 
         let config_filename = create_config_with_regex(None, None, Some(vec!["anything"])); // Has filename regex
-                                                                                      // Should fail because "." has no filename component
+                                                                                            // Should fail because "." has no filename component
         assert!(!passes_regex_filters(
             &current_dir_abs,
             &current_dir_rel,
@@ -409,7 +405,7 @@ mod tests {
         )?);
 
         let config_path = create_config_with_regex(Some(vec![r"^\.$"]), None, None); // Match path "."
-                                                                               // Should pass because path regex matches relative path "."
+                                                                                     // Should pass because path regex matches relative path "."
         assert!(passes_regex_filters(
             &current_dir_abs,
             &current_dir_rel,
