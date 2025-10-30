@@ -17,6 +17,12 @@ impl TryFrom<Cli> for Config {
         let absolute_input_path: PathBuf;
         let base_path_display: String = cli.input_path.clone();
 
+        let (process_last, only_last) = if let Some(only_patterns) = cli.only {
+            (Some(only_patterns), true)
+        } else {
+            (cli.process_last, cli.only_last)
+        };
+
         let mut config = Config {
             // Initialize with defaults that will be overwritten
             input_path: PathBuf::new(),
@@ -47,8 +53,8 @@ impl TryFrom<Cli> for Config {
             },
             summary: cli.summary || cli.counts,
             counts: cli.counts,
-            process_last: cli.process_last,
-            only_last: cli.only_last,
+            process_last,
+            only_last,
             dry_run: cli.dry_run,
             git_branch: cli.git_branch,
             git_depth: cli.git_depth,

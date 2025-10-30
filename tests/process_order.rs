@@ -53,6 +53,106 @@ fn test_process_last_glob() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_only_shorthand() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let sub = temp.path().join("sub");
+    fs::create_dir(&sub)?;
+    fs::write(temp.path().join("a.txt"), "A")?;
+    fs::write(sub.join("b.rs"), "B")?;
+    fs::write(temp.path().join("last.md"), "LAST")?;
+
+    // Process only *.md
+    dircat_cmd()
+        .arg("--only")
+        .arg("*.md")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: last.md"))
+        .stdout(predicate::str::contains("LAST"))
+        .stdout(predicate::str::contains("## File: a.txt").not())
+        .stdout(predicate::str::contains("## File: sub/b.rs").not());
+
+    Ok(())
+}
+
+#[test]
+fn test_only_shorthand_multiple_args() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let sub = temp.path().join("sub");
+    fs::create_dir(&sub)?;
+    fs::write(temp.path().join("a.txt"), "A")?;
+    fs::write(sub.join("b.rs"), "B")?;
+    fs::write(temp.path().join("last.md"), "LAST")?;
+
+    // Process only *.md and sub/*.rs
+    dircat_cmd()
+        .arg("--only")
+        .arg("*.md")
+        .arg("--only")
+        .arg("sub/*.rs")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: last.md"))
+        .stdout(predicate::str::contains("## File: sub/b.rs"))
+        .stdout(predicate::str::contains("## File: a.txt").not());
+
+    Ok(())
+}
+
+#[test]
+fn test_only_conflicts_with_last() -> Result<(), Box<dyn std::error::Error>> {
+    dircat_cmd()
+        .arg("--only")
+        .arg("*.rs")
+        .arg("--last")
+        .arg("*.md")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "the argument '--only <GLOB>...' cannot be used with '--last <GLOB>...'",
+        ));
+
+    Ok(())
+}
+
+#[test]
+fn test_only_conflicts_with_only_last() -> Result<(), Box<dyn std::error::Error>> {
+    dircat_cmd()
+        .arg("--only")
+        .arg("*.rs")
+        .arg("--only-last")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "the argument '--only <GLOB>...' cannot be used with '--only-last'",
+        ));
+
+    Ok(())
+}
+
+#[test]
+fn test_only_shorthand_alias() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    fs::write(temp.path().join("a.txt"), "A")?;
+    fs::write(temp.path().join("last.md"), "LAST")?;
+
+    // Process only *.md using the -O alias
+    dircat_cmd()
+        .arg("-O")
+        .arg("*.md")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: last.md"))
+        .stdout(predicate::str::contains("LAST"))
+        .stdout(predicate::str::contains("## File: a.txt").not());
+
+    Ok(())
+}
+
+#[test]
 fn test_only_last_glob() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempdir()?;
     let sub = temp.path().join("sub");

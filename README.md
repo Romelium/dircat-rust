@@ -50,6 +50,7 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Goal: See which files would be included if max size is 50kB](#goal-see-which-files-would-be-included-if-max-size-is-50kb)
       - [Goal: Process `README.md` and `LICENSE` last](#goal-process-readmemd-and-license-last)
       - [Goal: Concatenate specific config files only](#goal-concatenate-specific-config-files-only)
+      - [Goal: Concatenate only all Rust files from `src` and all TOML files from `config`](#goal-concatenate-only-all-rust-files-from-src-and-all-toml-files-from-config)
       - [Goal: Copy Python code (no comments/empty lines) to clipboard](#goal-copy-python-code-no-commentsempty-lines-to-clipboard)
       - [Goal: Pipe output to `glow` for terminal rendering](#goal-pipe-output-to-glow-for-terminal-rendering)
       - [Goal: Include binary files (e.g., images) in the output](#goal-include-binary-files-eg-images-in-the-output)
@@ -357,7 +358,8 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 
 | Option        | Alias | Description                                                                                             | Example                  |
 | :------------ | :---- | :------------------------------------------------------------------------------------------------------ | :----------------------- |
-| `--last GLOB` | `-z`  | Process files matching these glob patterns (relative path/filename) last, in the order specified. Repeatable. | `-z README.md -z src/main.rs` |
+| `--last GLOB` | `-z`  | Process files matching these glob patterns (relative path/filename) last, in the order specified. Repeatable. | `-z README.md`           |
+| `--only GLOB` | `-O`  | A shorthand for `--last <GLOB>... --only-last`. Process only files matching these glob patterns. Conflicts with `-z` and `-Z`. | `-O "*.rs"`              |
 | `--only-last` | `-Z`  | Only process files specified with `-z`/`--last`. Skip all others (requires `-z`).                       | `-Z`                     |
 
 #### Execution Control Options
@@ -411,7 +413,7 @@ dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_contex
 ````
 
 #### Goal: Concatenate all Rust code, excluding the `tests` directory
-    
+
 This is useful for creating a context of only the application source code, ignoring test files. The `--exclude-regex` (`-X`) option is perfect for this, as it filters by path.
 
 ```bash
@@ -419,7 +421,7 @@ dircat . -e rs -X "^tests/" > app_code_only.md
 ```
 
 *Output Snippet:* (Files from `src/` are included, but `tests/` are skipped)
-    
+
 ````markdown
     ## File: src/main.rs
     ```rs
@@ -431,7 +433,7 @@ dircat . -e rs -X "^tests/" > app_code_only.md
     // library code...
     ```
 ````
-    
+
 #### Goal: See which files would be included if max size is 50kB
 
 ```bash
@@ -476,7 +478,7 @@ dircat . -z README.md -z LICENSE > project_with_readme_last.md
 #### Goal: Concatenate specific config files only
 
 ```bash
-dircat . -z "config/*.toml" -z ".env.example" -Z > config_files.md
+dircat . -O "config/*.toml" ".env.example" > config_files.md
 ```
 
 *Output Snippet:* (Only files matching the `-z` patterns are included)
@@ -490,6 +492,28 @@ dircat . -z "config/*.toml" -z ".env.example" -Z > config_files.md
     ## File: .env.example
     ```
         VAR=value
+    ```
+````
+
+#### Goal: Concatenate only all Rust files from `src` and all TOML files from `config`
+
+By chaining the `--only` (`-O`) flag, you can create a precise selection of files from different parts of your project.
+
+```bash
+dircat . -O "src/**/*.rs" "config/*.toml" > custom_selection.md
+```
+
+*Output Snippet:* (Only files matching either glob pattern are included)
+
+````markdown
+    ## File: src/main.rs
+    ```rs
+    // main function...
+    ```
+
+    ## File: config/settings.toml
+    ```toml
+    # settings...
     ```
 ````
 

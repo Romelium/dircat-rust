@@ -115,6 +115,10 @@ pub struct Cli {
     #[arg(short = 'Z', long, action = clap::ArgAction::SetTrue, requires = "process_last")]
     pub only_last: bool,
 
+    /// A shorthand for '--last <GLOB>... --only-last'. Process only files matching these glob patterns.
+    #[arg(short = 'O', long = "only", value_name = "GLOB", num_args = 1.., conflicts_with_all = &["process_last", "only_last"])]
+    pub only: Option<Vec<String>>,
+
     // --- Execution Control ---
     /// Perform a dry run. Print the files that would be processed (respecting filters and order) but not their content.
     #[arg(short = 'D', long, action = clap::ArgAction::SetTrue)]
