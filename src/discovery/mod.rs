@@ -54,8 +54,10 @@ pub fn discover_files(
         }
     }
 
-    // Sort the "last" files based on the order they appeared in the -z argument
-    last_files.sort_by_key(|fi| fi.process_last_order);
+    // Sort the "last" files first by the order of the matching -z pattern,
+    // and then alphabetically by path to ensure deterministic output.
+    // Using a tuple as a key sorts by the first element, then the second for ties.
+    last_files.sort_by_key(|fi| (fi.process_last_order, fi.relative_path.clone()));
 
     debug!(
         "Discovery complete. Normal files: {}, Last files: {}",

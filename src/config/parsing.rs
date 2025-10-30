@@ -25,7 +25,12 @@ pub(super) fn compile_regex_vec(
     patterns
         .map(|vec| {
             vec.into_iter()
-                .map(|p| Regex::new(&p).with_context(|| format!("Invalid {} regex: '{}'", name, p)))
+                .map(|p| {
+                    regex::RegexBuilder::new(&p)
+                        .case_insensitive(true) // Make regex case-insensitive as per docs
+                        .build()
+                        .with_context(|| format!("Invalid {} regex: '{}'", name, p))
+                })
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()
