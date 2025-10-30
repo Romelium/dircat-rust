@@ -74,7 +74,7 @@ impl TryFrom<Cli> for Config {
                 Err(e) => {
                     // API download failed, check for rate limit error.
                     let is_rate_limit_error =
-                        e.downcast_ref::<reqwest::Error>().map_or(false, |re| {
+                        e.downcast_ref::<reqwest::Error>().is_some_and(|re| {
                             re.status() == Some(reqwest::StatusCode::FORBIDDEN)
                         });
 
