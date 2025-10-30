@@ -30,7 +30,7 @@ pub fn write_file_block(
     let header_path_str = format_path_for_display(&path_to_display, config);
 
     // --- Write File Header ---
-    writeln!(writer, "\n## File: {}", header_path_str)?;
+    writeln!(writer, "## File: {}", header_path_str)?;
 
     // --- Write Code Block ---
     let extension_hint = file_info
@@ -158,8 +158,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected =
-            "\n## File: src/main.rs\n```rs\nfn main() {\n    println!(\"Hi\");\n}\n```\n";
+        let expected = "## File: src/main.rs\n```rs\nfn main() {\n    println!(\"Hi\");\n}\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -172,7 +171,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n## File: Makefile\n```\nall: build\n```\n"; // No language hint
+        let expected = "## File: Makefile\n```\nall: build\n```\n"; // No language hint
         assert_eq!(output, expected);
         Ok(())
     }
@@ -186,7 +185,7 @@ mod tests {
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
-        let expected = "\n## File: script.sh\n```sh\n    1 | #!/bin/bash\n    2 | echo $1\n```\n";
+        let expected = "## File: script.sh\n```sh\n    1 | #!/bin/bash\n    2 | echo $1\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -200,7 +199,7 @@ mod tests {
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
-        let expected = "\n## File: single.txt\n```txt\n    1 | Just one line\n```\n";
+        let expected = "## File: single.txt\n```txt\n    1 | Just one line\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -213,7 +212,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n## File: empty.txt\n```txt\n```\n"; // No lines printed
+        let expected = "## File: empty.txt\n```txt\n```\n"; // No lines printed
         assert_eq!(output, expected);
         Ok(())
     }
@@ -226,7 +225,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n## File: file.py\n```py\nprint('Hello')\n```\n";
+        let expected = "## File: file.py\n```py\nprint('Hello')\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -239,7 +238,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n## File: `data/config.toml`\n```toml\n[section]\n```\n";
+        let expected = "## File: `data/config.toml`\n```toml\n[section]\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -254,7 +253,7 @@ mod tests {
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
-        let expected = "\n## File: `helper.js`\n```js\n    1 | function help(){\n    2 | return true;\n    3 | }\n```\n";
+        let expected = "## File: `helper.js`\n```js\n    1 | function help(){\n    2 | return true;\n    3 | }\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -267,7 +266,7 @@ mod tests {
         write_file_block(&mut writer, &file_info, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n## File: no_content.txt\n```txt\n// Content not available\n```\n";
+        let expected = "## File: no_content.txt\n```txt\n// Content not available\n```\n";
         assert_eq!(output, expected);
         Ok(())
     }

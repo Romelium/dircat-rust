@@ -24,30 +24,34 @@ pub fn generate_output(
 ) -> Result<()> {
     debug!("Starting output generation...");
 
-    // Write Global Header (always, unless dry run handled it)
-    header::write_global_header(writer)?; // <-- This call should now resolve
+    // Write Global Header (now does nothing by default)
+    header::write_global_header(writer)?;
 
-    // --- Write Normal Files ---
     // Sort normal files alphabetically by relative path
     let mut sorted_normal_files = normal_files.to_vec(); // Clone to sort
     sorted_normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
-    for file_info in &sorted_normal_files {
-        file_block::write_file_block(writer, file_info, config)?;
-    }
+    // Create a single iterator for all files to be processed in order
+    let all_files_iter = sorted_normal_files.iter().chain(last_files.iter());
 
-    // --- Write Last Files ---
-    // These are already sorted by the order specified in -z during discovery
-    for file_info in last_files {
+    let mut first_block = true;
+    for file_info in all_files_iter {
+        if !first_block {
+            // Add a blank line separator between file blocks
+            writeln!(writer)?;
+        }
         file_block::write_file_block(writer, file_info, config)?;
+        first_block = false;
     }
 
     // --- Write Summary ---
     if config.summary {
-        let all_processed_files: Vec<&FileInfo> = sorted_normal_files
-            .iter()
-            .chain(last_files.iter())
-            .collect();
+        if !first_block { // This means at least one file was processed
+            // Add a blank line separator before the summary
+            writeln!(writer)?;
+        }
+        let all_processed_files: Vec<&FileInfo> =
+            sorted_normal_files.iter().chain(last_files.iter()).collect();
         summary::write_summary(writer, &all_processed_files, config)?;
     }
 
@@ -112,15 +116,12 @@ pub(crate) mod tests {
         generate_output(&normal_files, &last_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
-        // Assert key components and order
-        assert!(output_str.starts_with("\n\n## File: a.rs"));
-        assert!(output_str.contains("\n## File: a.rs\n```rs\nContent A\n```\n")); // Check first file block (sorted)
-        assert!(output_str.contains("\n## File: b.txt\n```txt\nContent B\n```\n")); // Check second file block (sorted)
-
-        // Check relative order
-        let pos_a = output_str.find("## File: a.rs").unwrap();
-        let pos_b = output_str.find("## File: b.txt").unwrap();
-        assert!(pos_a < pos_b);
+        // Assert exact output and order
+        assert!(output_str.starts_with("## File: a.rs"));
+        // Check for the separator between the two blocks
+        assert!(output_str.contains("```\n\n## File: b.txt"));
+        assert!(!output_str.ends_with("\n\n"));
+        assert!(output_str.ends_with("\n"));
 
         Ok(())
     }
@@ -153,12 +154,11 @@ pub(crate) mod tests {
         generate_output(&normal_files, &last_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
-        // Assert key components and order
-        assert!(output_str.starts_with(constants::OUTPUT_FILE_HEADER));
-        assert!(output_str.contains("\n## File: a.rs\n```rs\nContent A\n```\n")); // Normal sorted
-        assert!(output_str.contains("\n## File: c.txt\n```txt\nContent C\n```\n")); // Normal sorted
-        assert!(output_str.contains("\n## File: last1.md\n```md\nLast 1\n```\n")); // First last file
-        assert!(output_str.contains("\n## File: last0.toml\n```toml\nLast 0\n```\n")); // Second last file
+        // Assert order and separators
+        assert!(output_str.starts_with("## File: a.rs"));
+        assert!(output_str.contains("```\n\n## File: c.txt"));
+        assert!(output_str.contains("```\n\n## File: last1.md"));
+        assert!(output_str.contains("```\n\n## File: last0.toml"));
 
         // Check relative order
         let pos_a = output_str.find("## File: a.rs").unwrap();
@@ -202,11 +202,10 @@ pub(crate) mod tests {
         generate_output(&normal_files, &last_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
-        // Assert key components
-        assert!(output_str.starts_with(constants::OUTPUT_FILE_HEADER));
-        assert!(output_str.contains("\n## File: a.rs\n```rs\nContent A\n```\n"));
-        assert!(output_str.contains("\n## File: b.txt\n```txt\nContent B\n```\n"));
-        assert!(output_str.contains("\n---\nProcessed Files: (2)\n")); // Summary header
+        // Assert key components and separators
+        assert!(output_str.starts_with("## File: a.rs"));
+        assert!(output_str.contains("```\n\n## File: b.txt"));
+        assert!(output_str.contains("```\n\n---\nProcessed Files: (2)\n")); // Summary header
         assert!(output_str.contains("- a.rs (L:1 C:9 W:2)\n")); // Summary items sorted
         assert!(output_str.contains("- b.txt (L:1 C:9 W:2)\n"));
 
@@ -226,8 +225,8 @@ pub(crate) mod tests {
         generate_output(&normal_files, &last_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
-        // Only global header should be present, followed by the extra newline
-        assert_eq!(output_str, "\n");
+        // With no files, output should be empty
+        assert_eq!(output_str, "");
         Ok(())
     }
 }

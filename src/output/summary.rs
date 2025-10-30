@@ -16,7 +16,7 @@ pub fn write_summary(
     config: &Config,
 ) -> Result<()> {
     debug!("Writing summary for {} files...", files.len());
-    write!(writer, "\n{}\n", constants::SUMMARY_SEPARATOR)?;
+    writeln!(writer, "{}", constants::SUMMARY_SEPARATOR)?;
     writeln!(
         writer,
         "{}: ({})",
@@ -104,7 +104,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (0)\n";
+        let expected = "---\nProcessed Files: (0)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -120,7 +120,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (3)\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n";
+        let expected = "---\nProcessed Files: (3)\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -145,7 +145,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (2)\n- a_file.rs (L:1 C:5 W:1)\n- z_file.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- a_file.rs (L:1 C:5 W:1)\n- z_file.txt (L:10 C:100 W:20)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -166,7 +166,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (2)\n- a_file.rs (Counts not available)\n- z_file.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- a_file.rs (Counts not available)\n- z_file.txt (L:10 C:100 W:20)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -181,7 +181,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (2)\n- `another.rs`\n- `file with space.txt`\n"; // Paths are backticked and sorted
+        let expected = "---\nProcessed Files: (2)\n- `another.rs`\n- `file with space.txt`\n"; // Paths are backticked and sorted
         assert_eq!(output, expected);
         Ok(())
     }
@@ -200,7 +200,7 @@ mod tests {
         write_summary(&mut writer, &files, &config)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n---\nProcessed Files: (1)\n- `data.csv` (L:2 C:15 W:3)\n";
+        let expected = "---\nProcessed Files: (1)\n- `data.csv` (L:2 C:15 W:3)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -226,7 +226,7 @@ mod tests {
 
         let output = String::from_utf8(writer.into_inner())?;
         // Expect different format for binary file count
-        let expected = "\n---\nProcessed Files: (2)\n- binary.bin (Binary C:256)\n- text.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- binary.bin (Binary C:256)\n- text.txt (L:10 C:100 W:20)\n";
         assert_eq!(output, expected);
         Ok(())
     }
