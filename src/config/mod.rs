@@ -37,9 +37,9 @@ pub struct Config {
     /// Whether to respect `.gitignore`, `.ignore`, and other VCS ignore files.
     pub use_gitignore: bool,
     /// Whether to include files detected as binary/non-text.
-    pub include_binary: bool, // <-- ADDED FIELD
+    pub include_binary: bool,
     /// Whether to skip common lockfiles.
-    pub skip_lockfiles: bool, // <-- ADDED FIELD
+    pub skip_lockfiles: bool,
     /// Whether to remove C/C++ style comments (`//`, `/* ... */`) from file content.
     pub remove_comments: bool,
     /// Whether to remove lines containing only whitespace from file content.

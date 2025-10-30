@@ -64,7 +64,7 @@ mod tests {
             counts: None,
             is_process_last: false,
             process_last_order: None,
-            is_binary: false, // <-- ADDED default
+            is_binary: false,
         }
     }
 

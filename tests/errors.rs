@@ -7,7 +7,7 @@ use common::dircat_cmd;
 use predicates::prelude::*;
 use std::fs;
 use std::io::Write;
-use tempfile::tempdir; // Added for writing non-UTF8 bytes
+use tempfile::tempdir;
 
 #[test]
 fn test_error_invalid_input_path() -> Result<(), Box<dyn std::error::Error>> {

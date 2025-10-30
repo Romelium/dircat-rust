@@ -56,11 +56,11 @@ pub struct Cli {
     pub no_gitignore: bool,
 
     /// Include files detected as binary/non-text (default is to skip them).
-    #[arg(short = 'B', long, action = clap::ArgAction::SetTrue)] // <-- ADDED short = 'B'
+    #[arg(short = 'B', long, action = clap::ArgAction::SetTrue)]
     pub include_binary: bool,
 
     /// Skip common lockfiles (e.g., Cargo.lock, package-lock.json).
-    #[arg(short = 'K', long, action = clap::ArgAction::SetTrue)] // <-- ADDED short = 'K'
+    #[arg(short = 'K', long, action = clap::ArgAction::SetTrue)]
     pub no_lockfiles: bool,
 
     // --- Content Processing Options ---

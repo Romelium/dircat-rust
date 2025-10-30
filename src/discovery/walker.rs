@@ -20,7 +20,6 @@ pub(super) fn build_walker(config: &Config) -> Result<ignore::Walk> {
     walker_builder.require_git(false);
     debug!("Configuring WalkBuilder: require_git disabled.");
 
-    // --- REMOVED: Explicit flags block ---
     // The standard_filters(bool) call should handle these implicitly.
     // Explicitly setting them again might interfere or be unnecessary for ignore 0.4+.
     // ---

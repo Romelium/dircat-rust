@@ -92,7 +92,7 @@ pub(crate) mod tests {
             counts: None,            // Default to None
             is_process_last: false,
             process_last_order: None,
-            is_binary: false, // <-- ADDED default
+            is_binary: false,
         }
     }
 

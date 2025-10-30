@@ -31,7 +31,7 @@ pub struct FileInfo {
     /// according to the order they were specified on the command line.
     pub process_last_order: Option<usize>,
     /// Flag indicating if the file was detected as binary during discovery.
-    pub is_binary: bool, // <-- ADDED
+    pub is_binary: bool,
 }
 
 /// Holds line, character (byte), and word counts for a single file.
