@@ -9,16 +9,13 @@ use super::{
 use crate::cli::Cli;
 use crate::git;
 use anyhow::Result;
-use std::path::PathBuf;
-use tempfile::TempDir;
+use std::path::PathBuf; // Keep PathBuf
 
 impl TryFrom<Cli> for Config {
     type Error = anyhow::Error;
 
     fn try_from(cli: Cli) -> Result<Self, Self::Error> {
         validate_cli_options(&cli)?;
-
-        let mut _temp_dir: Option<TempDir> = None;
         let absolute_input_path: PathBuf;
         let base_path_display: String;
 
@@ -56,14 +53,12 @@ impl TryFrom<Cli> for Config {
             dry_run: cli.dry_run,
             git_branch: cli.git_branch,
             git_depth: cli.git_depth,
-            _temp_dir: None,
         };
 
         // Check if the input is a git URL
         if git::is_git_url(&cli.input_path) {
-            let (temp_dir_holder, cloned_path) = git::clone_repo(&cli.input_path, &config)?;
-            _temp_dir = Some(temp_dir_holder);
-            absolute_input_path = cloned_path;
+            // Get the repository, either by cloning or updating the cache.
+            absolute_input_path = git::get_repo(&cli.input_path, &config)?;
             base_path_display = cli.input_path;
         } else {
             // Otherwise, treat it as a local path
@@ -74,7 +69,6 @@ impl TryFrom<Cli> for Config {
         config.input_path = absolute_input_path;
         config.base_path_display = base_path_display;
         config.input_is_file = config.input_path.is_file();
-        config._temp_dir = _temp_dir;
 
         Ok(config)
     }
@@ -97,7 +91,6 @@ mod tests {
         assert!(!config.input_is_file); // Current directory is not a file
         assert!(!config.include_binary); // Default is false
         assert!(!config.skip_lockfiles); // Default is false
-        assert!(config._temp_dir.is_none()); // Should be none for local path
         Ok(())
     }
 

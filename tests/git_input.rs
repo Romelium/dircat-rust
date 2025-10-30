@@ -5,7 +5,9 @@ mod common;
 use assert_cmd::prelude::*;
 use common::dircat_cmd;
 use predicates::prelude::*;
+use std::env;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::{tempdir, TempDir};
 
 /// Helper function to create a local git repository in a temporary directory for testing.
@@ -59,6 +61,24 @@ fn setup_local_git_repo() -> Result<TempDir, Box<dyn std::error::Error>> {
     Ok(temp_dir)
 }
 
+/// An RAII guard to clean up a directory path when it goes out of scope.
+struct DirCleanupGuard(PathBuf);
+
+impl Drop for DirCleanupGuard {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            // Don't panic on failure, just print a warning.
+            if let Err(e) = fs::remove_dir_all(&self.0) {
+                eprintln!(
+                    "Warning: Failed to clean up test cache directory '{}': {}",
+                    self.0.display(),
+                    e
+                );
+            }
+        }
+    }
+}
+
 /// Tests cloning and processing a local file-based git repository.
 /// This test is fast and runs offline.
 #[test]
@@ -74,6 +94,13 @@ fn test_git_local_repository_input() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(windows))]
     let repo_url = format!("file://{}", repo_path_str);
 
+    // This test uses the real cache, so we set up a guard to clean it up.
+    // We need to create a unique cache dir for this test run to avoid conflicts.
+    let temp_cache = tempdir()?;
+    let _cache_guard = DirCleanupGuard(temp_cache.path().to_path_buf());
+    let original_xdg_cache_home = env::var("XDG_CACHE_HOME");
+    env::set_var("XDG_CACHE_HOME", temp_cache.path());
+
     dircat_cmd()
         .arg(&repo_url) // Use the file:// URL
         .assert()
@@ -88,6 +115,13 @@ fn test_git_local_repository_input() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(predicate::str::contains("## File: data/app.log").not())
         // Check that uncommitted files are NOT included because they weren't cloned.
         .stdout(predicate::str::contains("## File: uncommitted.txt").not());
+
+    // Restore original environment variable if it was set
+    if let Ok(val) = original_xdg_cache_home {
+        env::set_var("XDG_CACHE_HOME", val);
+    } else {
+        env::remove_var("XDG_CACHE_HOME");
+    }
 
     Ok(())
 }

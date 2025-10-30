@@ -13,6 +13,8 @@ categories = ["command-line-utilities"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# --- Caching ---
+directories = "5.0"
 # --- Core Functionality & Utilities ---
 # Filesystem traversal (recursive)
 walkdir = "2.5"
@@ -32,6 +34,9 @@ content_inspector = "0.2"
 # --- Git Repository Cloning ---
 # Enables cloning remote git repos given as input
 git2 = { version = "0.20", features = ["vendored-libgit2", "vendored-openssl"] }
+# Hashing for creating cache directory names
+sha2 = "0.10"
+hex = "0.4"
 
 # --- Performance ---
 # Parallel iteration/processing

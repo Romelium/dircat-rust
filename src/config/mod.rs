@@ -1,6 +1,5 @@
 use regex::Regex;
 use std::path::PathBuf;
-use tempfile::TempDir;
 
 pub mod builder;
 mod parsing;
@@ -66,10 +65,6 @@ pub struct Config {
     pub git_branch: Option<String>,
     /// The depth for a shallow git clone.
     pub git_depth: Option<u32>,
-    /// If the input was a git repo, this holds the temporary directory
-    /// it was cloned into. The directory is automatically cleaned up
-    /// when this struct is dropped.
-    _temp_dir: Option<TempDir>,
 }
 
 #[cfg(test)]
@@ -103,7 +98,6 @@ impl Config {
             dry_run: false,
             git_branch: None,
             git_depth: None,
-            _temp_dir: None,
         }
     }
 }
