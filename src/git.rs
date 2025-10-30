@@ -6,6 +6,7 @@ use directories::ProjectDirs;
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
 use hex;
 use sha2::{Digest, Sha256};
+use std::env;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -14,6 +15,12 @@ use std::{
 /// Determines the root cache directory for git repositories.
 /// Typically `~/.cache/dircat/repos`.
 fn get_base_cache_dir() -> Result<PathBuf> {
+    // For testing purposes, allow overriding the cache directory via an environment variable.
+    // This ensures tests are hermetic and platform-agnostic.
+    if let Ok(cache_override) = env::var("DIRCAT_TEST_CACHE_DIR") {
+        return Ok(PathBuf::from(cache_override));
+    }
+
     let proj_dirs = ProjectDirs::from("com", "romelium", "dircat")
         .context("Could not determine project cache directory")?;
     let cache_dir = proj_dirs.cache_dir().join("repos");
@@ -108,6 +115,8 @@ fn create_fetch_options(config: &Config) -> FetchOptions<'static> {
     // --- Setup Fetch Options ---
     let mut fetch_options = FetchOptions::new();
     fetch_options.remote_callbacks(create_remote_callbacks());
+    // Enable pruning to remove remote-tracking branches that no longer exist on the remote.
+    fetch_options.prune(git2::FetchPrune::On);
     if let Some(depth) = config.git_depth {
         fetch_options.depth(depth as i32);
         log::debug!("Set shallow clone depth to: {}", depth);
@@ -116,6 +125,38 @@ fn create_fetch_options(config: &Config) -> FetchOptions<'static> {
     fetch_options
 }
 
+/// Finds the target commit on the remote that the repository should be updated to.
+///
+/// It determines the target commit by:
+/// 1. Using the branch specified by `--git-branch`.
+/// 2. If no branch is specified, resolving the remote's `HEAD` to find the default branch.
+fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2::Commit<'a>> {
+    let remote_branch_ref_name = if let Some(branch_name) = &config.git_branch {
+        // User specified a branch, construct the reference name.
+        log::debug!("Using user-specified branch: {}", branch_name);
+        format!("refs/remotes/origin/{}", branch_name)
+    } else {
+        // User did not specify a branch, so find the remote's default by resolving its HEAD.
+        log::debug!("Resolving remote's default branch via origin/HEAD");
+        let remote_head = repo.find_reference("refs/remotes/origin/HEAD").context(
+            "Could not find remote's HEAD. The repository might not have a default branch set, or it may be empty. Please specify a branch with --git-branch.",
+        )?;
+        remote_head
+            .symbolic_target()
+            .context("Remote HEAD is not a symbolic reference; cannot determine default branch.")?
+            .to_string()
+    };
+
+    log::debug!("Targeting remote reference: {}", remote_branch_ref_name);
+    let fetch_head = repo.find_reference(&remote_branch_ref_name)
+        .with_context(|| format!("Could not find remote branch reference '{}' after fetch. Does this branch exist on the remote?", remote_branch_ref_name))?;
+    let fetch_commit = repo.find_commit(
+        fetch_head
+            .target()
+            .context("Remote branch reference has no target commit")?,
+    )?;
+    Ok(fetch_commit)
+}
 /// Ensures the local repository is up-to-date with the remote.
 /// Fetches from the remote and performs a hard reset to the remote branch head.
 fn update_repo(repo: &Repository, config: &Config) -> Result<()> {
@@ -128,19 +169,15 @@ fn update_repo(repo: &Repository, config: &Config) -> Result<()> {
         .fetch(&[] as &[&str], Some(&mut fetch_options), None)
         .context("Failed to fetch from remote 'origin'")?;
 
-    let branch_name = config.git_branch.as_deref().unwrap_or("main"); // A reasonable default, though HEAD would be better
-    let remote_branch_ref = format!("refs/remotes/origin/{}", branch_name);
-
-    // Find the commit the remote branch is pointing to
-    let fetch_head = repo
-        .find_reference(&remote_branch_ref)
-        .with_context(|| format!("Could not find remote branch '{}'", remote_branch_ref))?;
-    let fetch_commit =
-        repo.find_commit(fetch_head.target().context("Remote branch has no target")?)?;
+    // Find the specific commit we need to reset to.
+    let target_commit = find_remote_commit(repo, config)?;
+    // Detach HEAD before resetting to avoid issues with checked-out branches.
+    repo.set_head_detached(target_commit.id())
+        .context("Failed to detach HEAD in cached repository")?;
 
     // Reset the local repository to match the fetched commit
     repo.reset(
-        fetch_commit.as_object(),
+        target_commit.as_object(),
         ResetType::Hard,
         None, // No checkout builder needed for hard reset
     )
