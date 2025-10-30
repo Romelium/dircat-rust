@@ -205,3 +205,30 @@ fn test_multiple_path_regex() -> Result<(), Box<dyn std::error::Error>> {
     temp.close()?;
     Ok(())
 }
+
+/// Tests that symbolic links are ignored by default, which is the desired behavior
+/// to prevent recursion issues and processing files outside the target directory.
+#[test]
+#[cfg(unix)] // Symlinks are a Unix-specific feature in Rust's standard library
+fn test_symlinks_are_ignored_by_default() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir()?;
+    let target_content = "This is the real file.";
+    let target_path = temp.path().join("target.txt");
+    fs::write(&target_path, target_content)?;
+
+    let link_path = temp.path().join("link.txt");
+    symlink(&target_path, &link_path)?;
+
+    dircat_cmd()
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: target.txt")) // The real file should be included
+        .stdout(predicate::str::contains(target_content))
+        .stdout(predicate::str::contains("## File: link.txt").not()); // The symlink itself should be ignored
+
+    temp.close()?;
+    Ok(())
+}
