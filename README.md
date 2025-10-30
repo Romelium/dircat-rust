@@ -48,6 +48,13 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Goal: Create context for an LLM, excluding tests, logs, and comments](#goal-create-context-for-an-llm-excluding-tests-logs-and-comments)
       - [Goal: Concatenate all Rust code, excluding the `tests` directory](#goal-concatenate-all-rust-code-excluding-the-tests-directory)
       - [Goal: See which files would be included if max size is 50kB](#goal-see-which-files-would-be-included-if-max-size-is-50kb)
+      - [Goal: Concatenate only files in the top-level directory](#goal-concatenate-only-files-in-the-top-level-directory)
+      - [Goal: Concatenate all test files using a filename pattern](#goal-concatenate-all-test-files-using-a-filename-pattern)
+      - [Goal: Create a complete snapshot, including ignored files](#goal-create-a-complete-snapshot-including-ignored-files)
+      - [Goal: Create a cleaner output with filename-only headers](#goal-create-a-cleaner-output-with-filename-only-headers)
+      - [Goal: Add line numbers to the output for easy reference](#goal-add-line-numbers-to-the-output-for-easy-reference)
+      - [Goal: Wrap filenames in backticks for better rendering](#goal-wrap-filenames-in-backticks-for-better-rendering)
+      - [Goal: Get a detailed summary with file counts](#goal-get-a-detailed-summary-with-file-counts)
       - [Goal: Process `README.md` and `LICENSE` last](#goal-process-readmemd-and-license-last)
       - [Goal: Concatenate specific config files only](#goal-concatenate-specific-config-files-only)
       - [Goal: Concatenate only all Rust files from `src` and all TOML files from `config`](#goal-concatenate-only-all-rust-files-from-src-and-all-toml-files-from-config)
@@ -448,6 +455,153 @@ dircat . -m 50k -D
 - config/settings.toml
 --- End Dry Run ---
 ```
+
+#### Goal: Concatenate only files in the top-level directory
+
+```bash
+dircat . -n > root_files.md
+```
+
+*Output Snippet:* (Includes `Cargo.toml` but skips `src/main.rs`)
+
+````markdown
+    ## File: Cargo.toml
+    ```toml
+    [package]
+    name = "dircat"
+    ...
+    ```
+
+    ## File: README.md
+    ```md
+    # dircat-rust ⚡
+    ...
+    ```
+````
+
+#### Goal: Concatenate all test files using a filename pattern
+
+```bash
+dircat . -d "^test_.*" ".*_test\.rs$" > all_tests.md
+```
+
+*Output Snippet:*
+
+````markdown
+    ## File: tests/test_api.rs
+    ```rs
+    // API tests...
+    ```
+
+    ## File: src/auth_test.rs
+    ```rs
+    // Auth unit tests...
+    ```
+````
+
+#### Goal: Create a complete snapshot, including ignored files
+
+```bash
+dircat . -t > full_project_snapshot.md
+```
+
+*Output Snippet:* (Includes files typically ignored by `.gitignore`)
+
+````markdown
+    ## File: .gitignore
+    ```
+    target/
+    *.log
+    ```
+
+    ## File: target/debug/dircat
+    ```
+    ...binary content...
+    ```
+````
+
+#### Goal: Create a cleaner output with filename-only headers
+
+```bash
+dircat src -f > clean_headers.md
+```
+
+*Output Snippet:* (Note `main.rs` instead of `src/main.rs` in the header)
+
+````markdown
+    ## File: main.rs
+    ```rs
+    fn main() { /* ... */ }
+    ```
+
+    ## File: lib.rs
+    ```rs
+    // ...
+    ```
+````
+
+#### Goal: Add line numbers to the output for easy reference
+
+```bash
+dircat src/main.rs -L > main_with_lines.md
+```
+
+*Output Snippet:*
+
+````markdown
+    ## File: src/main.rs
+    ```rs
+        1 | fn main() {
+        2 |     println!("Hello, world!");
+        3 | }
+    ```
+````
+
+#### Goal: Wrap filenames in backticks for better rendering
+
+```bash
+dircat . -b -s > pretty_output.md
+```
+
+*Output Snippet:*
+
+````markdown
+    ## File: `src/main.rs`
+    ```rs
+    fn main() {}
+    ```
+
+    ---
+    Processed Files: (15)
+    - `Cargo.toml`
+    - `README.md`
+    - `src/main.rs`
+    ...
+````
+
+#### Goal: Get a detailed summary with file counts
+
+```bash
+dircat . -C > project_with_counts.md
+```
+
+*Output Snippet:* (The `-C` flag implies `-s` and adds counts to the summary)
+
+````markdown
+    ...
+    ## File: src/main.rs
+    ```rs
+    fn main() {}
+    ```
+    ...
+
+    ---
+    Processed Files: (15)
+    - Cargo.toml (L:50 C:1500 W:120)
+    - README.md (L:300 C:18000 W:2500)
+    - src/main.rs (L:5 C:80 W:10)
+    ...
+````
 
 #### Goal: Process `README.md` and `LICENSE` last
 
