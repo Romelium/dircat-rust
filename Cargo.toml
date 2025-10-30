@@ -19,7 +19,7 @@ directories = "5.0"
 # Filesystem traversal (recursive)
 walkdir = "2.5"
 # Regex matching for filtering
-regex = "1.11"
+regex = "1.12"
 # .gitignore handling (respecting ignore rules)
 ignore = "0.4" # Note: Integrates well with walkdir
 # Parsing human-readable byte sizes (e.g., "1M", "512k")
@@ -40,7 +40,7 @@ hex = "0.4"
 
 # --- Performance ---
 # Parallel iteration/processing
-rayon = "1.10"
+rayon = "1.11"
 # Parallel directory walking (used by ignore crate)
 # Channel for discovery producer/consumer
 crossbeam-channel = "0.5"
@@ -57,7 +57,7 @@ thiserror = "1.0"
 
 # --- Concurrency & Signals ---
 # Ctrl+C / Signal handling for graceful shutdown
-ctrlc = { version = "3.4", features = ["termination"] } # termination feature simplifies setup
+ctrlc = { version = "3.5", features = ["termination"] } # termination feature simplifies setup
 
 # --- Input/Output & Formatting ---
 # (Using std::fs, std::io, std::path primarily)
@@ -73,7 +73,7 @@ log = "0.4"
 env_logger = "0.11"
 # Tracing facade (added for regex.rs instrumentation)
 tracing = "0.1"
-tempfile = "3.20"
+tempfile = "3.23"
 
 # --- Platform Specific (If needed later) ---
 # Example: Might need platform-specific crates for certain features if std lib isn't enough
@@ -89,11 +89,11 @@ path = "src/main.rs"
 # Dependencies for running tests and benchmarks
 [dev-dependencies]
 # Integration testing CLI applications
-assert_cmd = "2.0"
+assert_cmd = "2.1"
 # Assertions for assert_cmd output/status
 predicates = "3.1"
 # Creating temporary files/directories for tests
-tempfile = "3.20"
+tempfile = "3.23"
 # Benchmarking harness
 criterion = { version = "0.5", features = ["html_reports"] }
 # For capturing stdout in tests (optional)
