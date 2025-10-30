@@ -6,7 +6,7 @@ use anyhow::Result;
 use assert_cmd::prelude::*;
 use common::dircat_cmd;
 use predicates::prelude::*;
-use std::{env, fs, path::Path};
+use std::fs;
 use tempfile::{tempdir, TempDir};
 
 // --- Test Setup Helpers ---
@@ -178,7 +178,7 @@ fn test_git_update_prunes_deleted_branch() -> Result<()> {
         .success();
 
     // Verify the feature branch exists in the cache.
-    let cached_repo_path = fs::read_dir(&repos_base_dir)?.next().unwrap()?.path();
+    let cached_repo_path = fs::read_dir(repos_base_dir)?.next().unwrap()?.path();
     let cached_repo = git2::Repository::open(&cached_repo_path)?;
     assert!(cached_repo
         .find_reference("refs/remotes/origin/feature")

@@ -240,7 +240,7 @@ pub(crate) fn get_repo_with_base_cache(
         url,
         repo_path.display()
     );
-    fs::create_dir_all(&repo_path.parent().unwrap()).context("Failed to create cache directory")?;
+    fs::create_dir_all(repo_path.parent().unwrap()).context("Failed to create cache directory")?;
 
     let fetch_options = create_fetch_options(config);
     let mut repo_builder = RepoBuilder::new();

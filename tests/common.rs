@@ -1,11 +1,10 @@
 // tests/common.rs
 
-use assert_cmd::prelude::*;
 use std::process::Command;
 
 // Helper function to get the binary command
 pub fn dircat_cmd() -> Command {
-    Command::cargo_bin("dircat").expect("Failed to find dircat binary")
+    Command::new(assert_cmd::cargo::cargo_bin!("dircat"))
 }
 
 // Potential future helpers for setting up temporary directories/files
