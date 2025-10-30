@@ -6,7 +6,6 @@ use assert_cmd::prelude::*;
 use common::dircat_cmd;
 use predicates::prelude::*;
 use std::fs;
-// Removed unused: use std::io::Write;
 use tempfile::tempdir;
 
 #[test]

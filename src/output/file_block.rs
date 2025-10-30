@@ -96,7 +96,6 @@ fn calculate_line_number_width(line_count: usize, config: &Config) -> usize {
 mod tests {
     use super::*;
     use crate::config::Config;
-    // Removed unused FileCounts import
     use std::io::Cursor;
     use std::path::PathBuf;
 

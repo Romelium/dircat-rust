@@ -59,7 +59,7 @@ mod tests {
         let content = "One   two \t three";
         let counts = calculate_counts(content);
         assert_eq!(counts.lines, 1);
-        assert_eq!(counts.characters, 17); // Corrected expectation: 17 chars
+        assert_eq!(counts.characters, 17);
         assert_eq!(counts.words, 3); // split_whitespace handles multiple spaces
     }
 }

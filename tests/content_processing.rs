@@ -22,7 +22,6 @@ fn main() { // Line comment
     fs::write(temp.path().join("code.rs"), file_content)?;
 
     // Define the expected content *after trimming* by remove_comments
-    // CORRECTED: No leading/trailing whitespace/newlines
     let expected_content = r#"fn main() {
     let x = 1;
     let s = "// Not a comment";

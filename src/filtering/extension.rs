@@ -1,6 +1,6 @@
 // src/filtering/extension.rs
 
-use crate::config::Config; // Removed unused OutputDestination
+use crate::config::Config;
 use std::path::Path;
 
 /// Checks if a path passes the include/exclude extension filters defined in Config.

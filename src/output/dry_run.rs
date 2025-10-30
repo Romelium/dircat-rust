@@ -40,7 +40,7 @@ pub fn write_dry_run_output(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::core_types::FileInfo; // Removed unused FileCounts import
+    use crate::core_types::FileInfo;
     use std::io::Cursor;
     use std::path::PathBuf;
 

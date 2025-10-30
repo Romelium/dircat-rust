@@ -7,7 +7,7 @@ pub mod discovery;
 pub mod errors;
 use crate::filtering::is_likely_text;
 // filtering module is now correctly declared and contains submodules
-mod filtering; // <-- Keep this declaration
+mod filtering;
 pub mod git;
 pub mod output;
 pub mod processing;

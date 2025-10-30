@@ -2,14 +2,12 @@
 
 use assert_cmd::prelude::*;
 use std::process::Command;
-// Removed unused imports: dircat::core_types::{FileInfo, FileCounts}, std::path::PathBuf
 
 // Helper function to get the binary command
 pub fn dircat_cmd() -> Command {
     Command::cargo_bin("dircat").expect("Failed to find dircat binary")
 }
 
-// Removed the unused helper function: create_mock_file_info_internal
 
 // Potential future helpers for setting up temporary directories/files
 /*

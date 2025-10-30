@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::constants;
-use crate::core_types::FileInfo; // Removed unused FileCounts
+use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
 use anyhow::Result;
 use log::debug;

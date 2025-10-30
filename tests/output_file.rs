@@ -4,12 +4,9 @@ mod common;
 
 use assert_cmd::prelude::*;
 use common::dircat_cmd;
-// Removed unused: use predicates::prelude::*;
 use std::fs;
 use tempfile::tempdir;
-// *** Fix: Removed unused imports ***
 // use dircat::core_types::{FileInfo, FileCounts}; // Import FileInfo and FileCounts
-// Removed unused import: use std::path::PathBuf;
 
 #[test]
 fn test_output_to_file() -> Result<(), Box<dyn std::error::Error>> {

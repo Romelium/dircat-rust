@@ -119,7 +119,6 @@ fn test_include_invalid_utf8_lossy() -> Result<(), Box<dyn std::error::Error>> {
         .success() // Expect success because lossy conversion handles the error
         .stdout(predicate::str::contains("## File: invalid_utf8.bin")) // Check header
         .stdout(predicate::str::contains(expected_lossy_content)); // Check for lossy content
-                                                                   // Removed: .stderr("") - Do not assert empty stderr as logs might be present
 
     temp.close()?;
     Ok(())

@@ -3,7 +3,6 @@
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::AppError;
-// Corrected import path using the new filtering module structure
 use crate::filtering::{
     check_process_last, is_file_type, is_lockfile, passes_extension_filters, passes_size_filter,
 };
@@ -88,7 +87,6 @@ pub(crate) fn process_direntry(
 
     // --- 5. Filter by Lockfile ---
     if config.skip_lockfiles && is_lockfile(&absolute_path) {
-        // <-- Use config.skip_lockfiles
         debug!(
             "Skipping lockfile due to --no-lockfiles flag: {}",
             absolute_path.display()

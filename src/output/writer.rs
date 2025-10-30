@@ -110,7 +110,6 @@ impl Write for ArcMutexVecWriter {
 mod tests {
     use super::*;
     use crate::output::tests::create_mock_config; // Use shared helper
-                                                  // Removed unused Read, Seek, SeekFrom
     use tempfile::NamedTempFile;
 
     #[test]

@@ -177,7 +177,6 @@ pub(crate) fn get_repo_with_base_cache(
                     repo_path.display(),
                     e
                 );
-                // *** FIX START ***
                 // Robustly remove the corrupted entry, whether it's a file or a directory.
                 if repo_path.is_dir() {
                     fs::remove_dir_all(&repo_path).with_context(|| {
@@ -194,7 +193,6 @@ pub(crate) fn get_repo_with_base_cache(
                         )
                     })?;
                 }
-                // *** FIX END ***
             }
         }
     }

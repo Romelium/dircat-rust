@@ -1,7 +1,7 @@
 // src/output/mod.rs
 
 use crate::config::Config;
-use crate::core_types::FileInfo; // Removed unused FileCounts
+use crate::core_types::FileInfo;
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
@@ -9,7 +9,7 @@ use std::io::Write;
 pub mod dry_run;
 pub mod file_block;
 pub mod formatter;
-pub mod header; // <-- Now points to the created file
+pub mod header;
 pub mod summary;
 pub mod writer; // Manages the output destination
 
@@ -65,8 +65,7 @@ pub fn generate_output(
 pub(crate) mod tests {
     // Make module public within the crate for use by siblings
     use super::*;
-    use crate::config::Config; // Keep Config, OutputDestination
-    use crate::constants;
+    use crate::config::Config;
     use crate::core_types::{FileCounts, FileInfo};
     use std::path::PathBuf;
 
