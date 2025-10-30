@@ -1,18 +1,22 @@
+# This workflow builds and releases cross-platform binaries for the Rust project.
+# It triggers automatically when a new version tag (e.g., v1.2.3) is pushed.
 name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*' # Trigger on tags like v0.1.0, v1.2.3
+      - 'v*.*.*'
 
   workflow_dispatch:
 
+# Grant permissions for the workflow to create a GitHub Release and upload assets.
 permissions:
-  contents: write # Needed to create releases and upload assets
+  contents: write
 
 env:
-  CARGO_TERM_COLOR: always
+  # The name of the binary to be built.
   BINARY_NAME: dircat
+  # A temporary directory for collecting release assets before packaging.
   STAGING_DIR: staging
 
 jobs:
@@ -20,31 +24,39 @@ jobs:
     name: Build Release Binaries (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
-      # Don't cancel other jobs if one fails. This is useful for matrix builds.
+      # Ensures that if one platform build fails, the others can still complete.
       fail-fast: false
       matrix:
         include:
-          # --- Linux ---
+          # --- Linux Builds ---
+          # Standard GNU target for broad compatibility.
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          # Statically linked MUSL target for maximum portability across Linux distributions.
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl # Statically linked for portability
+            target: x86_64-unknown-linux-musl
+          # ARM64 target for devices like Raspberry Pi 4/5 and ARM-based cloud servers.
           - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu # For ARM64 (e.g., Raspberry Pi 4/5, AWS Graviton)
+            target: aarch64-unknown-linux-gnu
 
-          # --- macOS ---
+          # --- macOS Builds ---
+          # For Intel-based Macs.
           - os: macos-latest
-            target: x86_64-apple-darwin # For Intel Macs
-          - os: macos-14 # Runner with Apple Silicon support
-            target: aarch64-apple-darwin # For Apple Silicon (M1/M2/M3)
+            target: x86_64-apple-darwin
+          # For Apple Silicon (M1/M2/M3) Macs.
+          - os: macos-14
+            target: aarch64-apple-darwin
 
-          # --- Windows ---
+          # --- Windows Builds ---
+          # Standard 64-bit MSVC target.
           - os: windows-latest
-            target: x86_64-pc-windows-msvc # 64-bit
+            target: x86_64-pc-windows-msvc
+          # 32-bit MSVC target for legacy system support.
           - os: windows-latest
-            target: i686-pc-windows-msvc # 32-bit
+            target: i686-pc-windows-msvc
+          # ARM64 MSVC target for Windows on ARM devices (e.g., Surface Pro X).
           - os: windows-latest
-            target: aarch64-pc-windows-msvc # For Windows on ARM
+            target: aarch64-pc-windows-msvc
 
     steps:
       - name: Checkout repository
@@ -54,23 +66,28 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          # Install the specific target for the current matrix job.
           target: ${{ matrix.target }}
+          # Enable caching for Cargo dependencies to speed up subsequent builds.
           cache: 'cargo'
 
       - name: Install cross-compilation dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           set -e
+          # Install musl-tools for the static MUSL build.
           if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-musl" ]]; then
             sudo apt-get update && sudo apt-get install -y musl-tools
+          # Install the GCC cross-compiler and linker for the ARM64 build.
           elif [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
           fi
 
-      - name: Configure Cargo linker (for Linux aarch64 cross-compile)
+      - name: Configure Cargo linker for ARM64 cross-compile
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           mkdir -p .cargo
+          # Instruct Cargo to use the cross-compiler's linker for this specific target.
           cat > .cargo/config.toml <<EOF
           [target.aarch64-unknown-linux-gnu]
           linker = "aarch64-linux-gnu-gcc"
@@ -83,19 +100,18 @@ jobs:
         id: artifact_details
         shell: bash
         run: |
-          # Determine binary suffix and archive format based on OS
+          # Determine the binary suffix and archive format based on the target platform.
+          # This centralizes naming logic and keeps the matrix definition clean.
           BIN_SUFFIX=""
           ARCHIVE_FORMAT="tar.gz"
           if [[ "${{ matrix.target }}" == *"-windows-"* ]]; then
             BIN_SUFFIX=".exe"
             ARCHIVE_FORMAT="zip"
           fi
-          
-          # Set environment variables for subsequent steps
           echo "BIN_SUFFIX=${BIN_SUFFIX}" >> $GITHUB_ENV
           echo "ARCHIVE_FORMAT=${ARCHIVE_FORMAT}" >> $GITHUB_ENV
           
-          # Set step output for use in action inputs
+          # Define the final archive filename, e.g., "dircat-v1.2.3-x86_64-unknown-linux-gnu.tar.gz".
           ARCHIVE_FILENAME="${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ matrix.target }}.${ARCHIVE_FORMAT}"
           echo "archive_filename=${ARCHIVE_FILENAME}" >> $GITHUB_OUTPUT
 
@@ -116,36 +132,45 @@ jobs:
           Copy-Item -Path "target\${{ matrix.target }}\release\${{ env.BINARY_NAME }}${{ env.BIN_SUFFIX }}" -Destination "${{ env.STAGING_DIR }}\"
           Copy-Item -Path "LICENSE", "README.md" -Destination "${{ env.STAGING_DIR }}\"
 
-      - name: List staging directory contents (for debugging)
-        run: ls -R ${{ env.STAGING_DIR }}
+      - name: Prepare archive structure for binstall
         shell: bash
+        run: |
+          # Create a root directory inside the archive. This is a best practice that
+          # prevents "tarbombs" and is the preferred structure for `cargo binstall`.
+          ARCHIVE_ROOT_DIR=$(basename "${{ steps.artifact_details.outputs.archive_filename }}" .${{ env.ARCHIVE_FORMAT }})
+          echo "ARCHIVE_ROOT_DIR=${ARCHIVE_ROOT_DIR}" >> $GITHUB_ENV
+          
+          # Move all staged files into this new root directory.
+          mkdir "$ARCHIVE_ROOT_DIR"
+          mv ${{ env.STAGING_DIR }}/* "$ARCHIVE_ROOT_DIR/"
 
       - name: Package release artifacts (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          tar czf "${{ steps.artifact_details.outputs.archive_filename }}" -C "${{ env.STAGING_DIR }}" .
+        run: tar czf "${{ steps.artifact_details.outputs.archive_filename }}" "${{ env.ARCHIVE_ROOT_DIR }}"
 
       - name: Package release artifacts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path "${{ env.STAGING_DIR }}\*" -DestinationPath "${{ steps.artifact_details.outputs.archive_filename }}"
+        run: Compress-Archive -Path "${{ env.ARCHIVE_ROOT_DIR }}" -DestinationPath "${{ steps.artifact_details.outputs.archive_filename }}"
 
       - name: Upload release asset
         uses: actions/upload-artifact@v4
         with:
+          # Upload the packaged archive as a temporary artifact for the next job.
           name: release-asset-${{ matrix.target }}
           path: ${{ steps.artifact_details.outputs.archive_filename }}
 
   create-release:
     name: Create GitHub Release
+    # This job will only run after all matrix builds in `build-release` have succeeded.
     needs: build-release
     runs-on: ubuntu-latest
     steps:
       - name: Download all release assets
         uses: actions/download-artifact@v4
         with:
+          # Download all artifacts uploaded by the previous job into a single directory.
           path: release-assets
 
       - name: List downloaded files (for debugging)
@@ -154,9 +179,11 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
+          # Use the tag that triggered the workflow as the release tag.
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          # Automatically generate release notes from commit messages.
           generate_release_notes: true
+          # Use a glob pattern to find and upload all downloaded archives.
           files: release-assets/*/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
