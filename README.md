@@ -320,10 +320,10 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | :----------------- | :---- | :------------------------------------------------------------------------------------------------------ | :-------------------------- |
 | `--max-size BYTES` | `-m`  | Skip files larger than this size (e.g., "1M", "512k", "1024").                                           | `-m 1M`                     |
 | `--no-recursive`   | `-n`  | Process only the top-level directory or specified file (disable recursion).                             | `-n`                        |
-| `--ext EXT`        | `-e`  | Include *only* files with these extensions (case-insensitive, repeatable).                              | `-e rs -e toml`             |
-| `--exclude-ext EXT`| `-x`  | Exclude files with these extensions (case-insensitive, repeatable, overrides `-e`).                       | `-x log -x tmp`             |
-| `--ignore GLOB`    | `-i`  | Ignore files/directories matching these custom glob patterns (relative to input path, repeatable).      | `-i "target/*" -i "*.lock"` |
-| `--exclude-regex REGEX` | `-X` | Exclude files whose full path matches any of these regexes (case-insensitive, repeatable). | `-X "tests/.*" -X ".*\.log$"` |
+| `--ext EXT`        | `-e`  | Include *only* files with these extensions (case-insensitive, repeatable).                              | `-e rs toml`                |
+| `--exclude-ext EXT`| `-x`  | Exclude files with these extensions (case-insensitive, repeatable, overrides `-e`).                       | `-x log tmp`                |
+| `--ignore GLOB`    | `-i`  | Ignore files/directories matching these custom glob patterns (relative to input path, repeatable).      | `-i target/* *.lock`    |
+| `--exclude-regex REGEX` | `-X` | Exclude files whose full path matches any of these regexes (case-insensitive, repeatable). | `-X "tests/.*|.*\.log$"` |
 | `--regex REGEX`    | `-r`  | Include *only* files whose full path matches any of these regexes (case-insensitive, repeatable).       | `-r "src/.*\.rs$"`          |
 | `--filename-regex REGEX` | `-d` | Include *only* files whose filename matches any of these regexes (case-insensitive, repeatable). | `-d "^test_.*"`             |
 | `--no-gitignore`   | `-t`  | Process all files, ignoring `.gitignore`, `.ignore`, hidden files, etc.                                 | `-t`                        |
@@ -359,7 +359,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | Option        | Alias | Description                                                                                             | Example                  |
 | :------------ | :---- | :------------------------------------------------------------------------------------------------------ | :----------------------- |
 | `--last GLOB` | `-z`  | Process files matching these glob patterns (relative path/filename) last, in the order specified. Repeatable. | `-z README.md`           |
-| `--only GLOB` | `-O`  | A shorthand for `--last <GLOB>... --only-last`. Process only files matching these glob patterns. Conflicts with `-z` and `-Z`. | `-O "*.rs"`              |
+| `--only GLOB` | `-O`  | A shorthand for `--last <GLOB>... --only-last`. Process only files matching these glob patterns. Conflicts with `-z` and `-Z`. | `-O *.rs`              |
 | `--only-last` | `-Z`  | Only process files specified with `-z`/`--last`. Skip all others (requires `-z`).                       | `-Z`                     |
 
 #### Execution Control Options
@@ -395,7 +395,7 @@ dircat . -e rs -r "^(src|tests)/" > rust_code.md
 #### Goal: Create context for an LLM, excluding tests, logs, and comments
 
 ```bash
-dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_context.md
+dircat . -e rs py toml -x log -i tests/* -c --no-lockfiles -o llm_context.md
 ```
 
 *Output Snippet:*
@@ -417,7 +417,7 @@ dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_contex
 This is useful for creating a context of only the application source code, ignoring test files. The `--exclude-regex` (`-X`) option is perfect for this, as it filters by path.
 
 ```bash
-dircat . -e rs -X "^tests/" > app_code_only.md
+dircat . -e rs -X ^tests/ > app_code_only.md
 ```
 
 *Output Snippet:* (Files from `src/` are included, but `tests/` are skipped)
@@ -452,7 +452,7 @@ dircat . -m 50k -D
 #### Goal: Process `README.md` and `LICENSE` last
 
 ```bash
-dircat . -z README.md -z LICENSE > project_with_readme_last.md
+dircat . -z README.md LICENSE > project_with_readme_last.md
 ```
 
 *Output Snippet:* (Other files appear first, then README, then LICENSE)
@@ -478,7 +478,7 @@ dircat . -z README.md -z LICENSE > project_with_readme_last.md
 #### Goal: Concatenate specific config files only
 
 ```bash
-dircat . -O "config/*.toml" ".env.example" > config_files.md
+dircat . -O config/*.toml .env.example > config_files.md
 ```
 
 *Output Snippet:* (Only files matching the `-z` patterns are included)
@@ -500,7 +500,7 @@ dircat . -O "config/*.toml" ".env.example" > config_files.md
 By chaining the `--only` (`-O`) flag, you can create a precise selection of files from different parts of your project.
 
 ```bash
-dircat . -O "src/**/*.rs" "config/*.toml" > custom_selection.md
+dircat . -O src/**/*.rs config/*.toml > custom_selection.md
 ```
 
 *Output Snippet:* (Only files matching either glob pattern are included)
