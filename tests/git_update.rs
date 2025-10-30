@@ -237,7 +237,11 @@ fn test_git_update_to_specific_tag() -> Result<()> {
     let remote = TestRemote::new()?;
     // Commit v1 and tag it
     remote.commit_file("main", "file.txt", "v1 content", "Commit v1")?;
-    let commit_v1 = remote.repo.head()?.peel_to_commit()?;
+    // Find the commit we just created by looking at the 'main' branch tip.
+    // This is more robust than using repo.head(), which might point to an
+    // unborn 'master' branch in a new bare repository, causing failures on some platforms.
+    let commit_v1 = remote.repo.find_branch("main", git2::BranchType::Local)?.get().peel_to_commit()?;
+
     remote.repo.tag(
         "v1.0",
         commit_v1.as_object(),
