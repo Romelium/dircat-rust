@@ -1,16 +1,49 @@
 // src/git.rs
-
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
 use hex;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use reqwest::blocking::Client;
+use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
+use serde::Deserialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::VecDeque;
 use std::env;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+use tempfile::Builder as TempDirBuilder;
+
+/// Represents the components of a parsed GitHub folder URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedGitUrl {
+    /// The full URL to be used for cloning (e.g., `https://github.com/user/repo.git`).
+    pub clone_url: String,
+    /// The branch or tag name extracted from the URL. Can be "HEAD" as a placeholder for the default branch.
+    pub branch: String,
+    /// The path to the subdirectory within the repository. Can be empty if the URL points to the root.
+    pub subdirectory: String,
+}
+
+/// Represents a file or directory item from the GitHub Contents API.
+#[derive(Deserialize, Debug)]
+struct ContentItem {
+    path: String,
+    #[serde(rename = "type")]
+    item_type: String,
+    download_url: Option<String>,
+}
+
+/// Represents the repository metadata from the GitHub API, only for getting the default branch.
+#[derive(Deserialize, Debug)]
+struct RepoInfo {
+    default_branch: String,
+}
 
 /// Determines the root cache directory for git repositories.
 /// Typically `~/.cache/dircat/repos`.
@@ -117,6 +150,8 @@ fn create_fetch_options(config: &Config) -> FetchOptions<'static> {
     fetch_options.remote_callbacks(create_remote_callbacks());
     // Enable pruning to remove remote-tracking branches that no longer exist on the remote.
     fetch_options.prune(git2::FetchPrune::On);
+    // Download all tags from the remote. This is important for checking out tags.
+    fetch_options.download_tags(git2::AutotagOption::All);
     if let Some(depth) = config.git_depth {
         fetch_options.depth(depth as i32);
         log::debug!("Set shallow clone depth to: {}", depth);
@@ -131,31 +166,65 @@ fn create_fetch_options(config: &Config) -> FetchOptions<'static> {
 /// 1. Using the branch specified by `--git-branch`.
 /// 2. If no branch is specified, resolving the remote's `HEAD` to find the default branch.
 fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2::Commit<'a>> {
-    let remote_branch_ref_name = if let Some(branch_name) = &config.git_branch {
-        // User specified a branch, construct the reference name.
-        log::debug!("Using user-specified branch: {}", branch_name);
-        format!("refs/remotes/origin/{}", branch_name)
-    } else {
-        // User did not specify a branch, so find the remote's default by resolving its HEAD.
-        log::debug!("Resolving remote's default branch via origin/HEAD");
-        let remote_head = repo.find_reference("refs/remotes/origin/HEAD").context(
-            "Could not find remote's HEAD. The repository might not have a default branch set, or it may be empty. Please specify a branch with --git-branch.",
-        )?;
-        remote_head
-            .symbolic_target()
-            .context("Remote HEAD is not a symbolic reference; cannot determine default branch.")?
-            .to_string()
-    };
+    if let Some(ref_name) = &config.git_branch {
+        log::debug!("Using user-specified ref: {}", ref_name);
+
+        // 1. Try to resolve as a remote branch.
+        let branch_ref_name = format!("refs/remotes/origin/{}", ref_name);
+        if let Ok(reference) = repo.find_reference(&branch_ref_name) {
+            log::debug!("Resolved '{}' as a remote branch.", ref_name);
+            return repo
+                .find_commit(
+                    reference
+                        .target()
+                        .context("Remote branch reference has no target commit")?,
+                )
+                .context("Failed to find commit for branch reference");
+        }
+
+        // 2. Try to resolve as a tag.
+        let tag_ref_name = format!("refs/tags/{}", ref_name);
+        if let Ok(reference) = repo.find_reference(&tag_ref_name) {
+            log::debug!("Resolved '{}' as a tag.", ref_name);
+            // A tag can be lightweight (points directly to a commit) or annotated
+            // (points to a tag object, which then points to a commit).
+            // `peel_to_commit` handles both cases.
+            let object = reference.peel(git2::ObjectType::Commit)?;
+            return object
+                .into_commit()
+                .map_err(|_| anyhow!("Tag '{}' does not point to a commit", ref_name));
+        }
+
+        // 3. If both fail, return a comprehensive error.
+        return Err(anyhow!(
+            "Could not find remote branch or tag named '{}' after fetch. Does this ref exist on the remote?",
+            ref_name
+        ));
+    }
+
+    // User did not specify a branch, so find the remote's default by resolving its HEAD.
+    log::debug!("Resolving remote's default branch via origin/HEAD");
+    let remote_head = repo.find_reference("refs/remotes/origin/HEAD").context(
+        "Could not find remote's HEAD. The repository might not have a default branch set, or it may be empty. Please specify a branch with --git-branch.",
+    )?;
+    let remote_branch_ref_name = remote_head
+        .symbolic_target()
+        .context("Remote HEAD is not a symbolic reference; cannot determine default branch.")?
+        .to_string();
 
     log::debug!("Targeting remote reference: {}", remote_branch_ref_name);
-    let fetch_head = repo.find_reference(&remote_branch_ref_name)
-        .with_context(|| format!("Could not find remote branch reference '{}' after fetch. Does this branch exist on the remote?", remote_branch_ref_name))?;
-    let fetch_commit = repo.find_commit(
+    let fetch_head = repo.find_reference(&remote_branch_ref_name).with_context(|| {
+        format!(
+            "Could not find remote branch reference '{}' after fetch. Does this branch exist on the remote?",
+            remote_branch_ref_name
+        )
+    })?;
+    repo.find_commit(
         fetch_head
             .target()
             .context("Remote branch reference has no target commit")?,
-    )?;
-    Ok(fetch_commit)
+    )
+    .context("Failed to find commit for default branch reference")
 }
 /// Ensures the local repository is up-to-date with the remote.
 /// Fetches from the remote and performs a hard reset to the remote branch head.
@@ -245,13 +314,40 @@ pub(crate) fn get_repo_with_base_cache(
     let fetch_options = create_fetch_options(config);
     let mut repo_builder = RepoBuilder::new();
     repo_builder.fetch_options(fetch_options);
-    if let Some(branch) = &config.git_branch {
-        repo_builder.branch(branch);
+
+    // If a specific ref is given that might be a tag, we cannot use `repo_builder.branch()`.
+    // Instead, we clone the default branch first, and then find and check out the specific ref.
+    // This is more robust and handles both branches and tags correctly on initial clone.
+    if let Some(ref_name) = &config.git_branch {
+        log::debug!(
+            "Cloning default branch first, will check out '{}' after.",
+            ref_name
+        );
     }
 
-    repo_builder.clone(url, &repo_path)?;
-
+    let repo = repo_builder
+        .clone(url, &repo_path)
+        .context("Failed to clone repository")?;
     log::info!("Successfully cloned repository into cache.");
+
+    // If a specific branch/tag was requested, we need to check it out now.
+    // The clone operation by default only checks out the remote's HEAD.
+    if config.git_branch.is_some() {
+        log::info!(
+            "Checking out specified ref: {:?}",
+            config.git_branch.as_ref().unwrap()
+        );
+        // Find the commit associated with the branch or tag.
+        let target_commit = find_remote_commit(&repo, config)?;
+
+        // Detach HEAD and reset the working directory to the target commit.
+        repo.set_head_detached(target_commit.id())
+            .context("Failed to detach HEAD in newly cloned repository")?;
+        repo.reset(target_commit.as_object(), ResetType::Hard, None)
+            .context("Failed to perform hard reset on newly cloned repository")?;
+        log::info!("Successfully checked out specified ref.");
+    }
+
     Ok(repo_path)
 }
 
@@ -267,6 +363,74 @@ pub fn is_git_url(path_str: &str) -> bool {
         || path_str.starts_with("http://")
         || path_str.starts_with("git@")
         || path_str.starts_with("file://")
+}
+
+/// Regex for GitHub folder URLs: `.../tree/branch/path`
+static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?$").unwrap()
+});
+
+/// Parses a GitHub folder URL into its constituent parts.
+/// Handles the official format (`.../tree/branch/path`) as well as common "sloppy" formats
+/// like `.../branch/path` or just `.../path` (which assumes the default branch).
+/// Returns `Some(ParsedGitUrl)` if the URL is a parsable GitHub folder URL, otherwise `None`.
+pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
+    // 1. Try the official, correct format first.
+    if let Some(caps) = GITHUB_TREE_URL_RE.captures(url) {
+        let user = caps.get(1).unwrap().as_str();
+        let repo = caps.get(2).unwrap().as_str();
+        let branch = caps.get(3).unwrap().as_str();
+        // Get the subdirectory path, or an empty string if it's not present.
+        // Trim any trailing slash for consistency.
+        let subdirectory = caps.get(4).map_or("", |m| m.as_str()).trim_end_matches('/');
+
+        return Some(ParsedGitUrl {
+            clone_url: format!("https://github.com/{}/{}.git", user, repo),
+            branch: branch.to_string(),
+            subdirectory: subdirectory.to_string(),
+        });
+    }
+
+    // 2. If not, try to parse it as a "sloppy" URL.
+    let Some(path_part) = url.strip_prefix("https://github.com/") else {
+        return None;
+    };
+
+    let parts: Vec<&str> = path_part.split('/').filter(|s| !s.is_empty()).collect();
+
+    if parts.len() < 3 {
+        // Not enough parts for user/repo/path, so it's a root URL or invalid.
+        return None;
+    }
+
+    let user = parts[0];
+    let repo = parts[1].trim_end_matches(".git"); // Handle optional .git suffix
+    let first_segment = parts[2];
+
+    // Check for reserved GitHub path names to avoid misinterpreting e.g. .../issues/123
+    let reserved_names = [
+        "releases", "tags", "pull", "issues", "actions", "projects", "wiki", "security", "pulse",
+        "graphs", "settings", "blob", "tree", "commit", "blame", "find",
+    ];
+    if reserved_names.contains(&first_segment) {
+        return None;
+    }
+
+    // For sloppy URLs (without `/tree/`), we cannot reliably determine the branch from the path,
+    // as a branch name is indistinguishable from a directory name (e.g., 'main' could be a
+    // branch or a folder).
+    // To ensure predictable behavior, we assume the entire path after user/repo is the
+    // subdirectory and that the user wants the default branch ('HEAD').
+    // If a different branch is desired, the user should use the correct `/tree/BRANCH/` URL
+    // or specify the branch with the `--git-branch` flag.
+    let branch = "HEAD";
+    let subdirectory = parts[2..].join("/");
+
+    Some(ParsedGitUrl {
+        clone_url: format!("https://github.com/{}/{}.git", user, repo),
+        branch: branch.to_string(),
+        subdirectory,
+    })
 }
 
 #[cfg(test)]
@@ -412,4 +576,242 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_parse_github_folder_url_valid() {
+        let url = "https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/BurntSushi/ripgrep.git".to_string(),
+            branch: "master".to_string(),
+            subdirectory: "crates/ignore".to_string(),
+        });
+        assert_eq!(parse_github_folder_url(url), expected);
+    }
+
+    #[test]
+    fn test_parse_github_sloppy_url_no_tree_assumes_default_branch() {
+        // Missing 'tree' part: .../user/repo/branch/path
+        // The parser treats 'master' as part of the path and assumes the default branch ('HEAD').
+        let url = "https://github.com/BurntSushi/ripgrep/master/crates/ignore";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/BurntSushi/ripgrep.git".to_string(),
+            branch: "HEAD".to_string(), // Assumes default branch
+            subdirectory: "master/crates/ignore".to_string(), // 'master' is part of the path
+        });
+        assert_eq!(parse_github_folder_url(url), expected);
+    }
+
+    #[test]
+    fn test_parse_github_sloppy_url_no_branch() {
+        // Missing 'tree/branch' part: .../user/repo/path
+        let url = "https://github.com/BurntSushi/ripgrep/crates/ignore";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/BurntSushi/ripgrep.git".to_string(),
+            branch: "HEAD".to_string(),
+            subdirectory: "crates/ignore".to_string(),
+        });
+        assert_eq!(parse_github_folder_url(url), expected);
+    }
+
+    #[test]
+    fn test_parse_github_sloppy_url_with_git_suffix() {
+        // Sloppy URL with .git in the repo part
+        let url = "https://github.com/BurntSushi/ripgrep.git/master/crates/ignore";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/BurntSushi/ripgrep.git".to_string(),
+            branch: "HEAD".to_string(),
+            subdirectory: "master/crates/ignore".to_string(),
+        });
+        assert_eq!(parse_github_folder_url(url), expected);
+    }
+
+    #[test]
+    fn test_parse_github_url_rejects_root() {
+        assert_eq!(
+            parse_github_folder_url("https://github.com/rust-lang/rust"),
+            None
+        );
+        assert_eq!(
+            parse_github_folder_url("https://github.com/rust-lang/rust.git"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_github_url_rejects_reserved_paths() {
+        assert_eq!(
+            parse_github_folder_url("https://github.com/user/repo/blob/master/file.txt"),
+            None
+        );
+        assert_eq!(
+            parse_github_folder_url("https://github.com/user/repo/issues/1"),
+            None
+        );
+        assert_eq!(
+            parse_github_folder_url("https://github.com/user/repo/pull/2"),
+            None
+        );
+        assert_eq!(
+            parse_github_folder_url("https://gitlab.com/user/repo/tree/master"),
+            None
+        );
+    }
+}
+
+/// Downloads a directory's contents from the GitHub API into a temporary directory.
+/// This is much faster than a full `git clone` for large repositories.
+pub fn download_directory_via_api(
+    url_parts: &ParsedGitUrl,
+    config: &Config,
+) -> Result<PathBuf> {
+    // 1. Setup
+    let temp_dir = TempDirBuilder::new()
+        .prefix("dircat-git-api-")
+        .tempdir()?;
+    let client = build_reqwest_client()?;
+    let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
+
+    // 2. Resolve branch
+    let branch_to_use = if let Some(cli_branch) = &config.git_branch {
+        // Always prioritize the branch specified on the command line.
+            log::debug!("Using branch from --git-branch flag: {}", cli_branch);
+            cli_branch.clone()
+    } else if url_parts.branch != "HEAD" {
+        // Otherwise, use the branch from the URL if it's not a root URL.
+            log::debug!("Using branch from URL: {}", url_parts.branch);
+            url_parts.branch.clone()
+    } else {
+        // Finally, fall back to the repository's default branch.
+            log::debug!("Fetching default branch for {}/{}", owner, repo);
+            fetch_default_branch(&owner, &repo, &client)?
+    };
+    log::info!("Processing repository on branch: {}", branch_to_use);
+
+    // 3. List all files
+    let files_to_download =
+        list_all_files_recursively(&client, &owner, &repo, &branch_to_use, url_parts)?;
+
+    if files_to_download.is_empty() {
+        // Leak the TempDir to prevent it from being deleted, and return its path.
+        return Ok(temp_dir.keep());
+    }
+
+    // 4. Download files in parallel
+    use rayon::prelude::*;
+    files_to_download
+        .par_iter()
+        .map(|file_item| download_and_write_file(&client, file_item, temp_dir.path()))
+        .collect::<Result<()>>()?;
+
+    // 5. Return path to temp dir, consuming the TempDir object to prevent deletion.
+    // Leak the TempDir to prevent it from being deleted, and return its path.
+    Ok(temp_dir.keep())
+}
+
+/// Builds a `reqwest` client with default headers for GitHub API interaction.
+fn build_reqwest_client() -> Result<Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(ACCEPT, "application/vnd.github.v3+json".parse()?);
+    headers.insert(USER_AGENT, "dircat-rust-downloader".parse()?);
+
+    if let Ok(token) = env::var("GITHUB_TOKEN") {
+        headers.insert(AUTHORIZATION, format!("Bearer {}", token).parse()?);
+        log::debug!("Using GITHUB_TOKEN for authentication.");
+    }
+
+    let client = Client::builder().default_headers(headers).build()?;
+    Ok(client)
+}
+
+/// Fetches the default branch name for a repository.
+fn fetch_default_branch(owner: &str, repo: &str, client: &Client) -> Result<String> {
+    let api_url = format!("https://api.github.com/repos/{}/{}", owner, repo);
+    log::debug!("Fetching repo metadata from: {}", api_url);
+    let response = client.get(&api_url).send()?.error_for_status()?;
+    let repo_info: RepoInfo = response.json()?;
+    Ok(repo_info.default_branch)
+}
+
+/// Recursively lists all files in a given GitHub directory path using a queue.
+fn list_all_files_recursively(
+    client: &Client,
+    owner: &str,
+    repo: &str,
+    branch: &str,
+    url_parts: &ParsedGitUrl,
+) -> Result<Vec<ContentItem>> {
+    let mut files = Vec::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    queue.push_back(url_parts.subdirectory.clone());
+
+    while let Some(path) = queue.pop_front() {
+        let api_url = format!(
+            "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
+            owner, repo, path, branch
+        );
+
+        log::debug!("Fetching directory contents from: {}", api_url);
+        let response = client.get(&api_url).send()?.error_for_status()?;
+
+        // The API returns a single object if the path is a file, or an array for a directory.
+        let response_text = response.text()?;
+        let json_value: Value = serde_json::from_str(&response_text)?;
+
+        let items: Vec<ContentItem> = if json_value.is_array() {
+            serde_json::from_value(json_value)?
+        } else if json_value.is_object() {
+            vec![serde_json::from_value(json_value)?]
+        } else {
+            vec![]
+        };
+
+        for item in items {
+            if item.item_type == "file" {
+                if item.download_url.is_some() {
+                    files.push(item);
+                } else {
+                    log::warn!("Skipping file with no download_url: {}", item.path);
+                }
+            } else if item.item_type == "dir" {
+                queue.push_back(item.path);
+            }
+        }
+    }
+    Ok(files)
+}
+
+/// Downloads a single file and writes it to the correct relative path in the base directory.
+fn download_and_write_file(
+    client: &Client,
+    file_item: &ContentItem,
+    base_dir: &Path,
+) -> Result<()> {
+    let download_url = file_item.download_url.as_ref().unwrap(); // We already filtered for Some
+    log::debug!("Downloading file from: {}", download_url);
+
+    let response = client.get(download_url).send()?.error_for_status()?;
+    let content = response.bytes()?;
+
+    let local_path = base_dir.join(&file_item.path);
+    if let Some(parent_dir) = local_path.parent() {
+        fs::create_dir_all(parent_dir).with_context(|| {
+            format!(
+                "Failed to create directory structure for '{}'",
+                local_path.display()
+            )
+        })?;
+    }
+
+    fs::write(&local_path, content)
+        .with_context(|| format!("Failed to write downloaded content to '{}'", local_path.display()))
+}
+
+/// Helper to get owner/repo from a clone URL like "https://github.com/user/repo.git"
+fn parse_clone_url(clone_url: &str) -> Result<(String, String)> {
+    static RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?$").unwrap());
+    RE.captures(clone_url)
+        .and_then(|caps| Some((caps.get(1)?.as_str(), caps.get(2)?.as_str())))
+        .map(|(owner, repo)| (owner.to_string(), repo.to_string()))
+        .ok_or_else(|| anyhow!("Could not parse owner/repo from clone URL: {}", clone_url))
 }

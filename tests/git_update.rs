@@ -226,8 +226,48 @@ fn test_git_update_non_existent_branch() -> Result<()> {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "Could not find remote branch reference 'refs/remotes/origin/ghost-branch'",
+            "Could not find remote branch or tag named 'ghost-branch' after fetch.",
         ));
+
+    Ok(())
+}
+
+#[test]
+fn test_git_update_to_specific_tag() -> Result<()> {
+    let remote = TestRemote::new()?;
+    // Commit v1 and tag it
+    remote.commit_file("main", "file.txt", "v1 content", "Commit v1")?;
+    let commit_v1 = remote.repo.head()?.peel_to_commit()?;
+    remote.repo.tag(
+        "v1.0",
+        commit_v1.as_object(),
+        &git2::Signature::now("Test User", "test@example.com")?,
+        "Tag v1.0",
+        false,
+    )?;
+    // Commit v2 to the same branch
+    remote.commit_file("main", "file.txt", "v2 content", "Commit v2")?;
+    remote.set_default_branch("main")?;
+    let cache_dir = tempdir()?;
+
+    // 1. First run: clones the repo, which will be on the 'main' branch (v2 content).
+    dircat_cmd()
+        .env("DIRCAT_TEST_CACHE_DIR", cache_dir.path())
+        .arg(&remote.url)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("v2 content"));
+
+    // 2. Second run: should find the cache, fetch tags, and update to the 'v1.0' tag.
+    dircat_cmd()
+        .env("DIRCAT_TEST_CACHE_DIR", cache_dir.path())
+        .arg(&remote.url)
+        .arg("--git-branch")
+        .arg("v1.0")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("v1 content"))
+        .stdout(predicate::str::contains("v2 content").not());
 
     Ok(())
 }

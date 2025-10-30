@@ -59,6 +59,68 @@ fn setup_local_git_repo() -> Result<TempDir, Box<dyn std::error::Error>> {
     Ok(temp_dir)
 }
 
+/// Helper function to create a local git repository with tags for testing.
+///
+/// This sets up a repo with a structure like:
+/// - .gitignore (ignores *.log)
+/// - README.md (v1 commit)
+/// - src/main.rs (v2 commit)
+/// - A tag 'v1.0' on the first commit.
+fn setup_local_git_repo_with_tags() -> Result<TempDir, Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let repo_path = temp_dir.path();
+
+    // 1. Initialize the repository
+    let repo = git2::Repository::init(repo_path)?;
+    let signature = git2::Signature::now("Test User", "test@example.com")?;
+
+    // 2. First commit (v1)
+    fs::write(repo_path.join("README.md"), "# Test Repo v1")?;
+    fs::write(repo_path.join(".gitignore"), "*.log")?;
+    let mut index = repo.index()?;
+    index.add_path(std::path::Path::new("README.md"))?;
+    index.add_path(std::path::Path::new(".gitignore"))?;
+    index.write()?;
+    let oid_v1 = index.write_tree()?;
+    let tree_v1 = repo.find_tree(oid_v1)?;
+    let commit_v1_oid = repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "Initial commit (v1)",
+        &tree_v1,
+        &[],
+    )?;
+    let commit_v1 = repo.find_commit(commit_v1_oid)?;
+
+    // 3. Tag the first commit
+    repo.tag(
+        "v1.0",
+        commit_v1.as_object(),
+        &signature,
+        "Tagging version 1.0",
+        false,
+    )?;
+
+    // 4. Second commit (v2)
+    fs::create_dir_all(repo_path.join("src"))?;
+    fs::write(repo_path.join("src/main.rs"), "fn main() {} // v2")?;
+    index.add_path(std::path::Path::new("src/main.rs"))?;
+    index.write()?;
+    let oid_v2 = index.write_tree()?;
+    let tree_v2 = repo.find_tree(oid_v2)?;
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "Second commit (v2)",
+        &tree_v2,
+        &[&commit_v1],
+    )?;
+
+    Ok(temp_dir)
+}
+
 /// Tests cloning and processing a local file-based git repository.
 /// This test is fast and runs offline.
 #[test]
@@ -104,7 +166,7 @@ fn test_git_local_repository_input() -> Result<(), Box<dyn std::error::Error>> {
 #[ignore = "requires network access and is slow"]
 fn test_git_remote_repository_input() -> Result<(), Box<dyn std::error::Error>> {
     // A small, public, and stable repository for testing purposes.
-    let repo_url = "https://github.com/git-fixtures/basic.git";
+    let repo_url = "https://github.com/git-fixtures/basic";
 
     dircat_cmd()
         .arg(repo_url)
@@ -117,6 +179,58 @@ fn test_git_remote_repository_input() -> Result<(), Box<dyn std::error::Error>> 
         .stdout(predicate::str::contains("Copyright (c) 2015 Tyba"))
         .stdout(predicate::str::contains("## File: go/example.go"))
         .stdout(predicate::str::contains("package harvesterd"));
+
+    Ok(())
+}
+
+/// Tests cloning and processing a specific folder from a remote repository.
+/// This is a slow, network-dependent test.
+/// To run: `cargo test -- --ignored git_input`
+#[test]
+#[ignore = "requires network access and is slow"]
+fn test_git_remote_github_folder_url_input() -> Result<(), Box<dyn std::error::Error>> {
+    // This public repo has a `go/` directory containing `example.go`.
+    let repo_folder_url = "https://github.com/git-fixtures/basic/tree/master/go";
+
+    dircat_cmd()
+        .arg(repo_folder_url)
+        .assert()
+        .success()
+        // Check for file inside the 'go' directory
+        .stdout(predicate::str::contains("## File: example.go"))
+        .stdout(predicate::str::contains("package harvesterd"))
+        // Check that files from the root directory are NOT included
+        .stdout(predicate::str::contains("## File: CHANGELOG").not())
+        .stdout(predicate::str::contains("## File: LICENSE").not());
+
+    Ok(())
+}
+
+#[test]
+fn test_git_clone_specific_tag() -> Result<(), Box<dyn std::error::Error>> {
+    let source_repo_dir = setup_local_git_repo_with_tags()?;
+    let repo_path_str = source_repo_dir.path().to_str().unwrap();
+
+    #[cfg(windows)]
+    let repo_url = format!("file:///{}", repo_path_str.replace('\\', "/"));
+    #[cfg(not(windows))]
+    let repo_url = format!("file://{}", repo_path_str);
+
+    let temp_cache = tempdir()?;
+
+    dircat_cmd()
+        .arg(&repo_url)
+        .arg("--git-branch") // Using alias for --git-ref
+        .arg("v1.0")
+        .env("DIRCAT_TEST_CACHE_DIR", temp_cache.path())
+        .assert()
+        .success()
+        // Check that only files from the v1.0 tag are included
+        .stdout(predicate::str::contains("## File: README.md"))
+        .stdout(predicate::str::contains("# Test Repo v1"))
+        // Check that files from the later commit are NOT included
+        .stdout(predicate::str::contains("## File: src/main.rs").not())
+        .stdout(predicate::str::contains("fn main() {} // v2").not());
 
     Ok(())
 }

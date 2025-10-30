@@ -75,6 +75,10 @@ jobs:
         if: steps.changed_files.outputs.code_any_changed == 'true'
         run: cargo test --all-targets --verbose
 
+      - name: Run ignored (network-dependent) tests
+        if: steps.changed_files.outputs.code_any_changed == 'true'
+        run: cargo test --all-targets -- --ignored
+
       - name: Build (Debug)
         if: steps.changed_files.outputs.code_any_changed == 'true'
         run: cargo build --verbose

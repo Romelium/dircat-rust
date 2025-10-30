@@ -14,8 +14,8 @@ pub struct Cli {
     pub input_path: String,
 
     // --- Git Options ---
-    /// For git URL inputs, clone a specific branch instead of the default.
-    #[arg(long, value_name = "BRANCH")]
+    /// For git URL inputs, check out a specific branch, tag, or commitish instead of the default.
+    #[arg(long, alias = "git-ref", value_name = "BRANCH_OR_TAG")]
     pub git_branch: Option<String>,
 
     /// For git URL inputs, perform a shallow clone with a limited history depth.

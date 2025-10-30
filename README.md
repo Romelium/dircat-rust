@@ -22,7 +22,7 @@ It's designed for speed, developer convenience, and seamless integration with to
     - [Philosophy](#philosophy)
     - [Markdown Output Benefits](#markdown-output-benefits)
   - [Key Features](#key-features)
-    - [Intelligent File Discovery](#intelligent-file-discovery)
+    - [Intelligent File Discovery \& Remote Repository Support](#intelligent-file-discovery--remote-repository-support)
     - [Flexible Filtering](#flexible-filtering)
     - [Content Processing](#content-processing)
     - [Customizable Output](#customizable-output)
@@ -55,6 +55,7 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Goal: Include binary files (e.g., images) in the output](#goal-include-binary-files-eg-images-in-the-output)
       - [Goal: Exclude lockfiles from the output](#goal-exclude-lockfiles-from-the-output)
       - [Goal: Concatenate a remote git repository](#goal-concatenate-a-remote-git-repository)
+      - [Goal: Concatenate only the `src/config` directory from a remote repository](#goal-concatenate-only-the-srcconfig-directory-from-a-remote-repository)
   - [Tips \& Considerations](#tips--considerations)
   - [Comparison with Alternatives](#comparison-with-alternatives)
   - [Development Status \& Standards](#development-status--standards)
@@ -89,15 +90,18 @@ Are you tired of:
 
 ## Key Features
 
-### Intelligent File Discovery
+### Intelligent File Discovery & Remote Repository Support
 
-- **Git Repository Cloning:** Process remote git repositories directly by providing a URL.
-  - **Persistent Caching:** The first time you process a repository, `dircat` clones it into a persistent local cache (e.g., `~/.cache/dircat/repos` on Linux). Subsequent runs for the same URL are significantly faster as they only fetch the latest updates instead of re-cloning the entire repository.
-  - **Private Repos:** Automatically uses your SSH agent or default SSH keys for authentication.
-  - **Branch Selection:** Clone a specific branch with `--git-branch`.
-  - **Shallow Clone:** Perform a shallow clone with `--git-depth` to save time and data.
-- **Recursive Traversal:** Walks through directories recursively by default (`-n` to disable).
-- **Comprehensive `.gitignore` Support:** Natively respects rules from `.gitignore`, `.ignore`, global git config files, and parent directories using the `ignore` crate. (`-t` to disable).
+- **GitHub Folder API Integration (Fastest):** For any `github.com` URL pointing to a specific folder (e.g., `.../tree/main/src`), `dircat` uses the GitHub API to download only that folder's contents on-the-fly. This is extremely fast and avoids cloning large repositories.
+  - To access private repositories or avoid API rate limits, set a `GITHUB_TOKEN` environment variable with a [Personal Access Token](https://github.com/settings/tokens) that has `repo` scope.
+  - **Automatic Fallback:** If the GitHub API returns a rate limit error (HTTP 403), `dircat` will automatically fall back to performing a full `git clone` of the repository and then process the specified folder. A warning will be displayed when this occurs.
+- **Git Clone for Repositories:** For any git URL pointing to a repository root (e.g., `github.com/user/repo.git`, `gitlab.com/...`), `dircat` clones the repository.
+  - **Persistent Caching:** Cloned repositories are stored in a local cache (e.g., `~/.cache/dircat/repos` on Linux). Subsequent runs for the same URL are significantly faster as they only fetch the latest updates.
+- **Branch & Tag Selection:** Process a specific branch, tag, or commit with `--git-branch` (or the alias `--git-ref`). This works for both GitHub API and git clone methods.
+- **Shallow Clone:** For git clone operations, perform a shallow clone with `--git-depth` to save time and data.
+- **Private Repos:** Automatically uses your SSH agent or default SSH keys for authentication when cloning non-GitHub URLs.
+- **Recursive Traversal:** Walks through local or remote directories recursively by default (`-n` to disable).
+- **Comprehensive `.gitignore` Support:** Natively respects rules from `.gitignore`, `.ignore`, global git config files, and parent directories using the `ignore` crate (`-t` to disable).
 - **Custom Ignore Patterns:** Specify additional glob patterns to ignore files or directories (`-i`).
 - **Binary File Skipping:** Skips files detected as binary/non-text by default (`--include-binary` to override).
 - **Lockfile Skipping:** Option to easily skip common lockfiles (`--no-lockfiles`).
@@ -162,7 +166,7 @@ You can download a pre-compiled binary for your system directly from the [Latest
 #    https://github.com/romelium/dircat-rust/releases/latest
 #
 # 2. Set the VERSION and TARGET variables.
-#    - VERSION should be the tag name (e.g., v0.4.1).
+#    - VERSION should be the tag name.
 #    - TARGET options: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin
 VERSION="<latest_version>"
 TARGET="x86_64-unknown-linux-gnu"
@@ -189,7 +193,7 @@ chmod +x dircat
 #    https://github.com/romelium/dircat-rust/releases/latest
 #
 # 2. Set the VERSION variable.
-#    - VERSION should be the tag name (e.g., v0.4.0).
+#    - VERSION should be the tag name.
 $VERSION = "<latest_version>"
 $TARGET = "x86_64-pc-windows-msvc"
 
@@ -260,7 +264,7 @@ dircat . > output.md
 ## Usage
 
 ```text
-dircat [OPTIONS] [INPUT]
+dircat [OPTIONS] [PATH | GIT_URL]
 ```
 
 - `INPUT`: The directory, specific file, or git repository URL to process. Defaults to the current directory (`.`).
@@ -279,6 +283,9 @@ dircat src/main.rs
 
 # Process a remote git repository (clones to a persistent cache for speed on subsequent runs)
 dircat https://github.com/romelium/dircat-rust.git
+
+# Process only the 'src' directory from a remote git repository
+dircat https://github.com/romelium/dircat-rust/tree/main/src
 
 # Process a specific branch of a remote repository
 dircat https://github.com/some/repo.git --git-branch develop
@@ -300,10 +307,11 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 #### Input Options
 
 | Option                | Description                                                              |
-| :-------------------- | :----------------------------------------------------------------------- |
-| `[INPUT]`             | Path to a directory/file, or a git URL. Defaults to `.`.                 |
-| `--git-branch BRANCH` | For git URL inputs, clone a specific branch instead of the default.      |
-| `--git-depth DEPTH`   | For git URL inputs, perform a shallow clone with a limited history depth. |
+| Option                                  | Description                                                                    |
+| :-------------------------------------- | :----------------------------------------------------------------------------- |
+| `[INPUT]`                               | Path to a directory/file, or a git URL. Defaults to `.`.                       |
+| `--git-branch BRANCH`, `--git-ref REF`  | For git URL inputs, check out a specific branch or tag instead of the default. |
+| `--git-depth DEPTH`                     | For git URL inputs, perform a shallow clone with a limited history depth.      |
 
 #### Filtering Options
 
@@ -525,19 +533,29 @@ dircat https://github.com/some/repo.git --git-branch develop
 dircat https://github.com/some/repo.git --git-depth 1
 ```
 
+#### Goal: Concatenate only the `src/config` directory from a remote repository
+
+You can provide a URL that points directly to a folder on GitHub. `dircat` will parse the URL and use the GitHub API to download only the contents of that specific folder, which is much faster than cloning the entire repository.
+
+```bash
+# This will process only the contents of the 'src/config' directory
+# from the 'main' branch of the dircat-rust repository.
+dircat https://github.com/romelium/dircat-rust/tree/main/src/config
+```
+
 ## Tips & Considerations
 
-- **Large Output:** Running `dircat` on large directories can produce significant output. Consider using filters (`-m`, `-e`, `-r`, etc.) or the dry-run (`-D`) option first. Use `-o FILE` to redirect large outputs to a file instead of overwhelming your terminal.
-- **Binary Files:** By default, `dircat` attempts to skip binary files. Use `-B` if you need to include them (e.g., for embedding small images represented as text, though this is generally not recommended for large binaries). The detection is heuristic and might not be perfect.
-- **Lockfiles:** Use `-K` to easily exclude common dependency lockfiles. This is often desirable when generating context for LLMs.
-- **Git Cache:** When processing git repositories, `dircat` stores them in a cache directory (e.g., `~/.cache/dircat/repos` on Linux, platform-specific otherwise) to speed up future runs. If you ever need to force a fresh clone, you can manually delete the corresponding hashed directory from this cache location.
+- **Large Output:** Running `dircat` on large directories can produce significant output. Use filters (`-m`, `-e`, `-r`, etc.) or the dry-run (`-D`) option first. Redirect large outputs to a file (`-o FILE`) instead of overwhelming your terminal.
+- **Binary Files:** By default, `dircat` skips binary files. Use `-B` to include them. The detection is heuristic and might not be perfect.
+- **Lockfiles:** Use `-K` to easily exclude common dependency lockfiles, which is useful when generating context for LLMs.
+- **Git Cache:** When cloning repositories (from any host, including GitHub root URLs), `dircat` stores them in a cache directory (e.g., `~/.cache/dircat/repos` on Linux, platform-specific otherwise) to speed up future runs. To force a fresh clone, you can manually delete the corresponding hashed directory from this cache. GitHub folder URLs (e.g., `.../tree/main/src`) are not cached this way; they are downloaded fresh via the API on each run.
 - **Path Handling:**
   - **Display:** File paths shown in `## File:` headers and the summary (`-s`) are relative to the *input path* you provided (or the current directory if none was given).
   - **Filtering:**
     - Path Regex (`-r`): Matches against the **relative path** (from the input directory), normalized to use `/` separators.
     - Filename Regex (`-d`): Matches against the filename (basename) only.
     - Ignore/Last Globs (`-i`, `-z`): Match against the path relative to the *input path*.
-- **Performance:** While `dircat-rust` is designed for speed, processing extremely large files or a vast number of files will still take time. Use filters to narrow down the scope when possible.
+- **Performance:** While `dircat-rust` is fast, processing extremely large files or a vast number of files will still take time. Use filters to narrow down the scope when possible.
 
 ## Comparison with Alternatives
 

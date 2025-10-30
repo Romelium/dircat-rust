@@ -1,4 +1,3 @@
-// src/config/builder.rs
 
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
@@ -8,7 +7,7 @@ use super::{
 };
 use crate::cli::Cli;
 use crate::git;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::PathBuf; // Keep PathBuf
 
 impl TryFrom<Cli> for Config {
@@ -17,12 +16,12 @@ impl TryFrom<Cli> for Config {
     fn try_from(cli: Cli) -> Result<Self, Self::Error> {
         validate_cli_options(&cli)?;
         let absolute_input_path: PathBuf;
-        let base_path_display: String;
+        let base_path_display: String = cli.input_path.clone();
 
         let mut config = Config {
             // Initialize with defaults that will be overwritten
             input_path: PathBuf::new(),
-            base_path_display: String::new(),
+            base_path_display: String::new(), // Will be overwritten later
             input_is_file: false,
             max_size: parse_max_size(cli.max_size)?,
             recursive: !cli.no_recursive,
@@ -56,15 +55,70 @@ impl TryFrom<Cli> for Config {
             git_depth: cli.git_depth,
         };
 
-        // Check if the input is a git URL
-        if git::is_git_url(&cli.input_path) {
-            // Get the repository, either by cloning or updating the cache.
+        // Check if the input is a GitHub folder URL
+        if let Some(parsed_url) = git::parse_github_folder_url(&cli.input_path) {
+            log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
+
+            match git::download_directory_via_api(&parsed_url, &config) {
+                Ok(temp_dir_root) => {
+                    // API download successful, proceed as before.
+                    log::debug!("Successfully downloaded from GitHub API.");
+                    // The actual path to process is the subdirectory *within* the temporary directory.
+                    absolute_input_path = temp_dir_root.join(&parsed_url.subdirectory);
+                    if !absolute_input_path.exists() {
+                        return Err(anyhow!(
+                            "Subdirectory '{}' not found in repository. It might be empty or invalid.",
+                            parsed_url.subdirectory
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // API download failed, check for rate limit error.
+                    let is_rate_limit_error = e.downcast_ref::<reqwest::Error>()
+                        .map_or(false, |re| re.status() == Some(reqwest::StatusCode::FORBIDDEN));
+
+                    if is_rate_limit_error {
+                        // It's a 403 FORBIDDEN error, so we fall back to a full git clone.
+                        log::warn!(
+                            "GitHub API request failed (likely rate-limited). Falling back to a full git clone of '{}'.",
+                            parsed_url.clone_url
+                        );
+                        log::warn!("To avoid this, set a GITHUB_TOKEN environment variable with 'repo' scope.");
+
+                        // Use the clone_url from the parsed URL to clone the whole repo.
+                        let cloned_repo_root = git::get_repo(&parsed_url.clone_url, &config)?;
+
+                        // The path to process is the subdirectory *within* the cloned repo.
+                        absolute_input_path = cloned_repo_root.join(&parsed_url.subdirectory);
+
+                        // Check if the subdirectory actually exists in the cloned repo.
+                        if !absolute_input_path.exists() {
+                            return Err(anyhow!(
+                                "Subdirectory '{}' not found in the cloned repository '{}'.",
+                                parsed_url.subdirectory,
+                                parsed_url.clone_url
+                            ));
+                        }
+                    } else {
+                        // It's some other API error (like 404 NOT_FOUND), handle as before.
+                        if let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() {
+                            if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                                return Err(anyhow!(
+                                    "Subdirectory '{}' not found in repository. It might be empty or invalid.",
+                                    parsed_url.subdirectory
+                                ));
+                            }
+                        }
+                        return Err(anyhow!("Failed to download from GitHub API: {}", e));
+                    }
+                }
+            }
+        } else if git::is_git_url(&cli.input_path) {
+            // Standard git URL (non-github, e.g., gitlab) uses the clone method
             absolute_input_path = git::get_repo(&cli.input_path, &config)?;
-            base_path_display = cli.input_path;
         } else {
-            // Otherwise, treat it as a local path
+            // Local path
             absolute_input_path = resolve_input_path(&cli.input_path)?;
-            base_path_display = cli.input_path;
         }
 
         config.input_path = absolute_input_path;
