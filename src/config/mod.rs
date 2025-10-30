@@ -29,6 +29,8 @@ pub struct Config {
     pub exclude_extensions: Option<Vec<String>>,
     /// List of custom ignore patterns (gitignore syntax) provided via `-i`.
     pub ignore_patterns: Option<Vec<String>>,
+    /// List of compiled regular expressions to exclude files by full path. If `Some`, any path matching one of these is skipped.
+    pub exclude_path_regex: Option<Vec<Regex>>,
     /// List of compiled regular expressions to match against the full file path. If `Some`, the path must match at least one.
     pub path_regex: Option<Vec<Regex>>,
     /// List of compiled regular expressions to match against the filename (basename). If `Some`, the filename must match at least one.
@@ -81,6 +83,7 @@ impl Config {
             exclude_extensions: None,
             ignore_patterns: None,
             path_regex: None,
+            exclude_path_regex: None,
             filename_regex: None,
             use_gitignore: true,
             include_binary: false,

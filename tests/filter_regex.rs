@@ -79,6 +79,58 @@ fn test_filename_regex_filter() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_exclude_path_regex_filter() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let src_dir = temp.path().join("src");
+    let test_dir = temp.path().join("tests");
+    fs::create_dir_all(&src_dir)?;
+    fs::create_dir_all(&test_dir)?;
+
+    fs::write(src_dir.join("main.rs"), "Main")?;
+    fs::write(test_dir.join("integration.rs"), "Test")?;
+    fs::write(temp.path().join("README.md"), "Readme")?;
+
+    dircat_cmd()
+        .arg("-X")
+        .arg(r"^tests/") // Exclude anything in the tests/ directory
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: src/main.rs"))
+        .stdout(predicate::str::contains("## File: README.md"))
+        .stdout(predicate::str::contains("## File: tests/integration.rs").not());
+
+    temp.close()?;
+    Ok(())
+}
+
+#[test]
+fn test_exclude_overrides_include_regex() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let src_dir = temp.path().join("src");
+    fs::create_dir_all(&src_dir)?;
+
+    fs::write(src_dir.join("main.rs"), "Main")?;
+    fs::write(src_dir.join("lib.rs"), "Lib")?;
+    fs::write(src_dir.join("config.rs"), "Config")?;
+
+    dircat_cmd()
+        .arg("-r")
+        .arg(r"^src/") // Include everything in src/
+        .arg("-X")
+        .arg(r"main\.rs$") // But exclude main.rs
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: src/lib.rs"))
+        .stdout(predicate::str::contains("## File: src/config.rs"))
+        .stdout(predicate::str::contains("## File: src/main.rs").not());
+
+    temp.close()?;
+    Ok(())
+}
+
+#[test]
 fn test_path_and_filename_regex_filters() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempdir()?;
     let src_dir = temp.path().join("src");

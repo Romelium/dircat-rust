@@ -29,6 +29,7 @@ impl TryFrom<Cli> for Config {
             extensions: normalize_extensions(cli.extensions),
             exclude_extensions: normalize_extensions(cli.exclude_extensions),
             ignore_patterns: cli.ignore_patterns,
+            exclude_path_regex: compile_regex_vec(cli.exclude_path_regex, "exclude path")?,
             path_regex: compile_regex_vec(cli.path_regex, "path")?,
             filename_regex: compile_regex_vec(cli.filename_regex, "filename")?,
             use_gitignore: !cli.no_gitignore,

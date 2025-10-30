@@ -45,6 +45,10 @@ It's designed for speed, developer convenience, and seamless integration with to
       - [Execution Control Options](#execution-control-options)
   - [Examples / Use Cases](#examples--use-cases)
       - [Goal: Concatenate all Rust files in `src` and `tests`](#goal-concatenate-all-rust-files-in-src-and-tests)
+      - [Goal: Create context for an LLM, excluding tests, logs, and comments](#goal-create-context-for-an-llm-excluding-tests-logs-and-comments)
+      - [Goal: Concatenate all Rust code, excluding the `tests` directory](#goal-concatenate-all-rust-code-excluding-the-tests-directory)
+      - [Goal: See which files would be included if max size is 50kB](#goal-see-which-files-would-be-included-if-max-size-is-50kb)
+      - [Goal: Process `README.md` and `LICENSE` last](#goal-process-readmemd-and-license-last)
       - [Goal: Concatenate specific config files only](#goal-concatenate-specific-config-files-only)
       - [Goal: Copy Python code (no comments/empty lines) to clipboard](#goal-copy-python-code-no-commentsempty-lines-to-clipboard)
       - [Goal: Pipe output to `glow` for terminal rendering](#goal-pipe-output-to-glow-for-terminal-rendering)
@@ -230,15 +234,15 @@ cargo build --release
 1. **Install** `dircat` using one of the methods above (pre-compiled binary recommended).
 2. **Run it** in your project directory:
 
-    ```bash
-    # Concatenate all relevant text files in the current directory into output.md
-    # (skips binaries, respects .gitignore by default)
-    dircat . > output.md
-    ```
+```bash
+# Concatenate all relevant text files in the current directory into output.md
+# (skips binaries, respects .gitignore by default)
+dircat . > output.md
+```
 
 3. **Check `output.md`!** You should see something like:
 
-    ````markdown
+````markdown
     ## File: src/main.rs
     ```rs
     fn main() { /* ... */ }
@@ -249,7 +253,7 @@ cargo build --release
     # My Project
     ...
     ```
-    ````
+````
 
 🚀 **Start using `dircat` now!** Try `dircat .` in your project.
 
@@ -310,6 +314,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--ext EXT`        | `-e`  | Include *only* files with these extensions (case-insensitive, repeatable).                              | `-e rs -e toml`             |
 | `--exclude-ext EXT`| `-x`  | Exclude files with these extensions (case-insensitive, repeatable, overrides `-e`).                       | `-x log -x tmp`             |
 | `--ignore GLOB`    | `-i`  | Ignore files/directories matching these custom glob patterns (relative to input path, repeatable).      | `-i "target/*" -i "*.lock"` |
+| `--exclude-regex REGEX` | `-X` | Exclude files whose full path matches any of these regexes (case-insensitive, repeatable). | `-X "tests/.*" -X ".*\.log$"` |
 | `--regex REGEX`    | `-r`  | Include *only* files whose full path matches any of these regexes (case-insensitive, repeatable).       | `-r "src/.*\.rs$"`          |
 | `--filename-regex REGEX` | `-d` | Include *only* files whose filename matches any of these regexes (case-insensitive, repeatable). | `-d "^test_.*"`             |
 | `--no-gitignore`   | `-t`  | Process all files, ignoring `.gitignore`, `.ignore`, hidden files, etc.                                 | `-t`                        |
@@ -375,17 +380,17 @@ dircat . -e rs -r "^(src|tests)/" > rust_code.md
     ```rs
         // Test code...
     ```
-    ````
+````
 
-    #### Goal: Create context for an LLM, excluding tests, logs, and comments
+#### Goal: Create context for an LLM, excluding tests, logs, and comments
 
-    ```bash
-        dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_context.md
-    ```
+```bash
+dircat . -e rs -e py -e toml -x log -i "tests/*" -c --no-lockfiles -o llm_context.md
+```
 
-    *Output Snippet:*
+*Output Snippet:*
 
-    ````markdown
+````markdown
     ## File: src/config.py
     ```py
         # Config loading logic (comments removed)
@@ -395,32 +400,54 @@ dircat . -e rs -r "^(src|tests)/" > rust_code.md
     ```toml
         # Dependencies (comments removed)
     ```
-    ````
+````
 
-    #### Goal: See which files would be included if max size is 50kB
+#### Goal: Concatenate all Rust code, excluding the `tests` directory
+    
+This is useful for creating a context of only the application source code, ignoring test files. The `--exclude-regex` (`-X`) option is perfect for this, as it filters by path.
 
-    ```bash
-        dircat . -m 50k -D
+```bash
+dircat . -e rs -X "^tests/" > app_code_only.md
+```
+
+*Output Snippet:* (Files from `src/` are included, but `tests/` are skipped)
+    
+````markdown
+    ## File: src/main.rs
+    ```rs
+    // main function...
     ```
 
-    *Output Snippet:*
-
+    ## File: src/lib.rs
+    ```rs
+    // library code...
     ```
-        --- Dry Run: Files that would be processed ---
-        - src/small_module.rs
-        - config/settings.toml
-        --- End Dry Run ---
-    ```
+````
+    
+#### Goal: See which files would be included if max size is 50kB
 
-    #### Goal: Process `README.md` and `LICENSE` last
+```bash
+dircat . -m 50k -D
+```
 
-    ```bash
-        dircat . -z README.md -z LICENSE > project_with_readme_last.md
-    ```
+*Output Snippet:*
 
-    *Output Snippet:* (Other files appear first, then README, then LICENSE)
+```
+--- Dry Run: Files that would be processed ---
+- src/small_module.rs
+- config/settings.toml
+--- End Dry Run ---
+```
 
-    ````markdown
+#### Goal: Process `README.md` and `LICENSE` last
+
+```bash
+dircat . -z README.md -z LICENSE > project_with_readme_last.md
+```
+
+*Output Snippet:* (Other files appear first, then README, then LICENSE)
+
+````markdown
     ...
     ## File: src/main.rs
     ```rs

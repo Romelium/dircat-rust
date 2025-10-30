@@ -39,6 +39,10 @@ pub struct Cli {
     #[arg(short = 'x', long = "exclude-ext", value_name = "EXT", num_args = 1..)]
     pub exclude_extensions: Option<Vec<String>>,
 
+    /// Exclude files whose relative path (from the input directory) matches any of these regular expressions (case-insensitive).
+    #[arg(short = 'X', long = "exclude-regex", value_name = "REGEX", num_args = 1..)]
+    pub exclude_path_regex: Option<Vec<String>>,
+
     /// Ignore files or directories matching these glob patterns (relative to input path). Can be specified multiple times.
     #[arg(short = 'i', long = "ignore", value_name = "GLOB", num_args = 1..)]
     pub ignore_patterns: Option<Vec<String>>,

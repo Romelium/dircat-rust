@@ -163,15 +163,30 @@ fn passes_regex_filters(
     relative_path: &Path, // Relative path for path regex matching
     config: &Config,
 ) -> Result<bool, AppError> {
-    // Check path regex filter against the relative path
-    if let Some(path_regex_vec) = &config.path_regex {
+    // --- 1. Check Exclude Path Regex First (takes precedence) ---
+    if let Some(exclude_path_regex_vec) = &config.exclude_path_regex {
         let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
-        let matches = path_regex_vec
+        let is_excluded = exclude_path_regex_vec
+            .iter()
+            .any(|re| re.is_match(&relative_path_str));
+        if is_excluded {
+            debug!(
+                "Path matched an exclude regex, skipping: {}",
+                relative_path_str
+            );
+            return Ok(false);
+        }
+    }
+
+    // --- 2. Check Include Path Regex ---
+    if let Some(include_path_regex_vec) = &config.path_regex {
+        let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
+        let matches = include_path_regex_vec
             .iter()
             .any(|re| re.is_match(&relative_path_str));
         debug!(
-            "Checking path regex vector against relative path: regexes={:?}, path={}",
-            path_regex_vec, relative_path_str,
+            "Checking include path regex vector against relative path: regexes={:?}, path={}",
+            include_path_regex_vec, relative_path_str,
         );
         if !matches {
             debug!("Path regex vector did not match relative path");
@@ -180,7 +195,7 @@ fn passes_regex_filters(
         debug!("Path regex vector matched relative path");
     }
 
-    // Check filename regex filter against the filename component of the absolute path
+    // --- 3. Check Include Filename Regex ---
     if let Some(filename_regex_vec) = &config.filename_regex {
         if let Some(filename) = path.file_name() {
             let filename_str = filename.to_string_lossy();
@@ -210,6 +225,7 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use regex::Regex;
+    use std::collections::HashMap;
     use std::fs::{self, File};
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -217,24 +233,30 @@ mod tests {
     // Helper to create a Config with specific regex filters
     fn create_config_with_regex(
         path_patterns: Option<Vec<&str>>,
+        exclude_path_patterns: Option<Vec<&str>>,
         filename_patterns: Option<Vec<&str>>,
     ) -> Config {
-        let path_regex = path_patterns.map(|patterns| {
-            patterns
-                .iter()
-                .map(|p| Regex::new(p).unwrap())
-                .collect::<Vec<_>>()
-        });
-        let filename_regex = filename_patterns.map(|patterns| {
-            patterns
-                .iter()
-                .map(|p| Regex::new(p).unwrap())
-                .collect::<Vec<_>>()
-        });
+        let mut regex_map: HashMap<String, Option<Vec<Regex>>> = HashMap::new();
+        let pattern_map = HashMap::from([
+            ("path", path_patterns),
+            ("exclude_path", exclude_path_patterns),
+            ("filename", filename_patterns),
+        ]);
+
+        for (key, patterns_opt) in pattern_map {
+            let compiled = patterns_opt.map(|patterns| {
+                patterns
+                    .iter()
+                    .map(|p| Regex::new(p).unwrap())
+                    .collect::<Vec<_>>()
+            });
+            regex_map.insert(key.to_string(), compiled);
+        }
 
         let mut config = Config::new_for_test();
-        config.path_regex = path_regex;
-        config.filename_regex = filename_regex;
+        config.path_regex = regex_map.remove("path").unwrap();
+        config.exclude_path_regex = regex_map.remove("exclude_path").unwrap();
+        config.filename_regex = regex_map.remove("filename").unwrap();
         config
     }
 
@@ -248,7 +270,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let (abs_path, rel_path) = create_paths(dir.path(), "test_file.txt");
         File::create(&abs_path).unwrap();
-        let config = create_config_with_regex(None, None);
+        let config = create_config_with_regex(None, None, None);
         assert!(passes_regex_filters(&abs_path, &rel_path, &config)?);
         Ok(())
     }
@@ -263,10 +285,49 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Regex that should match rel_path1 (starts with "subdir/")
-        let config = create_config_with_regex(Some(vec!["^subdir/"]), None);
+        let config = create_config_with_regex(Some(vec!["^subdir/"]), None, None);
 
         assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?);
         assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_regex_exclude_path_match() -> Result<(), AppError> {
+        let dir = tempdir().unwrap();
+        let (abs_path1, rel_path1) = create_paths(dir.path(), "src/main.rs");
+        let (abs_path2, rel_path2) = create_paths(dir.path(), "tests/main.rs");
+        fs::create_dir_all(abs_path1.parent().unwrap()).unwrap();
+        fs::create_dir_all(abs_path2.parent().unwrap()).unwrap();
+        File::create(&abs_path1).unwrap();
+        File::create(&abs_path2).unwrap();
+
+        // Exclude anything in the "tests/" directory
+        let config = create_config_with_regex(None, Some(vec!["^tests/"]), None);
+
+        assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?); // src/main.rs should pass
+        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?); // tests/main.rs should be excluded
+        Ok(())
+    }
+
+    #[test]
+    fn test_regex_exclude_overrides_include() -> Result<(), AppError> {
+        let dir = tempdir().unwrap();
+        let (abs_path1, rel_path1) = create_paths(dir.path(), "src/main.rs");
+        let (abs_path2, rel_path2) = create_paths(dir.path(), "src/lib.rs");
+        fs::create_dir_all(abs_path1.parent().unwrap()).unwrap();
+        File::create(&abs_path1).unwrap();
+        File::create(&abs_path2).unwrap();
+
+        // Include everything in "src/", but exclude "main.rs"
+        let config = create_config_with_regex(
+            Some(vec!["^src/"]),
+            Some(vec!["main\\.rs$"]),
+            None,
+        );
+
+        assert!(!passes_regex_filters(&abs_path1, &rel_path1, &config)?); // main.rs is excluded
+        assert!(passes_regex_filters(&abs_path2, &rel_path2, &config)?); // lib.rs is included
         Ok(())
     }
 
@@ -280,9 +341,9 @@ mod tests {
         File::create(&abs_path).unwrap();
 
         // Regex uses forward slashes, should match normalized relative path
-        let config_fwd = create_config_with_regex(Some(vec!["^subdir/match"]), None);
+        let config_fwd = create_config_with_regex(Some(vec!["^subdir/match"]), None, None);
         // Regex uses backslashes, should NOT match normalized relative path
-        let config_bwd = create_config_with_regex(Some(vec![r"^subdir\\match"]), None);
+        let config_bwd = create_config_with_regex(Some(vec![r"^subdir\\match"]), None, None);
 
         assert!(passes_regex_filters(&abs_path, &rel_path, &config_fwd)?);
         assert!(!passes_regex_filters(&abs_path, &rel_path, &config_bwd)?);
@@ -298,7 +359,7 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Regex that should match path1's filename
-        let config = create_config_with_regex(None, Some(vec![r"^match_.*\.log$"]));
+        let config = create_config_with_regex(None, None, Some(vec![r"^match_.*\.log$"]));
 
         assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?);
         assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?);
@@ -322,6 +383,7 @@ mod tests {
         // Regexes that should match path1
         let config = create_config_with_regex(
             Some(vec!["^target_dir/"]),       // Matches relative path
+            None,
             Some(vec![r"^target_file\.rs$"]), // Matches filename
         );
 
@@ -338,7 +400,7 @@ mod tests {
         let current_dir_abs = PathBuf::from("."); // Represents current dir
         let current_dir_rel = PathBuf::from(".");
 
-        let config_filename = create_config_with_regex(None, Some(vec!["anything"])); // Has filename regex
+        let config_filename = create_config_with_regex(None, None, Some(vec!["anything"])); // Has filename regex
                                                                                       // Should fail because "." has no filename component
         assert!(!passes_regex_filters(
             &current_dir_abs,
@@ -346,7 +408,7 @@ mod tests {
             &config_filename
         )?);
 
-        let config_path = create_config_with_regex(Some(vec![r"^\.$"]), None); // Match path "."
+        let config_path = create_config_with_regex(Some(vec![r"^\.$"]), None, None); // Match path "."
                                                                                // Should pass because path regex matches relative path "."
         assert!(passes_regex_filters(
             &current_dir_abs,
