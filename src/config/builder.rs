@@ -73,10 +73,9 @@ impl TryFrom<Cli> for Config {
                 }
                 Err(e) => {
                     // API download failed, check for rate limit error.
-                    let is_rate_limit_error =
-                        e.downcast_ref::<reqwest::Error>().is_some_and(|re| {
-                            re.status() == Some(reqwest::StatusCode::FORBIDDEN)
-                        });
+                    let is_rate_limit_error = e
+                        .downcast_ref::<reqwest::Error>()
+                        .is_some_and(|re| re.status() == Some(reqwest::StatusCode::FORBIDDEN));
 
                     if is_rate_limit_error {
                         // It's a 403 FORBIDDEN error, so we fall back to a full git clone.
