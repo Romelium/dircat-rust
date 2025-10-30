@@ -87,7 +87,8 @@ Are you tired of:
 
 ### Intelligent File Discovery
 
-- **Git Repository Cloning:** Process remote git repositories directly by providing a URL. `dircat` will clone the repo into a temporary location and process it.
+- **Git Repository Cloning:** Process remote git repositories directly by providing a URL.
+  - **Persistent Caching:** The first time you process a repository, `dircat` clones it into a persistent local cache (e.g., `~/.cache/dircat/repos` on Linux). Subsequent runs for the same URL are significantly faster as they only fetch the latest updates instead of re-cloning the entire repository.
   - **Private Repos:** Automatically uses your SSH agent or default SSH keys for authentication.
   - **Branch Selection:** Clone a specific branch with `--git-branch`.
   - **Shallow Clone:** Perform a shallow clone with `--git-depth` to save time and data.
@@ -272,7 +273,7 @@ dircat src
 # Process only a single file (binary check still applies unless --include-binary)
 dircat src/main.rs
 
-# Process a remote git repository by cloning it to a temporary directory
+# Process a remote git repository (clones to a persistent cache for speed on subsequent runs)
 dircat https://github.com/romelium/dircat-rust.git
 
 # Process a specific branch of a remote repository
@@ -484,7 +485,8 @@ dircat . --no-lockfiles > project_without_locks.md
 #### Goal: Concatenate a remote git repository
 
 ```bash
-# Clones the repo to a temporary directory and processes it.
+# Clones the repo to a persistent cache directory and processes it.
+# Subsequent runs for the same URL will be much faster.
 # Automatically uses SSH keys for private repos.
 # Displays a progress bar for long clones.
 dircat git@github.com:romelium/dircat-rust.git > repo_content.md
@@ -501,6 +503,7 @@ dircat https://github.com/some/repo.git --git-depth 1
 - **Large Output:** Running `dircat` on large directories can produce significant output. Consider using filters (`-m`, `-e`, `-r`, etc.) or the dry-run (`-D`) option first. Use `-o FILE` to redirect large outputs to a file instead of overwhelming your terminal.
 - **Binary Files:** By default, `dircat` attempts to skip binary files. Use `-B` if you need to include them (e.g., for embedding small images represented as text, though this is generally not recommended for large binaries). The detection is heuristic and might not be perfect.
 - **Lockfiles:** Use `-K` to easily exclude common dependency lockfiles. This is often desirable when generating context for LLMs.
+- **Git Cache:** When processing git repositories, `dircat` stores them in a cache directory (e.g., `~/.cache/dircat/repos` on Linux, platform-specific otherwise) to speed up future runs. If you ever need to force a fresh clone, you can manually delete the corresponding hashed directory from this cache location.
 - **Path Handling:**
   - **Display:** File paths shown in `## File:` headers and the summary (`-s`) are relative to the *input path* you provided (or the current directory if none was given).
   - **Filtering:**
