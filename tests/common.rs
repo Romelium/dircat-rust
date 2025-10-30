@@ -8,7 +8,6 @@ pub fn dircat_cmd() -> Command {
     Command::cargo_bin("dircat").expect("Failed to find dircat binary")
 }
 
-
 // Potential future helpers for setting up temporary directories/files
 /*
 use tempfile::{tempdir, TempDir};

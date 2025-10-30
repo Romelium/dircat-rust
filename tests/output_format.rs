@@ -31,7 +31,8 @@ fn test_output_multiple_files_separators() -> Result<(), Box<dyn std::error::Err
     fs::write(temp.path().join("b.txt"), "Content B")?;
     fs::write(temp.path().join("a.txt"), "Content A")?;
 
-    let expected_output = "## File: a.txt\n```txt\nContent A\n```\n\n## File: b.txt\n```txt\nContent B\n```\n";
+    let expected_output =
+        "## File: a.txt\n```txt\nContent A\n```\n\n## File: b.txt\n```txt\nContent B\n```\n";
 
     dircat_cmd()
         .current_dir(temp.path())
@@ -48,7 +49,8 @@ fn test_output_single_file_with_summary_separator() -> Result<(), Box<dyn std::e
     let temp = tempdir()?;
     fs::write(temp.path().join("a.txt"), "Content A")?;
 
-    let expected_output = "## File: a.txt\n```txt\nContent A\n```\n\n---\nProcessed Files: (1)\n- a.txt\n";
+    let expected_output =
+        "## File: a.txt\n```txt\nContent A\n```\n\n---\nProcessed Files: (1)\n- a.txt\n";
 
     dircat_cmd()
         .arg("-s")

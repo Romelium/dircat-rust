@@ -46,12 +46,15 @@ pub fn generate_output(
 
     // --- Write Summary ---
     if config.summary {
-        if !first_block { // This means at least one file was processed
+        if !first_block {
+            // This means at least one file was processed
             // Add a blank line separator before the summary
             writeln!(writer)?;
         }
-        let all_processed_files: Vec<&FileInfo> =
-            sorted_normal_files.iter().chain(last_files.iter()).collect();
+        let all_processed_files: Vec<&FileInfo> = sorted_normal_files
+            .iter()
+            .chain(last_files.iter())
+            .collect();
         summary::write_summary(writer, &all_processed_files, config)?;
     }
 
