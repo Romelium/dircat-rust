@@ -7,9 +7,7 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 /// Configures and builds the `ignore::WalkBuilder` based on `Config`.
-pub(super) fn build_walker(
-    config: &Config,
-) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
+pub(super) fn build_walker(config: &Config) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
     let mut walker_builder = WalkBuilder::new(&config.input_path);
     let mut temp_override_file: Option<NamedTempFile> = None;
 
