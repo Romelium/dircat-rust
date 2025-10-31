@@ -1,13 +1,17 @@
 use crate::config::Config;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glob::Pattern;
-use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use log::debug; // Ensure debug is imported
+use std::io::Write;
+use tempfile::NamedTempFile;
 
 /// Configures and builds the `ignore::WalkBuilder` based on `Config`.
-pub(super) fn build_walker(config: &Config) -> Result<ignore::Walk> {
+pub(super) fn build_walker(
+    config: &Config,
+) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
     let mut walker_builder = WalkBuilder::new(&config.input_path);
+    let mut temp_override_file: Option<NamedTempFile> = None;
 
     // If --last or --only is used, we can add those patterns as overrides.
     // This will cause the walker to yield matching files even if they are
@@ -17,20 +21,24 @@ pub(super) fn build_walker(config: &Config) -> Result<ignore::Walk> {
         debug!("Configuring WalkBuilder: standard_filters enabled.");
 
         if let Some(last_patterns) = &config.process_last {
-            let mut ov_builder = OverrideBuilder::new(&config.input_path);
-            // Add a general "whitelist everything" pattern first. This has the
-            // lowest precedence and defeats the `ignore` crate's default
-            // behavior of treating an override as a global whitelist.
-            // Now, all non-gitignored files will be yielded, as expected.
-            ov_builder.add("**")?;
+            // Using OverrideBuilder acts as an inclusion filter, which is not what we want.
+            // Instead, we create a temporary, high-precedence ignore file with whitelist
+            // rules (`!pattern`) for the --last patterns. This correctly overrides
+            // .gitignore rules for just those patterns without filtering out other files.
+            let mut file = NamedTempFile::new()
+                .with_context(|| "Failed to create temporary override file for --last patterns")?;
             for pattern in last_patterns {
-                // Now add the user's patterns. These have higher precedence
-                // and will successfully override any gitignore rules.
-                ov_builder.add(pattern)?;
+                // Prepend '!' to make it a whitelist pattern.
+                writeln!(file, "!{}", pattern)
+                    .with_context(|| "Failed to write to temporary override file")?;
             }
-            let overrides = ov_builder.build()?;
-            walker_builder.overrides(overrides);
-            debug!("Added 'process_last' patterns as overrides to walker.");
+            walker_builder.add_custom_ignore_filename(file.path());
+            debug!(
+                "Added 'process_last' patterns as a custom, high-precedence ignore file: {:?}",
+                file.path()
+            );
+            // Keep the temp file alive until the walker is built and used.
+            temp_override_file = Some(file);
         }
     } else {
         // If gitignore is disabled entirely, then disable standard filters.
@@ -131,5 +139,5 @@ pub(super) fn build_walker(config: &Config) -> Result<ignore::Walk> {
 
     // Build the walker
     debug!("Building the final walker.");
-    Ok(walker_builder.build())
+    Ok((walker_builder.build(), temp_override_file))
 }

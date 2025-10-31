@@ -26,7 +26,7 @@ pub fn discover_files(
         config.input_path.display()
     );
 
-    let walker = build_walker(config)?;
+    let (walker, _temp_file_guard) = build_walker(config)?;
 
     for entry_result in walker {
         // Check for Ctrl+C signal

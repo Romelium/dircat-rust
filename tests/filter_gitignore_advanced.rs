@@ -254,3 +254,38 @@ fn test_gitignore_nested() -> Result<(), Box<dyn std::error::Error>> {
     temp.close()?;
     Ok(())
 }
+
+#[test]
+fn test_last_flag_does_not_globally_disable_gitignore() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempdir()?;
+    let target_dir = temp.path().join("target");
+    fs::create_dir(&target_dir)?;
+
+    // Setup .gitignore to ignore the target/ directory and all .log files
+    let mut gitignore = fs::File::create(temp.path().join(".gitignore"))?;
+    writeln!(gitignore, "target/")?;
+    writeln!(gitignore, "*.log")?;
+    drop(gitignore);
+
+    // Create three files:
+    // 1. A normal source file that should be included.
+    fs::write(temp.path().join("main.rs"), "fn main() {}")?;
+    // 2. A file that should be ignored by .gitignore and NOT overridden.
+    fs::write(target_dir.join("debug.o"), "Object file")?;
+    // 3. A file that is ignored by .gitignore but WILL be overridden by --last.
+    fs::write(temp.path().join("important.log"), "Important Log")?;
+
+    dircat_cmd()
+        .arg("--last")
+        .arg("important.log") // Specifically request this ignored file
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: main.rs")) // Should include normal file
+        .stdout(predicate::str::contains("## File: important.log")) // Should include overridden file
+        // CRITICAL: This confirms the bug is fixed. Other .gitignore rules are still respected.
+        .stdout(predicate::str::contains("## File: target/debug.o").not());
+
+    temp.close()?;
+    Ok(())
+}
