@@ -1,3 +1,9 @@
+//! Defines application-specific error types.
+//!
+//! This module provides the `AppError` enum, which categorizes common errors
+//! that can occur during execution, offering more context than generic I/O or
+//! `anyhow` errors.
+
 use thiserror::Error;
 
 /// Application-specific errors used throughout `dircat`.

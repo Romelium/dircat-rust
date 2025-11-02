@@ -1,5 +1,11 @@
 // src/config/builder.rs
 
+//! Builds the `Config` struct from command-line arguments or other sources.
+//!
+//! This module provides the `ConfigBuilder`, which is the primary entry point for
+//! constructing the application's configuration. It handles validation, path
+//! resolution, and git repository cloning/downloading.
+
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
     path_resolve::resolve_input_path,
@@ -15,6 +21,22 @@ use std::path::PathBuf;
 /// A builder for creating a `Config` instance from command-line arguments.
 ///
 /// This builder handles argument validation, path resolution, and git repository cloning/downloading.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::cli::Cli;
+/// use dircat::config::ConfigBuilder;
+/// use clap::Parser;
+///
+/// // In a real application, this would come from std::env::args()
+/// let cli = Cli::parse_from(["dircat", ".", "-e", "rs", "--summary"]);
+///
+/// let config = ConfigBuilder::new(cli).build().unwrap();
+///
+/// assert!(config.summary);
+/// assert_eq!(config.extensions, Some(vec!["rs".to_string()]));
+/// ```
 pub struct ConfigBuilder {
     cli: Cli,
 }

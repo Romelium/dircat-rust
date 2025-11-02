@@ -1,4 +1,12 @@
 // src/git.rs
+//! Handles cloning, caching, and updating of git repositories provided as input.
+//!
+//! This module provides functionality to:
+//! - Clone remote git repositories into a local cache.
+//! - Update cached repositories on subsequent runs.
+//! - Parse GitHub folder URLs and download their contents via the GitHub API.
+//! - Provide authentication callbacks for SSH.
+
 use crate::config::Config;
 use anyhow::{anyhow, Context, Result};
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
@@ -336,12 +344,36 @@ pub(crate) fn get_repo_with_base_cache(
 }
 
 /// Public-facing function to get a repo, using the configured cache directory.
+///
+/// This function will clone a remote git repository into a local cache directory.
+/// If the repository is already cached, it will fetch updates from the remote.
+///
+/// # Arguments
+/// * `url` - The URL of the git repository to clone.
+/// * `config` - The application configuration, containing cache path and git options.
+///
+/// # Returns
+/// A `Result` containing the `PathBuf` to the local, up-to-date repository on success.
+///
+/// # Errors
+/// Returns an error if cloning or updating the repository fails.
 pub fn get_repo(url: &str, config: &Config) -> Result<PathBuf> {
     let base_cache_dir = &config.git_cache_path;
     get_repo_with_base_cache(base_cache_dir, url, config)
 }
 
 /// Checks if a given string is a likely git repository URL.
+///
+/// This is a simple heuristic check and does not validate the URL's format.
+///
+/// # Examples
+/// ```
+/// use dircat::git::is_git_url;
+///
+/// assert!(is_git_url("https://github.com/user/repo.git"));
+/// assert!(is_git_url("git@github.com:user/repo.git"));
+/// assert!(!is_git_url("/local/path/to/repo"));
+/// ```
 pub fn is_git_url(path_str: &str) -> bool {
     path_str.starts_with("https://")
         || path_str.starts_with("http://")
@@ -355,9 +387,39 @@ static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Parses a GitHub folder URL into its constituent parts.
+///
 /// Handles the official format (`.../tree/branch/path`) as well as common "sloppy" formats
 /// like `.../branch/path` or just `.../path` (which assumes the default branch).
-/// Returns `Some(ParsedGitUrl)` if the URL is a parsable GitHub folder URL, otherwise `None`.
+///
+/// # Returns
+/// `Some(ParsedGitUrl)` if the URL is a parsable GitHub folder URL, otherwise `None`.
+///
+/// # Examples
+/// ```
+/// use dircat::git::{parse_github_folder_url, ParsedGitUrl};
+///
+/// let url = "https://github.com/rust-lang/cargo/tree/master/src/cargo";
+/// let parsed = parse_github_folder_url(url).unwrap();
+///
+/// assert_eq!(parsed, ParsedGitUrl {
+///     clone_url: "https://github.com/rust-lang/cargo.git".to_string(),
+///     branch: "master".to_string(),
+///     subdirectory: "src/cargo".to_string(),
+/// });
+///
+/// // A "sloppy" URL without the /tree/ part assumes the default branch.
+/// let sloppy_url = "https://github.com/rust-lang/cargo/src/cargo";
+/// let sloppy_parsed = parse_github_folder_url(sloppy_url).unwrap();
+///
+/// assert_eq!(sloppy_parsed, ParsedGitUrl {
+///     clone_url: "https://github.com/rust-lang/cargo.git".to_string(),
+///     branch: "HEAD".to_string(), // "HEAD" indicates default branch
+///     subdirectory: "src/cargo".to_string(),
+/// });
+///
+/// // A root repository URL is not a folder URL.
+/// assert!(parse_github_folder_url("https://github.com/rust-lang/cargo").is_none());
+/// ```
 pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
     // 1. Try the official, correct format first.
     if let Some(caps) = GITHUB_TREE_URL_RE.captures(url) {
@@ -416,7 +478,21 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
 }
 
 /// Downloads a directory's contents from the GitHub API into a temporary directory.
-/// This is much faster than a full `git clone` for large repositories.
+///
+/// This is much faster than a full `git clone` for large repositories. It recursively
+/// lists and downloads all files within the specified subdirectory.
+///
+/// # Arguments
+/// * `url_parts` - A `ParsedGitUrl` struct containing the repository and path information.
+/// * `config` - The application configuration, used for resolving the branch if needed.
+///
+/// # Returns
+/// A `Result` containing the `PathBuf` to the temporary directory where files were downloaded.
+/// The caller is responsible for managing the lifetime of this directory.
+///
+/// # Errors
+/// Returns an error if API requests fail, the directory is not found, or file I/O fails.
+/// If a `GITHUB_TOKEN` environment variable is not set, this may fail due to API rate limiting.
 pub fn download_directory_via_api(url_parts: &ParsedGitUrl, config: &Config) -> Result<PathBuf> {
     // 1. Setup
     let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;

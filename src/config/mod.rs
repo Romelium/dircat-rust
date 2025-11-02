@@ -1,3 +1,9 @@
+//! Defines the core `Config` struct and related types for application configuration.
+//!
+//! This module consolidates all the settings parsed and validated from the CLI,
+//! making them available to the rest of the application in a structured and
+//! type-safe manner.
+
 use regex::Regex;
 use std::path::PathBuf;
 
@@ -74,9 +80,12 @@ pub struct Config {
     pub git_cache_path: PathBuf,
 }
 
-#[cfg(test)]
 impl Config {
     /// Creates a default `Config` for testing purposes.
+    ///
+    /// This function is hidden from public documentation and is intended for
+    /// use in tests and doc tests only.
+    #[doc(hidden)]
     pub fn new_for_test() -> Self {
         Self {
             input_path: PathBuf::from("."),

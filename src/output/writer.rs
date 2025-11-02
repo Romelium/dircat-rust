@@ -1,5 +1,11 @@
 // src/output/writer.rs
 
+//! Manages the output destination (stdout, file, or clipboard).
+//!
+//! This module provides functions to set up the appropriate `Write` trait object
+//! based on the user's configuration and to handle finalization steps, such as
+//! copying the output to the clipboard.
+
 use crate::config::{Config, OutputDestination};
 use anyhow::{anyhow, Result};
 use std::fs::File;
@@ -8,13 +14,27 @@ use std::sync::{Arc, Mutex};
 
 /// Represents the setup output writer, potentially including a buffer for clipboard.
 pub struct OutputWriterSetup {
+    /// A boxed `Write` trait object that can be written to.
     pub writer: Box<dyn Write + Send>,
     /// Holds the buffer only if the destination is Clipboard.
+    /// This is needed to retrieve the content for copying after all writes are complete.
     pub clipboard_buffer: Option<Arc<Mutex<Vec<u8>>>>,
 }
 
 /// Sets up the output writer based on the configuration.
-/// Returns a struct containing the boxed Write trait object and an optional buffer handle.
+///
+/// This function determines whether to write to stdout, a file, or an in-memory
+/// buffer (for clipboard operations) and returns a struct containing the appropriate
+/// writer and any necessary context.
+///
+/// # Arguments
+/// * `config` - The application configuration specifying the output destination.
+///
+/// # Returns
+/// An `OutputWriterSetup` struct containing the writer and an optional clipboard buffer.
+///
+/// # Errors
+/// Returns an error if a file cannot be created for writing.
 pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
     let mut clipboard_buffer = None;
     let writer: Box<dyn Write + Send> = match &config.output_destination {
@@ -38,7 +58,19 @@ pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
 }
 
 /// Finalizes output, specifically handling the clipboard case.
-/// If the destination was Clipboard, this function copies the buffer content.
+///
+/// If the destination was `OutputDestination::Clipboard`, this function copies the
+/// content from the provided buffer to the system clipboard. For other destinations,
+/// it ensures the writer is flushed.
+///
+/// # Arguments
+/// * `writer` - The writer to be flushed and dropped.
+/// * `clipboard_buffer` - The buffer containing the output, if the destination was clipboard.
+/// * `config` - The application configuration.
+///
+/// # Errors
+/// Returns an error if locking the clipboard buffer fails or if the clipboard
+/// operation itself fails.
 pub fn finalize_output(
     mut writer: Box<dyn Write + Send>, // Take ownership to ensure drop/flush
     clipboard_buffer: Option<Arc<Mutex<Vec<u8>>>>,

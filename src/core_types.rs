@@ -1,3 +1,8 @@
+//! Defines core data structures used throughout the application pipeline.
+//!
+//! These structs, `FileInfo` and `FileCounts`, are central to how file data is
+//! discovered, processed, and formatted.
+
 use std::path::PathBuf;
 
 /// Represents a file discovered during the walk, potentially with processed content and metadata.

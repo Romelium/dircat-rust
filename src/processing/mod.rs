@@ -1,3 +1,9 @@
+//! Handles the processing stage of the `dircat` pipeline.
+//!
+//! This module is responsible for reading file contents, detecting binary files,
+//! applying content filters (like comment removal), and calculating statistics.
+//! Operations are performed in parallel using Rayon for efficiency.
+
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::{io_error_with_path, AppError};
@@ -16,16 +22,32 @@ use content_filters::{remove_comments, remove_empty_lines};
 use counter::calculate_counts;
 
 /// Standalone content filtering functions.
+///
+/// This module re-exports content transformation functions so they can be used
+/// independently of the main processing pipeline.
 pub mod filters {
     pub use super::content_filters::{remove_comments, remove_empty_lines};
 }
 
 /// Reads and processes the content of a batch of discovered files based on config.
-/// Operates in parallel using Rayon. Updates FileInfo structs in place.
 ///
-/// This function now takes ownership of the files `Vec`, reads each file once,
-/// filters out binaries (if not included), processes content, and returns a new `Vec`
-/// of the files that are kept.
+/// This function takes ownership of a `Vec<FileInfo>`, reads each file's content,
+/// and performs several operations in parallel:
+/// - Detects and filters out binary files (unless `--include-binary` is used).
+/// - Calculates counts (lines, words, characters) if requested.
+/// - Applies content transformations like comment and empty line removal.
+///
+/// # Arguments
+/// * `files` - A `Vec<FileInfo>` from the discovery stage.
+/// * `config` - The application configuration.
+/// * `stop_signal` - An `Arc<AtomicBool>` to allow for graceful interruption.
+///
+/// # Returns
+/// A `Result` containing a new `Vec<FileInfo>` with processed content. Files that
+/// were filtered out (e.g., binaries) are not included in the returned vector.
+///
+/// # Errors
+/// Returns an error if file I/O fails for any file or if the operation is interrupted.
 pub fn process_and_filter_files(
     files: Vec<FileInfo>,
     config: &Config,

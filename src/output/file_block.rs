@@ -1,3 +1,5 @@
+//! Handles the formatting of a single file's content into a Markdown block.
+
 use crate::config::Config;
 use crate::constants::DEFAULT_LINE_NUMBER_WIDTH;
 use crate::core_types::FileInfo;
@@ -8,6 +10,48 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Writes a single file's header and content block to the writer.
+///
+/// This function generates a Markdown header (`## File: ...`) followed by a
+/// fenced code block containing the file's processed content.
+///
+/// # Arguments
+/// * `writer` - The `Write` trait object to write the output to.
+/// * `file_info` - A reference to the `FileInfo` struct for the file to be written.
+/// * `config` - The application configuration, used for formatting options.
+///
+/// # Errors
+/// Returns an error if any write operation fails.
+///
+/// # Examples
+/// ```
+/// use dircat::output::file_block::write_file_block;
+/// use dircat::core_types::FileInfo;
+/// use dircat::config::Config;
+/// use std::path::PathBuf;
+///
+/// let mut config = Config::new_for_test();
+/// config.line_numbers = true; // Enable line numbers for the example
+///
+/// let file_info = FileInfo {
+///     absolute_path: PathBuf::from("/tmp/test.rs"),
+///     relative_path: PathBuf::from("src/test.rs"),
+///     size: 12,
+///     processed_content: Some("fn main() {\n}".to_string()),
+///     counts: None,
+///     is_process_last: false,
+///     process_last_order: None,
+///     is_binary: false,
+/// };
+///
+/// let mut buffer = Vec::new();
+/// write_file_block(&mut buffer, &file_info, &config).unwrap();
+///
+/// let output = String::from_utf8(buffer).unwrap();
+/// assert!(output.contains("## File: src/test.rs"));
+/// assert!(output.contains("```rs"));
+/// assert!(output.contains("    1 | fn main() {"));
+/// assert!(output.contains("    2 | }"));
+/// ```
 pub fn write_file_block(
     writer: &mut dyn Write,
     file_info: &FileInfo,

@@ -12,6 +12,69 @@
 //!
 //! This design allows programmatic use of its components, such as using the file
 //! discovery logic or content filters independently.
+//!
+//! # Example: Library Usage
+//!
+//! The following example demonstrates how to use the `dircat` library to
+//! discover, process, and format files from a temporary directory.
+//!
+//! ```
+//! use dircat::{discover, process, format, Config, ConfigBuilder};
+//! use dircat::cli::Cli;
+//! use clap::Parser;
+//! use std::sync::{Arc, atomic::AtomicBool};
+//! use std::fs;
+//! use tempfile::tempdir;
+//!
+//! // 1. Set up a temporary directory with some files.
+//! let temp_dir = tempdir().unwrap();
+//! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!").unwrap();
+//! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }").unwrap();
+//!
+//! // 2. Create a Config object. In a real app, this would come from CLI args.
+//! // Here, we simulate it for demonstration.
+//! let cli_args = Cli::parse_from([
+//!     "dircat",
+//!     temp_dir.path().to_str().unwrap(),
+//!     "--remove-comments", // Enable a processing option
+//!     "--summary",         // Enable a formatting option
+//! ]);
+//! let config = ConfigBuilder::new(cli_args).build().unwrap();
+//!
+//! // 3. Set up a stop signal for graceful interruption (e.g., by Ctrl+C).
+//! let stop_signal = Arc::new(AtomicBool::new(true));
+//!
+//! // 4. Execute the dircat pipeline.
+//! // Stage 1: Discover files.
+//! let discovered_files = discover(&config, stop_signal.clone()).unwrap();
+//!
+//! // Stage 2: Process file content.
+//! let processed_files = process(discovered_files, &config, stop_signal).unwrap();
+//!
+//! // Stage 3: Format the output into a buffer.
+//! let mut output_buffer = Vec::new();
+//! format(&processed_files, &config, &mut output_buffer).unwrap();
+//!
+//! // 5. Print the result.
+//! let output_string = String::from_utf8(output_buffer).unwrap();
+//! println!("{}", output_string);
+//!
+//! // The output would look something like this:
+//! // ## File: file1.txt
+//! // ```txt
+//! // Hello, world!
+//! // ```
+//! //
+//! // ## File: file2.rs
+//! // ```rs
+//! // fn main() {  }
+//! // ```
+//! //
+//! // ---
+//! // Processed Files: (2)
+//! // - file1.txt
+//! // - file2.rs
+//! ```
 
 // Make modules public if they contain public types used in the API
 pub mod cli;

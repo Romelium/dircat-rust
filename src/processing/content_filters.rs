@@ -1,8 +1,36 @@
+//! Provides functions for transforming file content.
+//!
+//! This module contains standalone filters that can be applied to string content,
+//! such as removing comments or empty lines.
+
 use log::debug;
 
 /// Removes C/C++ style comments (// and /* ... */) using a state machine.
-/// Handles comments within strings and character literals correctly.
-/// Trims trailing whitespace from each resulting line and trims leading/trailing whitespace from the final result.
+///
+/// This function correctly handles comments within string and character literals,
+/// as well as escaped characters. After removing comments, it trims trailing
+/// whitespace from each line and then trims leading/trailing whitespace from the
+/// entire resulting string.
+///
+/// # Examples
+/// ```
+/// use dircat::processing::filters::remove_comments;
+///
+/// let code = r#"
+///     let url = "https://example.com"; // A URL
+///     /* Block comment */
+///     let value = 10;
+/// "#;
+///
+/// // The line with the block comment becomes an empty line, and indentation is preserved.
+/// // The final .trim() in remove_comments removes the leading/trailing newlines from the
+/// // original string literal.
+/// let expected = r#"let url = "https://example.com";
+///
+///     let value = 10;"#;
+///
+/// assert_eq!(remove_comments(code).trim(), expected);
+/// ```
 pub fn remove_comments(content: &str) -> String {
     enum State {
         Normal,
@@ -134,6 +162,16 @@ pub fn remove_comments(content: &str) -> String {
 }
 
 /// Removes lines containing only whitespace.
+///
+/// # Examples
+/// ```
+/// use dircat::processing::filters::remove_empty_lines;
+///
+/// let text = "Line 1\n\n  \t  \nLine 4";
+/// let expected = "Line 1\nLine 4";
+///
+/// assert_eq!(remove_empty_lines(text), expected);
+/// ```
 pub fn remove_empty_lines(content: &str) -> String {
     content
         .lines()
