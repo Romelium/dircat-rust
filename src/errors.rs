@@ -32,6 +32,10 @@ pub enum AppError {
     /// Error indicating that the operation was cancelled by the user (e.g., Ctrl+C).
     #[error("Operation cancelled by user (Ctrl+C)")]
     Interrupted,
+
+    /// Error indicating that no files were found that matched the given criteria.
+    #[error("No files found matching the specified criteria.")]
+    NoFilesFound,
     // --- Other specific errors can be added here ---
     // Example:
     // #[error("File processing failed for '{path}': {reason}")]

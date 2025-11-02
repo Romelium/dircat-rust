@@ -320,6 +320,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `[INPUT]`                               | Path to a directory/file, or a git URL. Defaults to `.`.                       |
 | `--git-branch BRANCH`, `--git-ref REF`  | For git URL inputs, check out a specific branch or tag instead of the default. |
 | `--git-depth DEPTH`                     | For git URL inputs, perform a shallow clone with a limited history depth.      |
+| `--git-cache-path PATH`                 | Path to the directory for caching cloned git repositories.                     |
 
 #### Filtering Options
 
@@ -727,7 +728,7 @@ dircat https://github.com/romelium/dircat-rust/tree/main/src/config
 - **Large Output:** Running `dircat` on large directories can produce significant output. Use filters (`-m`, `-e`, `-r`, etc.) or the dry-run (`-D`) option first. Redirect large outputs to a file (`-o FILE`) instead of overwhelming your terminal.
 - **Binary Files:** By default, `dircat` skips binary files. Use `-B` to include them. The detection is heuristic and might not be perfect.
 - **Lockfiles:** Use `-K` to easily exclude common dependency lockfiles, which is useful when generating context for LLMs.
-- **Git Cache:** When cloning repositories (from any host, including GitHub root URLs), `dircat` stores them in a cache directory (e.g., `~/.cache/dircat/repos` on Linux, platform-specific otherwise) to speed up future runs. To force a fresh clone, you can manually delete the corresponding hashed directory from this cache. GitHub folder URLs (e.g., `.../tree/main/src`) are not cached this way; they are downloaded fresh via the API on each run.
+- **Git Cache:** When cloning repositories (from any host, including GitHub root URLs), `dircat` stores them in a cache directory (e.g., `~/.cache/dircat/repos` on Linux, platform-specific otherwise) to speed up future runs. You can specify a custom cache location with `--git-cache-path`. To force a fresh clone, you can manually delete the corresponding hashed directory from this cache. GitHub folder URLs (e.g., `.../tree/main/src`) are not cached this way; they are downloaded fresh via the API on each run.
 - **Path Handling:**
   - **Display:** File paths shown in `## File:` headers and the summary (`-s`) are relative to the *input path* you provided (or the current directory if none was given).
   - **Filtering:**

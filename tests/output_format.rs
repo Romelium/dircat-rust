@@ -31,6 +31,7 @@ fn test_output_multiple_files_separators() -> Result<(), Box<dyn std::error::Err
     fs::write(temp.path().join("b.txt"), "Content B")?;
     fs::write(temp.path().join("a.txt"), "Content A")?;
 
+    // The new `discover` function sorts alphabetically before returning the list.
     let expected_output =
         "## File: a.txt\n```txt\nContent A\n```\n\n## File: b.txt\n```txt\nContent B\n```\n";
 
@@ -38,7 +39,7 @@ fn test_output_multiple_files_separators() -> Result<(), Box<dyn std::error::Err
         .current_dir(temp.path())
         .assert()
         .success()
-        .stdout(predicate::eq(expected_output));
+        .stdout(predicate::eq(expected_output)); // Use contains due to potential sorting differences
 
     temp.close()?;
     Ok(())
@@ -92,7 +93,9 @@ fn test_output_no_files_is_empty() -> Result<(), Box<dyn std::error::Error>> {
         .assert()
         .success()
         .stdout(predicate::eq(""))
-        .stderr(predicate::str::contains("dircat: No files found"));
+        .stderr(predicate::eq(
+            "dircat: No files found matching the specified criteria.\n",
+        ));
 
     temp.close()?;
     Ok(())

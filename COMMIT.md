@@ -1,4 +1,4 @@
-# Commit Message Guidelines
+ # Commit Message Guidelines
 
 This project follows the [Conventional Commits specification (v1.0.0)](https://www.conventionalcommits.org/en/v1.0.0/). Adhering to these guidelines improves commit history clarity and enables potential automation like changelog generation.
 
@@ -118,3 +118,4 @@ The following scopes are defined for this project:
     introduced compatibility issues with older documents.
 
     This reverts commit a1b2c3d4e5f67890abcdef1234567890abcdef.
+  ```

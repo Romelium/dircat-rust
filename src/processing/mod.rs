@@ -15,6 +15,11 @@ mod counter;
 use content_filters::{remove_comments, remove_empty_lines};
 use counter::calculate_counts;
 
+/// Standalone content filtering functions.
+pub mod filters {
+    pub use super::content_filters::{remove_comments, remove_empty_lines};
+}
+
 /// Reads and processes the content of a batch of discovered files based on config.
 /// Operates in parallel using Rayon. Updates FileInfo structs in place.
 ///

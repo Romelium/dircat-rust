@@ -1,7 +1,6 @@
 // src/cli.rs
 
 use clap::Parser;
-// use std::path::PathBuf; // Not used directly here
 
 /// High-performance Rust utility that concatenates and displays directory contents,
 /// respecting .gitignore rules and offering various filtering/formatting options.
@@ -21,6 +20,10 @@ pub struct Cli {
     /// For git URL inputs, perform a shallow clone with a limited history depth.
     #[arg(long, value_name = "DEPTH")]
     pub git_depth: Option<u32>,
+
+    /// Path to the directory for caching cloned git repositories.
+    #[arg(long, value_name = "PATH")]
+    pub git_cache_path: Option<String>,
 
     // --- Filtering Options ---
     /// Maximum file size to include (e.g., "1M", "512k", "1024"). Files larger than this are skipped.

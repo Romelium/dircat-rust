@@ -3,7 +3,7 @@ use log::debug;
 /// Removes C/C++ style comments (// and /* ... */) using a state machine.
 /// Handles comments within strings and character literals correctly.
 /// Trims trailing whitespace from each resulting line and trims leading/trailing whitespace from the final result.
-pub(super) fn remove_comments(content: &str) -> String {
+pub fn remove_comments(content: &str) -> String {
     enum State {
         Normal,
         MaybeSlash,           // Seen '/'
@@ -134,7 +134,7 @@ pub(super) fn remove_comments(content: &str) -> String {
 }
 
 /// Removes lines containing only whitespace.
-pub(super) fn remove_empty_lines(content: &str) -> String {
+pub fn remove_empty_lines(content: &str) -> String {
     content
         .lines()
         .filter(|line| !line.trim().is_empty())

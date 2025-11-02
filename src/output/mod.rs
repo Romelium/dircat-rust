@@ -6,33 +6,24 @@ use anyhow::Result;
 use log::debug;
 use std::io::Write;
 
-pub mod dry_run;
+pub(crate) mod dry_run;
 pub mod file_block;
 pub mod formatter;
 pub mod header;
 pub mod summary;
-pub mod writer; // Manages the output destination
+pub mod writer;
 
 /// Orchestrates the generation of the final output string or file content.
-/// This function decides whether to perform a dry run or generate the full output.
-/// It does NOT handle setting up the writer or finalizing (like clipboard copy).
-pub fn generate_output(
-    normal_files: &[FileInfo],
-    last_files: &[FileInfo],
+pub(crate) fn generate_output(
+    files: &[FileInfo],
     config: &Config,
-    writer: &mut dyn Write, // Takes a mutable ref to the already setup writer
+    writer: &mut dyn Write,
 ) -> Result<()> {
     debug!("Starting output generation...");
 
-    // Write Global Header (now does nothing by default)
     header::write_global_header(writer)?;
 
-    // Sort normal files alphabetically by relative path
-    let mut sorted_normal_files = normal_files.to_vec(); // Clone to sort
-    sorted_normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-
-    // Create a single iterator for all files to be processed in order
-    let all_files_iter = sorted_normal_files.iter().chain(last_files.iter());
+    let all_files_iter = files.iter();
 
     let mut first_block = true;
     for file_info in all_files_iter {
@@ -44,17 +35,11 @@ pub fn generate_output(
         first_block = false;
     }
 
-    // --- Write Summary ---
     if config.summary {
         if !first_block {
-            // This means at least one file was processed
-            // Add a blank line separator before the summary
             writeln!(writer)?;
         }
-        let all_processed_files: Vec<&FileInfo> = sorted_normal_files
-            .iter()
-            .chain(last_files.iter())
-            .collect();
+        let all_processed_files: Vec<&FileInfo> = files.iter().collect();
         summary::write_summary(writer, &all_processed_files, config)?;
     }
 
@@ -112,16 +97,14 @@ pub(crate) mod tests {
         let mut file2 = create_mock_file_info("a.rs", 20);
         file2.processed_content = Some(content_a.to_string());
         let normal_files = vec![file1, file2]; // Unsorted input
-        let last_files = vec![];
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &last_files, &config, &mut output)?;
+        generate_output(&normal_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert exact output and order
-        assert!(output_str.starts_with("## File: a.rs"));
-        // Check for the separator between the two blocks
-        assert!(output_str.contains("```\n\n## File: b.txt"));
+        assert!(output_str.starts_with("## File: b.txt"));
+        assert!(output_str.contains("```\n\n## File: a.rs"));
         assert!(!output_str.ends_with("\n\n"));
         assert!(output_str.ends_with("\n"));
 
@@ -149,11 +132,18 @@ pub(crate) mod tests {
         last0.is_process_last = true;
         last0.process_last_order = Some(1); // Simulate order given by -z
 
-        let normal_files = vec![file1, file2]; // Unsorted normal
-        let last_files = vec![last1, last0]; // Order here matches discovery sort key
+        // Manually sort the files to simulate the output of the `discover` function,
+        // which is the data `generate_output` now expects.
+        let mut normal_files = vec![file1, file2]; // c.txt, a.rs
+        let mut last_files = vec![last1, last0]; // last1.md (order 0), last0.toml (order 1)
+
+        normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path)); // Sorts to [a.rs, c.txt]
+        last_files.sort_by_key(|f| f.process_last_order); // Sorts to [last1.md, last0.toml]
+
+        let all_files: Vec<FileInfo> = normal_files.into_iter().chain(last_files).collect();
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &last_files, &config, &mut output)?;
+        generate_output(&all_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert order and separators
@@ -198,15 +188,14 @@ pub(crate) mod tests {
         });
 
         let normal_files = vec![file1, file2];
-        let last_files = vec![];
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &last_files, &config, &mut output)?;
+        generate_output(&normal_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert key components and separators
-        assert!(output_str.starts_with("## File: a.rs"));
-        assert!(output_str.contains("```\n\n## File: b.txt"));
+        assert!(output_str.starts_with("## File: b.txt"));
+        assert!(output_str.contains("```\n\n## File: a.rs"));
         assert!(output_str.contains("```\n\n---\nProcessed Files: (2)\n")); // Summary header
         assert!(output_str.contains("- a.rs (L:1 C:9 W:2)\n")); // Summary items sorted
         assert!(output_str.contains("- b.txt (L:1 C:9 W:2)\n"));
@@ -220,11 +209,10 @@ pub(crate) mod tests {
     #[test]
     fn test_generate_output_no_files() -> Result<()> {
         let config = create_mock_config(false, false, false, false);
-        let normal_files = vec![];
-        let last_files = vec![];
+        let files = vec![];
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &last_files, &config, &mut output)?;
+        generate_output(&files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // With no files, output should be empty

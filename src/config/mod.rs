@@ -1,7 +1,8 @@
 use regex::Regex;
 use std::path::PathBuf;
 
-pub mod builder;
+pub use builder::ConfigBuilder;
+mod builder;
 mod parsing;
 mod path_resolve;
 mod validation;
@@ -69,6 +70,8 @@ pub struct Config {
     pub git_branch: Option<String>,
     /// The depth for a shallow git clone.
     pub git_depth: Option<u32>,
+    /// The resolved, absolute path to the git cache directory.
+    pub git_cache_path: PathBuf,
 }
 
 #[cfg(test)]
@@ -104,6 +107,7 @@ impl Config {
             dry_run: false,
             git_branch: None,
             git_depth: None,
+            git_cache_path: PathBuf::from("/tmp/dircat-test-cache"),
         }
     }
 }

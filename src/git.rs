@@ -1,7 +1,6 @@
 // src/git.rs
 use crate::config::Config;
 use anyhow::{anyhow, Context, Result};
-use directories::ProjectDirs;
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
 use hex;
 use once_cell::sync::Lazy;
@@ -43,21 +42,6 @@ struct ContentItem {
 #[derive(Deserialize, Debug)]
 struct RepoInfo {
     default_branch: String,
-}
-
-/// Determines the root cache directory for git repositories.
-/// Typically `~/.cache/dircat/repos`.
-fn get_base_cache_dir() -> Result<PathBuf> {
-    // For testing purposes, allow overriding the cache directory via an environment variable.
-    // This ensures tests are hermetic and platform-agnostic.
-    if let Ok(cache_override) = env::var("DIRCAT_TEST_CACHE_DIR") {
-        return Ok(PathBuf::from(cache_override));
-    }
-
-    let proj_dirs = ProjectDirs::from("com", "romelium", "dircat")
-        .context("Could not determine project cache directory")?;
-    let cache_dir = proj_dirs.cache_dir().join("repos");
-    Ok(cache_dir)
 }
 
 /// Gets the specific cache directory path for a given repository URL within a base directory.
@@ -351,10 +335,10 @@ pub(crate) fn get_repo_with_base_cache(
     Ok(repo_path)
 }
 
-/// Public-facing function to get a repo, using the system's standard cache directory.
+/// Public-facing function to get a repo, using the configured cache directory.
 pub fn get_repo(url: &str, config: &Config) -> Result<PathBuf> {
-    let base_cache_dir = get_base_cache_dir()?;
-    get_repo_with_base_cache(&base_cache_dir, url, config)
+    let base_cache_dir = &config.git_cache_path;
+    get_repo_with_base_cache(base_cache_dir, url, config)
 }
 
 /// Checks if a given string is a likely git repository URL.
