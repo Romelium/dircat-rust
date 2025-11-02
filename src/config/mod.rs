@@ -11,7 +11,6 @@ pub use builder::ConfigBuilder;
 mod builder;
 mod parsing;
 mod path_resolve;
-mod validation;
 
 /// Internal configuration derived from command-line arguments.
 ///

@@ -19,27 +19,24 @@
 //! discover, process, and format files from a temporary directory.
 //!
 //! ```
-//! use dircat::{discover, process, format, Config, ConfigBuilder};
-//! use dircat::cli::Cli;
-//! use clap::Parser;
+//! use dircat::{discover, process, format, ConfigBuilder};
 //! use std::sync::{Arc, atomic::AtomicBool};
 //! use std::fs;
 //! use tempfile::tempdir;
 //!
 //! // 1. Set up a temporary directory with some files.
 //! let temp_dir = tempdir().unwrap();
+//! let temp_path_str = temp_dir.path().to_str().unwrap();
 //! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!").unwrap();
 //! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }").unwrap();
 //!
-//! // 2. Create a Config object. In a real app, this would come from CLI args.
-//! // Here, we simulate it for demonstration.
-//! let cli_args = Cli::parse_from([
-//!     "dircat",
-//!     temp_dir.path().to_str().unwrap(),
-//!     "--remove-comments", // Enable a processing option
-//!     "--summary",         // Enable a formatting option
-//! ]);
-//! let config = ConfigBuilder::new(cli_args).build().unwrap();
+//! // 2. Create a Config object programmatically using the builder.
+//! let config = ConfigBuilder::new()
+//!     .input_path(temp_path_str)
+//!     .remove_comments(true)
+//!     .summary(true)
+//!     .build()
+//!     .unwrap();
 //!
 //! // 3. Set up a stop signal for graceful interruption (e.g., by Ctrl+C).
 //! let stop_signal = Arc::new(AtomicBool::new(true));

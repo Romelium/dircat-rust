@@ -19,7 +19,7 @@ fn main() -> Result<()> {
 
     // --- Setup ---
     let cli_args = Cli::parse();
-    let config = ConfigBuilder::new(cli_args).build()?;
+    let config = ConfigBuilder::from_cli(cli_args).build()?;
     let stop_signal = setup_signal_handler()?;
 
     // --- Execution ---

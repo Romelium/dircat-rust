@@ -57,7 +57,7 @@ fn test_invalid_ticks_error() -> Result<(), Box<dyn std::error::Error>> {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "The number of ticks (`--ticks`) must be 3 or greater.",
+            "The number of ticks must be 3 or greater.",
         ));
 
     temp.close()?;

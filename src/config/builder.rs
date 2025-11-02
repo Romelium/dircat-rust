@@ -9,7 +9,6 @@
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
     path_resolve::resolve_input_path,
-    validation::validate_cli_options,
     Config, OutputDestination,
 };
 use crate::cli::Cli;
@@ -18,39 +17,259 @@ use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
 use std::path::PathBuf;
 
-/// A builder for creating a `Config` instance from command-line arguments.
+/// A builder for creating a `Config` instance from command-line arguments or programmatically.
 ///
 /// This builder handles argument validation, path resolution, and git repository cloning/downloading.
 ///
 /// # Examples
 ///
 /// ```
-/// use dircat::cli::Cli;
 /// use dircat::config::ConfigBuilder;
-/// use clap::Parser;
 ///
-/// // In a real application, this would come from std::env::args()
-/// let cli = Cli::parse_from(["dircat", ".", "-e", "rs", "--summary"]);
-///
-/// let config = ConfigBuilder::new(cli).build().unwrap();
+/// // Programmatic construction
+/// let config = ConfigBuilder::new()
+///     .input_path(".")
+///     .extensions(vec!["rs".to_string()])
+///     .summary(true)
+///     .build()
+///     .unwrap();
 ///
 /// assert!(config.summary);
 /// assert_eq!(config.extensions, Some(vec!["rs".to_string()]));
 /// ```
+#[derive(Debug, Default)]
 pub struct ConfigBuilder {
-    cli: Cli,
+    // --- Input ---
+    input_path: Option<String>,
+    // --- Git Options ---
+    git_branch: Option<String>,
+    git_depth: Option<u32>,
+    git_cache_path: Option<String>,
+    // --- Filtering Options ---
+    max_size: Option<String>,
+    no_recursive: Option<bool>,
+    extensions: Option<Vec<String>>,
+    exclude_extensions: Option<Vec<String>>,
+    exclude_path_regex: Option<Vec<String>>,
+    ignore_patterns: Option<Vec<String>>,
+    path_regex: Option<Vec<String>>,
+    filename_regex: Option<Vec<String>>,
+    no_gitignore: Option<bool>,
+    include_binary: Option<bool>,
+    no_lockfiles: Option<bool>,
+    // --- Content Processing Options ---
+    remove_comments: Option<bool>,
+    remove_empty_lines: Option<bool>,
+    // --- Output Formatting Options ---
+    filename_only: Option<bool>,
+    line_numbers: Option<bool>,
+    backticks: Option<bool>,
+    ticks: Option<u8>,
+    // --- Output Destination & Summary ---
+    output_file: Option<String>,
+    paste: Option<bool>,
+    summary: Option<bool>,
+    counts: Option<bool>,
+    // --- Processing Order ---
+    process_last: Option<Vec<String>>,
+    only_last: Option<bool>,
+    only: Option<Vec<String>>,
+    // --- Execution Control ---
+    dry_run: Option<bool>,
 }
 
 impl ConfigBuilder {
-    /// Creates a new `ConfigBuilder` from the parsed command-line interface arguments.
-    pub fn new(cli: Cli) -> Self {
-        Self { cli }
+    /// Creates a new `ConfigBuilder` with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a new `ConfigBuilder` populated from the parsed command-line interface arguments.
+    pub fn from_cli(cli: Cli) -> Self {
+        Self {
+            input_path: Some(cli.input_path),
+            git_branch: cli.git_branch,
+            git_depth: cli.git_depth,
+            git_cache_path: cli.git_cache_path,
+            max_size: cli.max_size,
+            no_recursive: Some(cli.no_recursive),
+            extensions: cli.extensions,
+            exclude_extensions: cli.exclude_extensions,
+            exclude_path_regex: cli.exclude_path_regex,
+            ignore_patterns: cli.ignore_patterns,
+            path_regex: cli.path_regex,
+            filename_regex: cli.filename_regex,
+            no_gitignore: Some(cli.no_gitignore),
+            include_binary: Some(cli.include_binary),
+            no_lockfiles: Some(cli.no_lockfiles),
+            remove_comments: Some(cli.remove_comments),
+            remove_empty_lines: Some(cli.remove_empty_lines),
+            filename_only: Some(cli.filename_only),
+            line_numbers: Some(cli.line_numbers),
+            backticks: Some(cli.backticks),
+            ticks: Some(cli.ticks),
+            output_file: cli.output_file,
+            paste: Some(cli.paste),
+            summary: Some(cli.summary),
+            counts: Some(cli.counts),
+            process_last: cli.process_last,
+            only_last: Some(cli.only_last),
+            only: cli.only,
+            dry_run: Some(cli.dry_run),
+        }
+    }
+
+    // --- Setter Methods ---
+    #[must_use]
+    pub fn input_path(mut self, path: impl Into<String>) -> Self {
+        self.input_path = Some(path.into());
+        self
+    }
+    #[must_use]
+    pub fn git_branch(mut self, branch: impl Into<String>) -> Self {
+        self.git_branch = Some(branch.into());
+        self
+    }
+    #[must_use]
+    pub fn git_depth(mut self, depth: u32) -> Self {
+        self.git_depth = Some(depth);
+        self
+    }
+    #[must_use]
+    pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
+        self.git_cache_path = Some(path.into());
+        self
+    }
+    #[must_use]
+    pub fn max_size(mut self, size: impl Into<String>) -> Self {
+        self.max_size = Some(size.into());
+        self
+    }
+    #[must_use]
+    pub fn no_recursive(mut self, no_recurse: bool) -> Self {
+        self.no_recursive = Some(no_recurse);
+        self
+    }
+    #[must_use]
+    pub fn extensions(mut self, exts: Vec<String>) -> Self {
+        self.extensions = Some(exts);
+        self
+    }
+    #[must_use]
+    pub fn exclude_extensions(mut self, exts: Vec<String>) -> Self {
+        self.exclude_extensions = Some(exts);
+        self
+    }
+    #[must_use]
+    pub fn exclude_path_regex(mut self, regexes: Vec<String>) -> Self {
+        self.exclude_path_regex = Some(regexes);
+        self
+    }
+    #[must_use]
+    pub fn ignore_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.ignore_patterns = Some(patterns);
+        self
+    }
+    #[must_use]
+    pub fn path_regex(mut self, regexes: Vec<String>) -> Self {
+        self.path_regex = Some(regexes);
+        self
+    }
+    #[must_use]
+    pub fn filename_regex(mut self, regexes: Vec<String>) -> Self {
+        self.filename_regex = Some(regexes);
+        self
+    }
+    #[must_use]
+    pub fn no_gitignore(mut self, no_gitignore: bool) -> Self {
+        self.no_gitignore = Some(no_gitignore);
+        self
+    }
+    #[must_use]
+    pub fn include_binary(mut self, include: bool) -> Self {
+        self.include_binary = Some(include);
+        self
+    }
+    #[must_use]
+    pub fn no_lockfiles(mut self, no_lockfiles: bool) -> Self {
+        self.no_lockfiles = Some(no_lockfiles);
+        self
+    }
+    #[must_use]
+    pub fn remove_comments(mut self, remove: bool) -> Self {
+        self.remove_comments = Some(remove);
+        self
+    }
+    #[must_use]
+    pub fn remove_empty_lines(mut self, remove: bool) -> Self {
+        self.remove_empty_lines = Some(remove);
+        self
+    }
+    #[must_use]
+    pub fn filename_only(mut self, filename_only: bool) -> Self {
+        self.filename_only = Some(filename_only);
+        self
+    }
+    #[must_use]
+    pub fn line_numbers(mut self, line_numbers: bool) -> Self {
+        self.line_numbers = Some(line_numbers);
+        self
+    }
+    #[must_use]
+    pub fn backticks(mut self, backticks: bool) -> Self {
+        self.backticks = Some(backticks);
+        self
+    }
+    #[must_use]
+    pub fn ticks(mut self, count: u8) -> Self {
+        self.ticks = Some(count);
+        self
+    }
+    #[must_use]
+    pub fn output_file(mut self, path: impl Into<String>) -> Self {
+        self.output_file = Some(path.into());
+        self
+    }
+    #[must_use]
+    pub fn paste(mut self, paste: bool) -> Self {
+        self.paste = Some(paste);
+        self
+    }
+    #[must_use]
+    pub fn summary(mut self, summary: bool) -> Self {
+        self.summary = Some(summary);
+        self
+    }
+    #[must_use]
+    pub fn counts(mut self, counts: bool) -> Self {
+        self.counts = Some(counts);
+        self
+    }
+    #[must_use]
+    pub fn process_last(mut self, patterns: Vec<String>) -> Self {
+        self.process_last = Some(patterns);
+        self
+    }
+    #[must_use]
+    pub fn only_last(mut self, only_last: bool) -> Self {
+        self.only_last = Some(only_last);
+        self
+    }
+    #[must_use]
+    pub fn only(mut self, patterns: Vec<String>) -> Self {
+        self.only = Some(patterns);
+        self
+    }
+    #[must_use]
+    pub fn dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = Some(dry_run);
+        self
     }
 
     /// Builds the final `Config` struct.
     ///
     /// This method performs all necessary setup and validation:
-    /// - Validates CLI option combinations.
+    /// - Validates option combinations.
     /// - Parses and compiles patterns (regex, extensions).
     /// - Resolves the git cache path.
     /// - Handles the input path, which can be a local path, a git URL (for cloning),
@@ -61,58 +280,70 @@ impl ConfigBuilder {
     /// Returns an error if any validation fails, paths cannot be resolved, or git
     /// operations fail.
     pub fn build(self) -> Result<Config> {
-        let cli = self.cli;
-        validate_cli_options(&cli)?;
+        // --- Validation ---
+        if self.output_file.is_some() && self.paste.unwrap_or(false) {
+            return Err(anyhow!("Cannot use --output and --paste simultaneously."));
+        }
+        if self.ticks.unwrap_or(3) < 3 {
+            return Err(anyhow!("The number of ticks must be 3 or greater."));
+        }
+        if self.only_last.unwrap_or(false) && self.process_last.is_none() {
+            return Err(anyhow!("--only-last requires --last to be specified."));
+        }
+        if self.only.is_some() && (self.process_last.is_some() || self.only_last.unwrap_or(false)) {
+            return Err(anyhow!("--only cannot be used with --last or --only-last."));
+        }
 
-        let base_path_display: String = cli.input_path.clone();
+        let input_path_str = self.input_path.unwrap_or_else(|| ".".to_string());
+        let base_path_display: String = input_path_str.clone();
 
-        let (process_last, only_last) = if let Some(only_patterns) = cli.only {
+        let (process_last, only_last) = if let Some(only_patterns) = self.only {
             (Some(only_patterns), true)
         } else {
-            (cli.process_last, cli.only_last)
+            (self.process_last, self.only_last.unwrap_or(false))
         };
 
-        let git_cache_path = Self::determine_cache_dir(cli.git_cache_path.as_deref())?;
+        let git_cache_path = Self::determine_cache_dir(self.git_cache_path.as_deref())?;
 
         let mut config = Config {
             input_path: PathBuf::new(),
             base_path_display: String::new(),
             input_is_file: false,
-            max_size: parse_max_size(cli.max_size)?,
-            recursive: !cli.no_recursive,
-            extensions: normalize_extensions(cli.extensions),
-            exclude_extensions: normalize_extensions(cli.exclude_extensions),
-            ignore_patterns: cli.ignore_patterns,
-            exclude_path_regex: compile_regex_vec(cli.exclude_path_regex, "exclude path")?,
-            path_regex: compile_regex_vec(cli.path_regex, "path")?,
-            filename_regex: compile_regex_vec(cli.filename_regex, "filename")?,
-            use_gitignore: !cli.no_gitignore,
-            include_binary: cli.include_binary,
-            skip_lockfiles: cli.no_lockfiles,
-            remove_comments: cli.remove_comments,
-            remove_empty_lines: cli.remove_empty_lines,
-            filename_only_header: cli.filename_only,
-            line_numbers: cli.line_numbers,
-            backticks: cli.backticks,
-            num_ticks: cli.ticks,
-            output_destination: if cli.paste {
+            max_size: parse_max_size(self.max_size)?,
+            recursive: !self.no_recursive.unwrap_or(false),
+            extensions: normalize_extensions(self.extensions),
+            exclude_extensions: normalize_extensions(self.exclude_extensions),
+            ignore_patterns: self.ignore_patterns,
+            exclude_path_regex: compile_regex_vec(self.exclude_path_regex, "exclude path")?,
+            path_regex: compile_regex_vec(self.path_regex, "path")?,
+            filename_regex: compile_regex_vec(self.filename_regex, "filename")?,
+            use_gitignore: !self.no_gitignore.unwrap_or(false),
+            include_binary: self.include_binary.unwrap_or(false),
+            skip_lockfiles: self.no_lockfiles.unwrap_or(false),
+            remove_comments: self.remove_comments.unwrap_or(false),
+            remove_empty_lines: self.remove_empty_lines.unwrap_or(false),
+            filename_only_header: self.filename_only.unwrap_or(false),
+            line_numbers: self.line_numbers.unwrap_or(false),
+            backticks: self.backticks.unwrap_or(false),
+            num_ticks: self.ticks.unwrap_or(3),
+            output_destination: if self.paste.unwrap_or(false) {
                 OutputDestination::Clipboard
-            } else if let Some(file_path_str) = cli.output_file {
+            } else if let Some(file_path_str) = self.output_file {
                 OutputDestination::File(PathBuf::from(file_path_str))
             } else {
                 OutputDestination::Stdout
             },
-            summary: cli.summary || cli.counts,
-            counts: cli.counts,
+            summary: self.summary.unwrap_or(false) || self.counts.unwrap_or(false),
+            counts: self.counts.unwrap_or(false),
             process_last,
             only_last,
-            dry_run: cli.dry_run,
-            git_branch: cli.git_branch,
-            git_depth: cli.git_depth,
+            dry_run: self.dry_run.unwrap_or(false),
+            git_branch: self.git_branch,
+            git_depth: self.git_depth,
             git_cache_path,
         };
 
-        let absolute_input_path = Self::resolve_and_prepare_input_path(&cli.input_path, &config)?;
+        let absolute_input_path = Self::resolve_and_prepare_input_path(&input_path_str, &config)?;
 
         config.input_path = absolute_input_path;
         config.base_path_display = base_path_display;
@@ -239,8 +470,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic_config() -> Result<()> {
-        let cli = Cli::parse_from(["dircat", "."]);
-        let config = ConfigBuilder::new(cli).build()?;
+        let config = ConfigBuilder::new().input_path(".").build()?;
         assert!(config.input_path.is_absolute());
         assert_eq!(config.output_destination, OutputDestination::Stdout);
         assert!(config.recursive);
@@ -250,17 +480,20 @@ mod tests {
 
     #[test]
     fn test_builder_with_flags() -> Result<()> {
-        let cli = Cli::parse_from(["dircat", ".", "--no-recursive", "--include-binary"]);
-        let config = ConfigBuilder::new(cli).build()?;
+        let config = ConfigBuilder::new()
+            .input_path(".")
+            .no_recursive(true)
+            .include_binary(true)
+            .build()?;
         assert!(!config.recursive);
         assert!(config.include_binary);
         Ok(())
     }
 
     #[test]
-    fn test_builder_only_shorthand() -> Result<()> {
+    fn test_builder_only_shorthand_from_cli() -> Result<()> {
         let cli = Cli::parse_from(["dircat", ".", "--only", "*.rs", "*.toml"]);
-        let config = ConfigBuilder::new(cli).build()?;
+        let config = ConfigBuilder::from_cli(cli).build()?;
         assert_eq!(
             config.process_last,
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])
