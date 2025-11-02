@@ -44,6 +44,7 @@ impl TryFrom<Cli> for Config {
             filename_only_header: cli.filename_only,
             line_numbers: cli.line_numbers,
             backticks: cli.backticks,
+            num_ticks: cli.ticks,
             output_destination: if cli.paste {
                 OutputDestination::Clipboard
             } else if let Some(file_path_str) = cli.output_file {

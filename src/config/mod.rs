@@ -51,6 +51,8 @@ pub struct Config {
     pub line_numbers: bool,
     /// Whether to wrap filenames in backticks (`) in headers and the summary.
     pub backticks: bool,
+    /// Number of backticks for Markdown code fences.
+    pub num_ticks: u8,
     /// Specifies where the final output should be written.
     pub output_destination: OutputDestination,
     /// Whether to print a summary list of processed files at the end. Implied by `counts`.
@@ -93,6 +95,7 @@ impl Config {
             filename_only_header: false,
             line_numbers: false,
             backticks: false,
+            num_ticks: 3,
             output_destination: OutputDestination::Stdout,
             summary: false,
             counts: false,

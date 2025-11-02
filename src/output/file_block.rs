@@ -39,7 +39,8 @@ pub fn write_file_block(
         .and_then(|ext| ext.to_str())
         .unwrap_or(""); // Default to empty hint if no extension
 
-    writeln!(writer, "```{}", extension_hint)?;
+    let fence = "`".repeat(config.num_ticks as usize);
+    writeln!(writer, "{}{}", fence, extension_hint)?;
 
     // Write content line by line, adding line numbers if requested
     if let Some(content) = &file_info.processed_content {
@@ -73,7 +74,7 @@ pub fn write_file_block(
         writeln!(writer, "// Content not available")?;
     }
 
-    writeln!(writer, "```")?;
+    writeln!(writer, "{}", fence)?;
 
     Ok(())
 }

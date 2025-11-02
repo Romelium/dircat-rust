@@ -89,6 +89,10 @@ pub struct Cli {
     #[arg(short = 'b', long, action = clap::ArgAction::SetTrue)]
     pub backticks: bool,
 
+    /// Number of backticks to use for the Markdown code fences.
+    #[arg(short = 'T', long, value_name = "COUNT", default_value_t = 3)]
+    pub ticks: u8,
+
     // --- Output Destination & Summary ---
     /// Write the output to the specified file instead of stdout.
     #[arg(short = 'o', long, value_name = "FILE")]

@@ -11,6 +11,12 @@ pub(super) fn validate_cli_options(cli: &Cli) -> Result<()> {
         ));
     }
 
+    if cli.ticks < 3 {
+        return Err(anyhow!(
+            "The number of ticks (`--ticks`) must be 3 or greater."
+        ));
+    }
+
     // Add other cross-argument validations here if needed
 
     Ok(())
@@ -45,5 +51,16 @@ mod tests {
         validate_cli_options(&cli_paste)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_invalid_ticks_validation() {
+        let cli = Cli::parse_from(["dircat", ".", "--ticks", "2"]);
+        let result = validate_cli_options(&cli);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be 3 or greater"));
     }
 }

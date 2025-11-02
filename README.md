@@ -348,6 +348,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 
 | Option             | Alias | Description                                                                       |
 | :----------------- | :---- | :-------------------------------------------------------------------------------- |
+| `--ticks COUNT`    | `-T`  | Set the number of backticks for code fences (default: 3, min: 3).                 |
 | `--filename-only`  | `-f`  | Show only the filename (basename) in `## File:` headers, not the relative path. |
 | `--line-numbers`   | `-L`  | Add line numbers to the beginning of each content line.                |
 | `--backticks`      | `-b`  | Wrap filenames in headers and summary list with backticks (`).                    |
