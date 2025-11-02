@@ -101,12 +101,12 @@ pub fn finalize_output(
 }
 
 fn copy_to_clipboard(content: &str) -> Result<()> {
-    use crate::errors::AppError;
+    use crate::errors::Error;
     use arboard::Clipboard;
-    let mut clipboard = Clipboard::new().map_err(|e| AppError::ClipboardError(e.to_string()))?;
+    let mut clipboard = Clipboard::new().map_err(|e| Error::Clipboard(e.to_string()))?;
     clipboard
         .set_text(content)
-        .map_err(|e| AppError::ClipboardError(e.to_string()))?;
+        .map_err(|e| Error::Clipboard(e.to_string()))?;
     Ok(())
 }
 
@@ -263,10 +263,10 @@ mod tests {
         // In a test environment without a clipboard service, arboard might return an error.
         // We accept Ok or a specific ClipboardError here.
         if let Err(e) = result {
-            use crate::errors::AppError; // Need AppError for matching
+            use crate::errors::Error; // Need Error for matching
             assert!(e
-                .downcast_ref::<AppError>()
-                .is_some_and(|ae| matches!(ae, AppError::ClipboardError(_))));
+                .downcast_ref::<Error>()
+                .is_some_and(|ae| matches!(ae, Error::Clipboard(_))));
         }
     }
 

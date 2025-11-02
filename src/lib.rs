@@ -90,9 +90,9 @@ pub mod signal;
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
 
+use crate::errors::Result;
 use crate::filtering::is_likely_text;
 mod filtering;
-use anyhow::Result;
 use rayon::prelude::*;
 use std::io::Write; // Import Write trait
 use std::sync::atomic::AtomicBool;
@@ -145,7 +145,11 @@ pub fn process(
     config: &Config,
     stop_signal: Arc<AtomicBool>,
 ) -> Result<Vec<FileInfo>> {
-    processing::process_and_filter_files(files, config, stop_signal)
+    Ok(processing::process_and_filter_files(
+        files,
+        config,
+        stop_signal,
+    )?)
 }
 
 /// Formats the processed files into the final Markdown output.
@@ -159,7 +163,7 @@ pub fn process(
 /// * `config` - The configuration for output formatting.
 /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
 pub fn format(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    output::generate_output(files, config, writer)
+    Ok(output::generate_output(files, config, writer)?)
 }
 
 /// Formats the discovered files for a dry run.
@@ -193,5 +197,9 @@ pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Writ
         })
         .collect();
 
-    output::dry_run::write_dry_run_output(writer, &filtered_files, config)
+    Ok(output::dry_run::write_dry_run_output(
+        writer,
+        &filtered_files,
+        config,
+    )?)
 }

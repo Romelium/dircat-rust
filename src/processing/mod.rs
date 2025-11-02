@@ -6,7 +6,7 @@
 
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::{io_error_with_path, AppError};
+use crate::errors::{io_error_with_path, Error};
 use crate::filtering::is_likely_text_from_buffer;
 use anyhow::Result;
 use log::debug;
@@ -68,7 +68,7 @@ pub fn process_and_filter_files(
         .filter_map(|mut file_info| {
             // Check for Ctrl+C signal
             if !stop_signal.load(Ordering::Relaxed) {
-                return Some(Err(AppError::Interrupted.into()));
+                return Some(Err(Error::Interrupted.into()));
             }
 
             debug!("Processing file: {}", file_info.absolute_path.display());

@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::AppError;
+use crate::errors::Error;
 use crate::filtering::{
     check_process_last, is_file_type, is_lockfile, passes_extension_filters, passes_size_filter,
 };
@@ -20,11 +20,11 @@ use tracing::instrument;
 ///
 /// Returns `Ok(Some(FileInfo))` if the entry is a file that passes all filters.
 /// Returns `Ok(None)` if the entry is filtered out or is not a regular file.
-/// Returns `Err(AppError)` for critical errors (like permission issues accessing metadata or reading file head).
+/// Returns `Err(Error)` for critical errors (like permission issues accessing metadata or reading file head).
 pub(crate) fn process_direntry(
     entry_result: Result<DirEntry, ignore::Error>,
     config: &Config,
-) -> Result<Option<FileInfo>, AppError> {
+) -> Result<Option<FileInfo>, Error> {
     // --- 1. Handle Walker Errors ---
     let entry = match entry_result {
         Ok(entry) => entry,
@@ -160,7 +160,7 @@ fn passes_regex_filters(
     path: &Path,          // Absolute path for filename extraction
     relative_path: &Path, // Relative path for path regex matching
     config: &Config,
-) -> Result<bool, AppError> {
+) -> Result<bool, Error> {
     // --- 1. Check Exclude Path Regex First (takes precedence) ---
     if let Some(exclude_path_regex_vec) = &config.exclude_path_regex {
         let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_no_filters() -> Result<(), AppError> {
+    fn test_regex_no_filters() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path, rel_path) = create_paths(dir.path(), "test_file.txt");
         File::create(&abs_path).unwrap();
@@ -274,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_path_match() -> Result<(), AppError> {
+    fn test_regex_path_match() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path1, rel_path1) = create_paths(dir.path(), "subdir/match_file.txt");
         let (abs_path2, rel_path2) = create_paths(dir.path(), "no_match_file.txt");
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_exclude_path_match() -> Result<(), AppError> {
+    fn test_regex_exclude_path_match() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path1, rel_path1) = create_paths(dir.path(), "src/main.rs");
         let (abs_path2, rel_path2) = create_paths(dir.path(), "tests/main.rs");
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_exclude_overrides_include() -> Result<(), AppError> {
+    fn test_regex_exclude_overrides_include() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path1, rel_path1) = create_paths(dir.path(), "src/main.rs");
         let (abs_path2, rel_path2) = create_paths(dir.path(), "src/lib.rs");
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_path_match_windows_style_relative() -> Result<(), AppError> {
+    fn test_regex_path_match_windows_style_relative() -> Result<(), Error> {
         // Simulate a windows-style relative path string for the regex
         let dir = tempdir().unwrap();
         // Relative path uses backslashes, but gets normalized
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_filename_match() -> Result<(), AppError> {
+    fn test_regex_filename_match() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path1, rel_path1) = create_paths(dir.path(), "match_this.log");
         let (abs_path2, rel_path2) = create_paths(dir.path(), "ignore_this.txt");
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_path_and_filename_match() -> Result<(), AppError> {
+    fn test_regex_path_and_filename_match() -> Result<(), Error> {
         let dir = tempdir().unwrap();
         let (abs_path1, rel_path1) = create_paths(dir.path(), "target_dir/target_file.rs"); // Match both
         let (abs_path2, rel_path2) = create_paths(dir.path(), "target_dir/other_file.rs"); // Match path, fail filename
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_no_filename() -> Result<(), AppError> {
+    fn test_regex_no_filename() -> Result<(), Error> {
         // Test behavior when the path itself has no filename component (e.g., ".")
         let current_dir_abs = PathBuf::from("."); // Represents current dir
         let current_dir_rel = PathBuf::from(".");

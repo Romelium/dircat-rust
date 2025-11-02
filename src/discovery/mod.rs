@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::AppError;
+use crate::errors::Error;
 use anyhow::Result;
 use log::debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,8 +33,8 @@ pub fn discover_files(
         if !stop_signal.load(Ordering::Relaxed) {
             // Check if FALSE
             // Persistent Debug Log: Add log here
-            log::error!("Discovery loop interrupted by stop_signal (detected false)!");
-            return Err(AppError::Interrupted.into());
+            log::error!("Discovery loop interrupted by stop_signal!");
+            return Err(Error::Interrupted.into());
         }
 
         match process_direntry(entry_result, config) {
