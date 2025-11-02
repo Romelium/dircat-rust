@@ -10,16 +10,26 @@ use dircat::{
     format,
     format_dry_run,
     process,
+    progress::{IndicatifProgress, ProgressReporter},
     signal::setup_signal_handler, // Import setup_signal_handler
 };
 use std::io::Write;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // --- Setup ---
     let cli_args = Cli::parse();
-    let config = ConfigBuilder::from_cli(cli_args).build()?;
+
+    // Decide whether to show a progress bar. Show it if stderr is a TTY.
+    let progress_reporter: Option<Arc<dyn ProgressReporter>> = if atty::is(atty::Stream::Stderr) {
+        Some(Arc::new(IndicatifProgress::new()))
+    } else {
+        None
+    };
+
+    let config = ConfigBuilder::from_cli(cli_args).build(progress_reporter)?;
     let stop_signal = setup_signal_handler()?;
 
     // --- Execution ---

@@ -13,9 +13,11 @@ use super::{
 };
 use crate::cli::Cli;
 use crate::git;
+use crate::progress::ProgressReporter;
 use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// A builder for creating a `Config` instance from command-line arguments or programmatically.
 ///
@@ -31,7 +33,7 @@ use std::path::PathBuf;
 ///     .input_path(".")
 ///     .extensions(vec!["rs".to_string()])
 ///     .summary(true)
-///     .build()
+///     .build(None) // Pass None for no progress reporter
 ///     .unwrap();
 ///
 /// assert!(config.summary);
@@ -279,7 +281,7 @@ impl ConfigBuilder {
     ///
     /// Returns an error if any validation fails, paths cannot be resolved, or git
     /// operations fail.
-    pub fn build(self) -> Result<Config> {
+    pub fn build(self, progress: Option<Arc<dyn ProgressReporter>>) -> Result<Config> {
         // --- Validation ---
         if self.output_file.is_some() && self.paste.unwrap_or(false) {
             return Err(anyhow!("Cannot use --output and --paste simultaneously."));
@@ -343,7 +345,8 @@ impl ConfigBuilder {
             git_cache_path,
         };
 
-        let absolute_input_path = Self::resolve_and_prepare_input_path(&input_path_str, &config)?;
+        let absolute_input_path =
+            Self::resolve_and_prepare_input_path(&input_path_str, &config, progress)?;
 
         config.input_path = absolute_input_path;
         config.base_path_display = base_path_display;
@@ -397,19 +400,27 @@ impl ConfigBuilder {
     }
 
     /// Handles git URLs (cloning or API download) or resolves local paths.
-    fn resolve_and_prepare_input_path(input_path_str: &str, config: &Config) -> Result<PathBuf> {
+    fn resolve_and_prepare_input_path(
+        input_path_str: &str,
+        config: &Config,
+        progress: Option<Arc<dyn ProgressReporter>>,
+    ) -> Result<PathBuf> {
         if let Some(parsed_url) = git::parse_github_folder_url(input_path_str) {
             log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
-            Self::handle_github_folder_url(parsed_url, config)
+            Self::handle_github_folder_url(parsed_url, config, progress)
         } else if git::is_git_url(input_path_str) {
-            git::get_repo(input_path_str, config)
+            git::get_repo(input_path_str, config, progress)
         } else {
             resolve_input_path(input_path_str)
         }
     }
 
     /// Logic for handling a parsed GitHub folder URL, including API download and fallback to clone.
-    fn handle_github_folder_url(parsed_url: git::ParsedGitUrl, config: &Config) -> Result<PathBuf> {
+    fn handle_github_folder_url(
+        parsed_url: git::ParsedGitUrl,
+        config: &Config,
+        progress: Option<Arc<dyn ProgressReporter>>,
+    ) -> Result<PathBuf> {
         match git::download_directory_via_api(&parsed_url, config) {
             Ok(temp_dir_root) => {
                 log::debug!("Successfully downloaded from GitHub API.");
@@ -436,7 +447,7 @@ impl ConfigBuilder {
                         "To avoid this, set a GITHUB_TOKEN environment variable with 'repo' scope."
                     );
 
-                    let cloned_repo_root = git::get_repo(&parsed_url.clone_url, config)?;
+                    let cloned_repo_root = git::get_repo(&parsed_url.clone_url, config, progress)?;
                     let path = cloned_repo_root.join(&parsed_url.subdirectory);
                     if !path.exists() {
                         return Err(anyhow!(
@@ -470,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic_config() -> Result<()> {
-        let config = ConfigBuilder::new().input_path(".").build()?;
+        let config = ConfigBuilder::new().input_path(".").build(None)?;
         assert!(config.input_path.is_absolute());
         assert_eq!(config.output_destination, OutputDestination::Stdout);
         assert!(config.recursive);
@@ -484,7 +495,7 @@ mod tests {
             .input_path(".")
             .no_recursive(true)
             .include_binary(true)
-            .build()?;
+            .build(None)?;
         assert!(!config.recursive);
         assert!(config.include_binary);
         Ok(())
@@ -493,7 +504,7 @@ mod tests {
     #[test]
     fn test_builder_only_shorthand_from_cli() -> Result<()> {
         let cli = Cli::parse_from(["dircat", ".", "--only", "*.rs", "*.toml"]);
-        let config = ConfigBuilder::from_cli(cli).build()?;
+        let config = ConfigBuilder::from_cli(cli).build(None)?;
         assert_eq!(
             config.process_last,
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])

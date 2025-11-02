@@ -35,7 +35,7 @@
 //!     .input_path(temp_path_str)
 //!     .remove_comments(true)
 //!     .summary(true)
-//!     .build()
+//!     .build(None)
 //!     .unwrap();
 //!
 //! // 3. Set up a stop signal for graceful interruption (e.g., by Ctrl+C).
@@ -83,6 +83,7 @@ pub mod errors;
 pub mod git;
 pub mod output;
 pub mod processing;
+pub mod progress;
 pub mod signal;
 
 // Re-export key public types for easier use as a library

@@ -1,6 +1,8 @@
 // src/git.rs
+// git.rs
 //! Handles cloning, caching, and updating of git repositories provided as input.
 //!
+//! This module provides functionality to:
 //! This module provides functionality to:
 //! - Clone remote git repositories into a local cache.
 //! - Update cached repositories on subsequent runs.
@@ -8,6 +10,7 @@
 //! - Provide authentication callbacks for SSH.
 
 use crate::config::Config;
+use crate::progress::ProgressReporter;
 use anyhow::{anyhow, Context, Result};
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
 use hex;
@@ -20,6 +23,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::env;
+use std::sync::Arc;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -65,7 +69,9 @@ fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
 }
 
 /// Sets up remote callbacks for authentication and progress reporting.
-fn create_remote_callbacks() -> RemoteCallbacks<'static> {
+fn create_remote_callbacks(
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> RemoteCallbacks<'static> {
     // --- Setup Callbacks for Authentication and Progress ---
     let mut callbacks = RemoteCallbacks::new();
 
@@ -106,40 +112,31 @@ fn create_remote_callbacks() -> RemoteCallbacks<'static> {
         ))
     });
 
-    // Progress reporting
-    let progress_bar = {
-        let pb = indicatif::ProgressBar::new(0);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-        pb
-    };
-
-    // Clone the progress bar and move the clone into the closure.
-    let pb_clone = progress_bar.clone();
-    callbacks.transfer_progress(move |stats| {
-        if stats.received_objects() == stats.total_objects() {
-            pb_clone.set_length(stats.total_deltas() as u64);
-            pb_clone.set_position(stats.indexed_deltas() as u64);
-            pb_clone.set_message("Resolving deltas...");
-        } else if stats.total_objects() > 0 {
-            pb_clone.set_length(stats.total_objects() as u64);
-            pb_clone.set_position(stats.received_objects() as u64);
-            pb_clone.set_message("Receiving objects...");
-        }
-        true
-    });
+    if let Some(p) = progress {
+        callbacks.transfer_progress(move |stats| {
+            if stats.received_objects() == stats.total_objects() {
+                p.set_length(stats.total_deltas() as u64);
+                p.set_position(stats.indexed_deltas() as u64);
+                p.set_message("Resolving deltas...".to_string());
+            } else if stats.total_objects() > 0 {
+                p.set_length(stats.total_objects() as u64);
+                p.set_position(stats.received_objects() as u64);
+                p.set_message("Receiving objects...".to_string());
+            }
+            true
+        });
+    }
 
     callbacks
 }
 
-fn create_fetch_options(config: &Config) -> FetchOptions<'static> {
+fn create_fetch_options(
+    config: &Config,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> FetchOptions<'static> {
     // --- Setup Fetch Options ---
     let mut fetch_options = FetchOptions::new();
-    fetch_options.remote_callbacks(create_remote_callbacks());
+    fetch_options.remote_callbacks(create_remote_callbacks(progress));
     // Enable pruning to remove remote-tracking branches that no longer exist on the remote.
     fetch_options.prune(git2::FetchPrune::On);
     // Download all tags from the remote. This is important for checking out tags.
@@ -220,10 +217,14 @@ fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2:
 }
 /// Ensures the local repository is up-to-date with the remote.
 /// Fetches from the remote and performs a hard reset to the remote branch head.
-fn update_repo(repo: &Repository, config: &Config) -> Result<()> {
+fn update_repo(
+    repo: &Repository,
+    config: &Config,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<()> {
     log::info!("Updating cached repository...");
     let mut remote = repo.find_remote("origin")?;
-    let mut fetch_options = create_fetch_options(config);
+    let mut fetch_options = create_fetch_options(config, progress);
 
     // Fetch updates from the remote
     remote
@@ -254,6 +255,7 @@ pub(crate) fn get_repo_with_base_cache(
     base_cache_dir: &Path,
     url: &str,
     config: &Config,
+    progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf> {
     let repo_path = get_repo_cache_path(base_cache_dir, url);
 
@@ -266,7 +268,10 @@ pub(crate) fn get_repo_with_base_cache(
         match Repository::open(&repo_path) {
             Ok(repo) => {
                 // Repo exists and is valid, update it
-                update_repo(&repo, config)?;
+                update_repo(&repo, config, progress.clone())?;
+                if let Some(p) = &progress {
+                    p.finish_with_message("Update complete.".to_string());
+                }
                 return Ok(repo_path);
             }
             Err(e) => {
@@ -303,7 +308,7 @@ pub(crate) fn get_repo_with_base_cache(
     );
     fs::create_dir_all(repo_path.parent().unwrap()).context("Failed to create cache directory")?;
 
-    let fetch_options = create_fetch_options(config);
+    let fetch_options = create_fetch_options(config, progress.clone());
     let mut repo_builder = RepoBuilder::new();
     repo_builder.fetch_options(fetch_options);
 
@@ -320,6 +325,9 @@ pub(crate) fn get_repo_with_base_cache(
     let repo = repo_builder
         .clone(url, &repo_path)
         .context("Failed to clone repository")?;
+    if let Some(p) = &progress {
+        p.finish_with_message("Clone complete.".to_string());
+    }
     log::info!("Successfully cloned repository into cache.");
 
     // If a specific branch/tag was requested, we need to check it out now.
@@ -357,9 +365,13 @@ pub(crate) fn get_repo_with_base_cache(
 ///
 /// # Errors
 /// Returns an error if cloning or updating the repository fails.
-pub fn get_repo(url: &str, config: &Config) -> Result<PathBuf> {
+pub fn get_repo(
+    url: &str,
+    config: &Config,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<PathBuf> {
     let base_cache_dir = &config.git_cache_path;
-    get_repo_with_base_cache(base_cache_dir, url, config)
+    get_repo_with_base_cache(base_cache_dir, url, config, progress)
 }
 
 /// Checks if a given string is a likely git repository URL.
@@ -718,13 +730,13 @@ mod tests {
         let config = Config::new_for_test();
 
         // 1. Cache Miss
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config)?;
+        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
         assert!(cached_path.exists());
         let content = fs::read_to_string(cached_path.join("file.txt"))?;
         assert_eq!(content, "content v1");
 
         // 2. Cache Hit (no changes)
-        let cached_path_2 = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config)?;
+        let cached_path_2 = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
         assert_eq!(cached_path, cached_path_2); // Should be the same path
         let content_2 = fs::read_to_string(cached_path_2.join("file.txt"))?;
         assert_eq!(content_2, "content v1");
@@ -746,7 +758,7 @@ mod tests {
         let config = Config::new_for_test();
 
         // 1. Initial clone
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config)?;
+        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
         assert_eq!(
             fs::read_to_string(cached_path.join("file.txt"))?,
             "content v1"
@@ -756,7 +768,7 @@ mod tests {
         add_commit_to_repo(&remote_repo, "file.txt", "content v2", "Update")?;
 
         // 3. Fetch and update
-        let updated_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config)?;
+        let updated_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
         assert_eq!(cached_path, updated_path);
         assert_eq!(
             fs::read_to_string(updated_path.join("file.txt"))?,
@@ -785,7 +797,7 @@ mod tests {
         File::create(&expected_cache_path)?.write_all(b"corruption")?;
 
         // 2. Attempt to get the repo. It should delete the file and re-clone.
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config)?;
+        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
         assert!(cached_path.is_dir()); // It's a directory now
         assert_eq!(fs::read_to_string(cached_path.join("file.txt"))?, "content");
 
