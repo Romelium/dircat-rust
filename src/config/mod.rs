@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub use builder::ConfigBuilder;
 mod builder;
 mod parsing;
-mod path_resolve;
+pub mod path_resolve;
 
 ///
 /// This struct holds all the settings parsed and validated from the CLI,
@@ -162,3 +162,6 @@ pub enum OutputDestination {
     /// Copy the output to the system clipboard (requires the `clipboard` feature).
     Clipboard,
 }
+
+/// Re-export the public path resolution function and its related types.
+pub use path_resolve::{determine_cache_dir, resolve_input, ResolvedInput};

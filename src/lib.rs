@@ -18,24 +18,30 @@
 //! The following example demonstrates how to use the `dircat` library to
 //! discover, process, and format files from a temporary directory.
 //!
-//! ```
-//! use dircat::{discover, process, format, ConfigBuilder};
+//! ```no_run
+//! use dircat::{discover, process, format};
+//! use dircat::config::{self, ConfigBuilder};
 //! use std::sync::{Arc, atomic::AtomicBool};
 //! use std::fs;
 //! use tempfile::tempdir;
 //!
 //! // 1. Set up a temporary directory with some files.
 //! let temp_dir = tempdir().unwrap();
-//! let temp_path_str = temp_dir.path().to_str().unwrap();
+//! let input_path_str = temp_dir.path().to_str().unwrap();
 //! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!").unwrap();
 //! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }").unwrap();
 //!
+//! // 2. Resolve the input path. This is a separate step that performs I/O.
+//! let resolved_input = config::resolve_input(
+//!     input_path_str, &None, None, &None, None
+//! ).unwrap();
+//!
 //! // 2. Create a Config object programmatically using the builder.
 //! let config = ConfigBuilder::new()
-//!     .input_path(temp_path_str)
+//!     .input_path(input_path_str) // This is used for display purposes
 //!     .remove_comments(true)
 //!     .summary(true)
-//!     .build(None)
+//!     .build(resolved_input)
 //!     .unwrap();
 //!
 //! // 3. Set up a stop signal for graceful interruption (e.g., by Ctrl+C).
@@ -332,10 +338,13 @@ mod tests {
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .output_file(output_file_path.to_str().unwrap())
-            .build(None)?;
+            .build(resolved)?;
 
         let stop_signal = Arc::new(AtomicBool::new(true));
 
@@ -362,11 +371,14 @@ mod tests {
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .output_file(output_file_path.to_str().unwrap())
             .dry_run(true)
-            .build(None)?;
+            .build(resolved)?;
 
         let stop_signal = Arc::new(AtomicBool::new(true));
 
@@ -388,9 +400,11 @@ mod tests {
     fn test_execute_returns_empty_vec_when_no_files_found() -> anyhow::Result<()> {
         // 1. Setup
         let temp_dir = tempdir()?;
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
-            .build(None)?;
+            .input_path(input_path_str)
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
         // 2. Execute
         let result = execute(&config, stop_signal)?;
@@ -405,9 +419,11 @@ mod tests {
     fn test_run_returns_no_files_found_error() -> anyhow::Result<()> {
         // 1. Setup
         let temp_dir = tempdir()?;
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
-            .build(None)?;
+            .input_path(input_path_str)
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Execute
@@ -425,10 +441,16 @@ mod tests {
         let temp_dir = tempdir()?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .extensions(vec!["txt".to_string()]) // Filter for .txt, but only .rs exists
-            .build(None)?;
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Execute
@@ -446,9 +468,11 @@ mod tests {
         let temp_dir = tempdir()?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
-            .build(None)?;
+            .input_path(input_path_str)
+            .build(resolved)?;
 
         // Simulate an immediate stop signal
         let stop_signal = Arc::new(AtomicBool::new(false));
@@ -472,10 +496,13 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() { /* comment */ }")?;
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .remove_comments(true) // Enable a processing step
-            .build(None)?;
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Execute
@@ -503,11 +530,14 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() { /* comment */ }")?;
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .dry_run(true)
             .remove_comments(true) // This should be ignored in dry run
-            .build(None)?;
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Execute
@@ -534,10 +564,16 @@ mod tests {
         fs::write(temp_dir.path().join("a.txt"), "text file")?;
         fs::write(temp_dir.path().join("b.bin"), b"binary\0data")?;
 
+        fs::write(temp_dir.path().join("a.txt"), "text file")?;
+        fs::write(temp_dir.path().join("b.bin"), b"binary\0data")?;
+
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
+            .input_path(input_path_str)
             .dry_run(true)
-            .build(None)?;
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Execute
@@ -556,9 +592,12 @@ mod tests {
         let temp_dir = tempdir()?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
+        let input_path_str = temp_dir.path().to_str().unwrap();
+        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
+
         let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
-            .build(None)?;
+            .input_path(input_path_str)
+            .build(resolved)?;
         let stop_signal = Arc::new(AtomicBool::new(true));
 
         // 2. Discover and process

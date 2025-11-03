@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use dircat::{
     cli::Cli,
+    config::resolve_input,
     config::ConfigBuilder,
     errors::Error,
     progress::{IndicatifProgress, ProgressReporter},
@@ -25,7 +26,15 @@ fn main() -> Result<()> {
         None
     };
 
-    let config = ConfigBuilder::from_cli(cli_args).build(progress_reporter)?;
+    // --- Path Resolution (I/O heavy part) ---
+    let resolved_input = resolve_input(
+        &cli_args.input_path,
+        &cli_args.git_branch,
+        cli_args.git_depth,
+        &cli_args.git_cache_path,
+        progress_reporter,
+    )?;
+    let config = ConfigBuilder::from_cli(cli_args).build(resolved_input)?;
     let stop_signal = setup_signal_handler()?;
 
     // --- Execution ---

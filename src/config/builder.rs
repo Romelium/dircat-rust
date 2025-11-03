@@ -1,29 +1,20 @@
 // src/config/builder.rs
 
 //! Builds the `Config` struct from command-line arguments or other sources.
-//!
-//! This module provides the `ConfigBuilder`, which is the primary entry point for
-//! constructing the application's configuration. It handles validation, path
-//! resolution, and git repository cloning/downloading.
-
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
-    path_resolve::resolve_input_path,
+    path_resolve::ResolvedInput,
     Config, OutputDestination,
 };
 use crate::cli::Cli;
-use crate::errors::{ConfigError, Error, GitError, Result};
-use crate::git;
+use crate::errors::{ConfigError, Error, Result};
 use crate::processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
-use crate::progress::ProgressReporter;
-use anyhow::{Context, Result as AnyhowResult};
-use directories::ProjectDirs;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// A builder for creating a `Config` instance from command-line arguments or programmatically.
 ///
-/// This builder handles argument validation, path resolution, and git repository cloning/downloading.
+/// This builder handles argument validation and construction of the final `Config` struct
+/// after the input path has been resolved.
 ///
 /// # Examples
 ///
@@ -31,12 +22,16 @@ use std::sync::Arc;
 /// use dircat::config::ConfigBuilder;
 ///
 /// // Programmatic construction
+/// # use dircat::config::path_resolve::{resolve_input, ResolvedInput};
+/// # use std::path::PathBuf;
+/// let resolved = resolve_input(".", &None, None, &None, None).unwrap();
+///
 /// let config = ConfigBuilder::new()
 ///     .input_path(".")
 ///     .extensions(vec!["rs".to_string()])
 ///     .summary(true)
-///     .build(None) // Pass None for no progress reporter
-///     .unwrap();
+///     .build(resolved)
+///     .expect("Failed to build config");
 ///
 /// assert!(config.summary);
 /// assert_eq!(config.extensions, Some(vec!["rs".to_string()]));
@@ -274,16 +269,13 @@ impl ConfigBuilder {
     ///
     /// This method performs all necessary setup and validation:
     /// - Validates option combinations.
-    /// - Parses and compiles patterns (regex, extensions).
-    /// - Resolves the git cache path.
-    /// - Handles the input path, which can be a local path, a git URL (for cloning),
-    ///   or a GitHub folder URL (for API download).
+    /// - Parses and compiles patterns (regex, extensions) from the builder's state.
+    /// - Uses the pre-resolved path information to construct the final `Config`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any validation fails, paths cannot be resolved, or git
-    /// operations fail.
-    pub fn build(self, progress: Option<Arc<dyn ProgressReporter>>) -> Result<Config> {
+    /// Returns an error if any validation of option combinations fails.
+    pub fn build(self, resolved_input: ResolvedInput) -> Result<Config> {
         // --- Validation ---
         if self.output_file.is_some() && self.paste.unwrap_or(false) {
             return Err(ConfigError::Conflict {
@@ -323,22 +315,16 @@ impl ConfigBuilder {
             content_filters.push(Box::new(RemoveEmptyLinesFilter));
         }
 
-        let input_path_str = self.input_path.unwrap_or_else(|| ".".to_string());
-        let base_path_display: String = input_path_str.clone();
-
         let (process_last, only_last) = if let Some(only_patterns) = self.only {
             (Some(only_patterns), true)
         } else {
             (self.process_last, self.only_last.unwrap_or(false))
         };
 
-        let git_cache_path = Self::determine_cache_dir(self.git_cache_path.as_deref())
-            .map_err(|e| ConfigError::CacheDir(e.to_string()))?;
-
-        let mut config = Config {
-            input_path: PathBuf::new(),
-            base_path_display: String::new(),
-            input_is_file: false,
+        let config = Config {
+            input_path: resolved_input.path,
+            base_path_display: resolved_input.display,
+            input_is_file: resolved_input.is_file,
             max_size: parse_max_size(self.max_size).map_err(Error::from)?,
             recursive: !self.no_recursive.unwrap_or(false),
             extensions: normalize_extensions(self.extensions),
@@ -371,137 +357,10 @@ impl ConfigBuilder {
             dry_run: self.dry_run.unwrap_or(false),
             git_branch: self.git_branch,
             git_depth: self.git_depth,
-            git_cache_path,
+            git_cache_path: resolved_input.cache_path,
         };
 
-        let absolute_input_path =
-            Self::resolve_and_prepare_input_path(&input_path_str, &config, progress)?;
-
-        config.input_path = absolute_input_path;
-        config.base_path_display = base_path_display;
-        config.input_is_file = config.input_path.is_file();
-
         Ok(config)
-    }
-
-    /// Determines the absolute path for the git cache directory.
-    fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
-        if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
-            let path = PathBuf::from(cache_override);
-            if !path.exists() {
-                std::fs::create_dir_all(&path)?;
-            }
-            return Ok(path);
-        }
-
-        if let Some(path_str) = cli_path {
-            let path = PathBuf::from(path_str);
-            // Ensure the directory exists and is absolute.
-            if !path.exists() {
-                std::fs::create_dir_all(&path).with_context(|| {
-                    format!(
-                        "Failed to create specified git cache directory at '{}'",
-                        path.display()
-                    )
-                })?;
-            }
-            return path.canonicalize().with_context(|| {
-                format!(
-                    "Failed to resolve specified git cache path: '{}'",
-                    path.display()
-                )
-            });
-        }
-
-        // Fallback to default project cache directory.
-        let proj_dirs = ProjectDirs::from("com", "romelium", "dircat")
-            .context("Could not determine project cache directory")?;
-        let cache_dir = proj_dirs.cache_dir().join("repos");
-        if !cache_dir.exists() {
-            std::fs::create_dir_all(&cache_dir).with_context(|| {
-                format!(
-                    "Failed to create default git cache directory at '{}'",
-                    cache_dir.display()
-                )
-            })?;
-        }
-        Ok(cache_dir)
-    }
-
-    /// Handles git URLs (cloning or API download) or resolves local paths.
-    fn resolve_and_prepare_input_path(
-        input_path_str: &str,
-        config: &Config,
-        progress: Option<Arc<dyn ProgressReporter>>,
-    ) -> Result<PathBuf> {
-        if let Some(parsed_url) = git::parse_github_folder_url(input_path_str) {
-            log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
-            Self::handle_github_folder_url(parsed_url, config, progress)
-        } else if git::is_git_url(input_path_str) {
-            git::get_repo(input_path_str, config, progress).map_err(Error::from)
-        } else {
-            resolve_input_path(input_path_str).map_err(Error::from)
-        }
-    }
-
-    /// Logic for handling a parsed GitHub folder URL, including API download and fallback to clone.
-    fn handle_github_folder_url(
-        parsed_url: git::ParsedGitUrl,
-        config: &Config,
-        progress: Option<Arc<dyn ProgressReporter>>,
-    ) -> Result<PathBuf> {
-        match git::download_directory_via_api(&parsed_url, config) {
-            Ok(temp_dir_root) => {
-                log::debug!("Successfully downloaded from GitHub API.");
-                let path = temp_dir_root.join(&parsed_url.subdirectory);
-                if !path.exists() {
-                    return Err(Error::Git(GitError::SubdirectoryNotFound {
-                        path: parsed_url.subdirectory,
-                        repo: parsed_url.clone_url,
-                    }));
-                }
-                Ok(path)
-            }
-            Err(e) => {
-                let is_rate_limit_error = e
-                    .downcast_ref::<reqwest::Error>()
-                    .is_some_and(|re| re.status() == Some(reqwest::StatusCode::FORBIDDEN));
-
-                if is_rate_limit_error {
-                    log::warn!(
-                        "GitHub API request failed (likely rate-limited). Falling back to a full git clone of '{}'.",
-                        parsed_url.clone_url
-                    );
-                    log::warn!(
-                        "To avoid this, set a GITHUB_TOKEN environment variable with 'repo' scope."
-                    );
-
-                    let cloned_repo_root = git::get_repo(&parsed_url.clone_url, config, progress)
-                        .map_err(Error::from)?;
-                    let path = cloned_repo_root.join(&parsed_url.subdirectory);
-                    if !path.exists() {
-                        return Err(Error::Git(GitError::SubdirectoryNotFound {
-                            path: parsed_url.subdirectory,
-                            repo: parsed_url.clone_url,
-                        }));
-                    }
-                    Ok(path)
-                } else {
-                    if let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() {
-                        if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                            return Err(Error::Git(GitError::SubdirectoryNotFound {
-                                path: parsed_url.subdirectory,
-                                repo: parsed_url.clone_url,
-                            }));
-                        }
-                    }
-                    Err(Error::Git(GitError::ApiDownloadFailed {
-                        url: parsed_url.clone_url,
-                        source: e,
-                    }))
-                }
-            }
-        }
     }
 }
 
@@ -509,6 +368,7 @@ impl ConfigBuilder {
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use crate::config::path_resolve::{resolve_input, ResolvedInput};
     use crate::errors::{ConfigError, Error, GitError};
     use clap::Parser;
 
@@ -518,7 +378,7 @@ mod tests {
         let res1 = ConfigBuilder::new()
             .output_file("f")
             .paste(true)
-            .build(None);
+            .build(ResolvedInput::default_for_test());
         assert!(matches!(
             res1,
             Err(Error::Config(ConfigError::Conflict { .. }))
@@ -526,7 +386,9 @@ mod tests {
         assert!(res1.unwrap_err().to_string().contains("simultaneously"));
 
         // Invalid ticks
-        let res2 = ConfigBuilder::new().ticks(2).build(None);
+        let res2 = ConfigBuilder::new()
+            .ticks(2)
+            .build(ResolvedInput::default_for_test());
         assert!(matches!(
             res2,
             Err(Error::Config(ConfigError::InvalidValue { .. }))
@@ -537,7 +399,9 @@ mod tests {
             .contains("must be 3 or greater"));
 
         // --only-last without --last
-        let res3 = ConfigBuilder::new().only_last(true).build(None);
+        let res3 = ConfigBuilder::new()
+            .only_last(true)
+            .build(ResolvedInput::default_for_test());
         assert!(matches!(
             res3,
             Err(Error::Config(ConfigError::MissingDependency { .. }))
@@ -551,7 +415,7 @@ mod tests {
         let res4 = ConfigBuilder::new()
             .only(vec!["*.rs".to_string()])
             .process_last(vec!["*.md".to_string()])
-            .build(None);
+            .build(ResolvedInput::default_for_test());
         assert!(matches!(
             res4,
             Err(Error::Config(ConfigError::Conflict { .. }))
@@ -567,7 +431,7 @@ mod tests {
     fn test_builder_git_clone_error_returns_structured_error() {
         // Use a URL that is syntactically valid but points to a non-existent repo
         let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
-        let result = ConfigBuilder::new().input_path(invalid_git_url).build(None);
+        let result = resolve_input(invalid_git_url, &None, None, &None, None);
 
         assert!(matches!(
             result,
@@ -580,7 +444,8 @@ mod tests {
 
     #[test]
     fn test_builder_basic_config() -> Result<()> {
-        let config = ConfigBuilder::new().input_path(".").build(None)?;
+        let resolved = resolve_input(".", &None, None, &None, None)?;
+        let config = ConfigBuilder::new().input_path(".").build(resolved)?;
         assert!(config.input_path.is_absolute());
         assert_eq!(config.output_destination, OutputDestination::Stdout);
         assert!(config.recursive);
@@ -590,11 +455,12 @@ mod tests {
 
     #[test]
     fn test_builder_with_flags() -> Result<()> {
+        let resolved = resolve_input(".", &None, None, &None, None)?;
         let config = ConfigBuilder::new()
             .input_path(".")
             .no_recursive(true)
             .include_binary(true)
-            .build(None)?;
+            .build(resolved)?;
         assert!(!config.recursive);
         assert!(config.include_binary);
         Ok(())
@@ -603,7 +469,8 @@ mod tests {
     #[test]
     fn test_builder_only_shorthand_from_cli() -> Result<()> {
         let cli = Cli::parse_from(["dircat", ".", "--only", "*.rs", "*.toml"]);
-        let config = ConfigBuilder::from_cli(cli).build(None)?;
+        let resolved = resolve_input(".", &None, None, &None, None)?;
+        let config = ConfigBuilder::from_cli(cli).build(resolved)?;
         assert_eq!(
             config.process_last,
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])
@@ -615,25 +482,26 @@ mod tests {
     #[test]
     fn test_builder_content_filters_from_cli() -> Result<()> {
         // No filters
+        let resolved = resolve_input(".", &None, None, &None, None)?;
         let cli_none = Cli::parse_from(["dircat", "."]);
-        let config_none = ConfigBuilder::from_cli(cli_none).build(None)?;
+        let config_none = ConfigBuilder::from_cli(cli_none).build(resolved.clone())?;
         assert!(config_none.content_filters.is_empty());
 
         // Comments only
         let cli_c = Cli::parse_from(["dircat", ".", "-c"]);
-        let config_c = ConfigBuilder::from_cli(cli_c).build(None)?;
+        let config_c = ConfigBuilder::from_cli(cli_c).build(resolved.clone())?;
         assert_eq!(config_c.content_filters.len(), 1);
         assert_eq!(config_c.content_filters[0].name(), "RemoveCommentsFilter");
 
         // Empty lines only
         let cli_l = Cli::parse_from(["dircat", ".", "-l"]);
-        let config_l = ConfigBuilder::from_cli(cli_l).build(None)?;
+        let config_l = ConfigBuilder::from_cli(cli_l).build(resolved.clone())?;
         assert_eq!(config_l.content_filters.len(), 1);
         assert_eq!(config_l.content_filters[0].name(), "RemoveEmptyLinesFilter");
 
         // Both filters
         let cli_cl = Cli::parse_from(["dircat", ".", "-c", "-l"]);
-        let config_cl = ConfigBuilder::from_cli(cli_cl).build(None)?;
+        let config_cl = ConfigBuilder::from_cli(cli_cl).build(resolved)?;
         assert_eq!(config_cl.content_filters.len(), 2);
         assert_eq!(config_cl.content_filters[0].name(), "RemoveCommentsFilter");
         assert_eq!(

@@ -1,4 +1,3 @@
-// src/git.rs
 // git.rs
 //! Handles cloning, caching, and updating of git repositories provided as input.
 //!
@@ -9,7 +8,6 @@
 //! - Parse GitHub folder URLs and download their contents via the GitHub API.
 //! - Provide authentication callbacks for SSH.
 
-use crate::config::Config;
 use crate::errors::GitError;
 use crate::progress::ProgressReporter;
 use anyhow::{anyhow, Context, Result};
@@ -132,7 +130,7 @@ fn create_remote_callbacks(
 }
 
 fn create_fetch_options(
-    config: &Config,
+    depth: Option<u32>,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> FetchOptions<'static> {
     // --- Setup Fetch Options ---
@@ -142,7 +140,7 @@ fn create_fetch_options(
     fetch_options.prune(git2::FetchPrune::On);
     // Download all tags from the remote. This is important for checking out tags.
     fetch_options.download_tags(git2::AutotagOption::All);
-    if let Some(depth) = config.git_depth {
+    if let Some(depth) = depth {
         fetch_options.depth(depth as i32);
         log::debug!("Set shallow clone depth to: {}", depth);
     }
@@ -157,9 +155,9 @@ fn create_fetch_options(
 /// 2. If no branch is specified, resolving the remote's `HEAD` to find the default branch.
 fn find_remote_commit<'a>(
     repo: &'a Repository,
-    config: &Config,
+    branch: &Option<String>,
 ) -> Result<git2::Commit<'a>, GitError> {
-    if let Some(ref_name) = &config.git_branch {
+    if let Some(ref_name) = branch {
         log::debug!("Using user-specified ref: {}", ref_name);
 
         // 1. Try to resolve as a remote branch.
@@ -230,14 +228,15 @@ fn find_remote_commit<'a>(
 /// Fetches from the remote and performs a hard reset to the remote branch head.
 fn update_repo(
     repo: &Repository,
-    config: &Config,
+    branch: &Option<String>,
+    depth: Option<u32>,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<(), GitError> {
     log::info!("Updating cached repository...");
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| GitError::Generic(anyhow!(e)))?;
-    let mut fetch_options = create_fetch_options(config, progress);
+    let mut fetch_options = create_fetch_options(depth, progress);
 
     // Fetch updates from the remote
     remote
@@ -248,7 +247,7 @@ fn update_repo(
         })?;
 
     // Find the specific commit we need to reset to.
-    let target_commit = find_remote_commit(repo, config)?;
+    let target_commit = find_remote_commit(repo, branch)?;
     // Detach HEAD before resetting to avoid issues with checked-out branches.
     repo.set_head_detached(target_commit.id())
         .context("Failed to detach HEAD in cached repository")
@@ -272,7 +271,8 @@ fn update_repo(
 pub(crate) fn get_repo_with_base_cache(
     base_cache_dir: &Path,
     url: &str,
-    config: &Config,
+    branch: &Option<String>,
+    depth: Option<u32>,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf, GitError> {
     let repo_path = get_repo_cache_path(base_cache_dir, url);
@@ -286,7 +286,7 @@ pub(crate) fn get_repo_with_base_cache(
         match Repository::open(&repo_path) {
             Ok(repo) => {
                 // Repo exists and is valid, update it
-                update_repo(&repo, config, progress.clone())?;
+                update_repo(&repo, branch, depth, progress.clone())?;
                 if let Some(p) = &progress {
                     p.finish_with_message("Update complete.".to_string());
                 }
@@ -331,14 +331,14 @@ pub(crate) fn get_repo_with_base_cache(
         .context("Failed to create cache directory")
         .map_err(GitError::Generic)?;
 
-    let fetch_options = create_fetch_options(config, progress.clone());
+    let fetch_options = create_fetch_options(depth, progress.clone());
     let mut repo_builder = RepoBuilder::new();
     repo_builder.fetch_options(fetch_options);
 
     // If a specific ref is given that might be a tag, we cannot use `repo_builder.branch()`.
     // Instead, we clone the default branch first, and then find and check out the specific ref.
     // This is more robust and handles both branches and tags correctly on initial clone.
-    if let Some(ref_name) = &config.git_branch {
+    if let Some(ref_name) = branch {
         log::debug!(
             "Cloning default branch first, will check out '{}' after.",
             ref_name
@@ -358,13 +358,10 @@ pub(crate) fn get_repo_with_base_cache(
 
     // If a specific branch/tag was requested, we need to check it out now.
     // The clone operation by default only checks out the remote's HEAD.
-    if config.git_branch.is_some() {
-        log::info!(
-            "Checking out specified ref: {:?}",
-            config.git_branch.as_ref().unwrap()
-        );
+    if branch.is_some() {
+        log::info!("Checking out specified ref: {:?}", branch.as_ref().unwrap());
         // Find the commit associated with the branch or tag.
-        let target_commit = find_remote_commit(&repo, config)?;
+        let target_commit = find_remote_commit(&repo, branch)?;
 
         // Detach HEAD and reset the working directory to the target commit.
         repo.set_head_detached(target_commit.id())
@@ -386,20 +383,27 @@ pub(crate) fn get_repo_with_base_cache(
 ///
 /// # Arguments
 /// * `url` - The URL of the git repository to clone.
-/// * `config` - The application configuration, containing cache path and git options.
+/// * `branch` - The specific git branch or tag to check out.
+///
+/// # Arguments
+/// * `url` - The URL of the git repository to clone.
+/// * `branch` - The specific git branch or tag to check out.
+/// * `depth` - The depth for a shallow clone.
+/// * `cache_path` - The absolute path to the directory for caching repositories.
 ///
 /// # Returns
 /// A `Result` containing the `PathBuf` to the local, up-to-date repository on success.
 ///
 /// # Errors
 /// Returns an error if cloning or updating the repository fails.
-pub fn get_repo(
+pub(crate) fn get_repo(
     url: &str,
-    config: &Config,
+    branch: &Option<String>,
+    depth: Option<u32>,
+    cache_path: &Path,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf, GitError> {
-    let base_cache_dir = &config.git_cache_path;
-    get_repo_with_base_cache(base_cache_dir, url, config, progress)
+    get_repo_with_base_cache(cache_path, url, branch, depth, progress)
 }
 
 /// Checks if a given string is a likely git repository URL.
@@ -524,7 +528,7 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
 ///
 /// # Arguments
 /// * `url_parts` - A `ParsedGitUrl` struct containing the repository and path information.
-/// * `config` - The application configuration, used for resolving the branch if needed.
+/// * `cli_branch` - The branch specified via the CLI, which takes precedence.
 ///
 /// # Returns
 /// A `Result` containing the `PathBuf` to the temporary directory where files were downloaded.
@@ -533,14 +537,17 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
 /// # Errors
 /// Returns an error if API requests fail, the directory is not found, or file I/O fails.
 /// If a `GITHUB_TOKEN` environment variable is not set, this may fail due to API rate limiting.
-pub fn download_directory_via_api(url_parts: &ParsedGitUrl, config: &Config) -> Result<PathBuf> {
+pub fn download_directory_via_api(
+    url_parts: &ParsedGitUrl,
+    cli_branch: &Option<String>,
+) -> Result<PathBuf> {
     // 1. Setup
     let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
     let client = build_reqwest_client()?;
     let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
 
     // 2. Resolve branch
-    let branch_to_use = if let Some(cli_branch) = &config.git_branch {
+    let branch_to_use = if let Some(cli_branch) = cli_branch {
         // Always prioritize the branch specified on the command line.
         log::debug!("Using branch from --git-branch flag: {}", cli_branch);
         cli_branch.clone()
@@ -691,7 +698,6 @@ fn parse_clone_url(clone_url: &str) -> Result<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use git2::{IndexTime, Signature};
     use std::fs::File;
     use std::io::Write;
@@ -755,16 +761,17 @@ mod tests {
         let remote_url = format!("file://{}", remote_path_str);
 
         let cache_dir = tempdir()?;
-        let config = Config::new_for_test();
 
         // 1. Cache Miss
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
+        let cached_path =
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
         assert!(cached_path.exists());
         let content = fs::read_to_string(cached_path.join("file.txt"))?;
         assert_eq!(content, "content v1");
 
         // 2. Cache Hit (no changes)
-        let cached_path_2 = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
+        let cached_path_2 =
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
         assert_eq!(cached_path, cached_path_2); // Should be the same path
         let content_2 = fs::read_to_string(cached_path_2.join("file.txt"))?;
         assert_eq!(content_2, "content v1");
@@ -783,10 +790,10 @@ mod tests {
         let remote_url = format!("file://{}", remote_path_str);
 
         let cache_dir = tempdir()?;
-        let config = Config::new_for_test();
 
         // 1. Initial clone
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
+        let cached_path =
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
         assert_eq!(
             fs::read_to_string(cached_path.join("file.txt"))?,
             "content v1"
@@ -796,7 +803,8 @@ mod tests {
         add_commit_to_repo(&remote_repo, "file.txt", "content v2", "Update")?;
 
         // 3. Fetch and update
-        let updated_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
+        let updated_path =
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
         assert_eq!(cached_path, updated_path);
         assert_eq!(
             fs::read_to_string(updated_path.join("file.txt"))?,
@@ -817,7 +825,6 @@ mod tests {
         let remote_url = format!("file://{}", remote_path_str);
 
         let cache_dir = tempdir()?;
-        let config = Config::new_for_test();
 
         // 1. Manually create a corrupted cache entry (a file instead of a dir)
         let expected_cache_path = get_repo_cache_path(cache_dir.path(), &remote_url);
@@ -825,7 +832,8 @@ mod tests {
         File::create(&expected_cache_path)?.write_all(b"corruption")?;
 
         // 2. Attempt to get the repo. It should delete the file and re-clone.
-        let cached_path = get_repo_with_base_cache(cache_dir.path(), &remote_url, &config, None)?;
+        let cached_path =
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
         assert!(cached_path.is_dir()); // It's a directory now
         assert_eq!(fs::read_to_string(cached_path.join("file.txt"))?, "content");
 
