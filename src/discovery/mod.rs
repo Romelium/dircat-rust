@@ -1,9 +1,8 @@
+use crate::cancellation::CancellationToken;
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::{Error, Result};
 use log::debug;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 mod entry_processor;
 mod walker;
@@ -15,7 +14,7 @@ use walker::build_walker;
 /// Returns a tuple of two vectors: (normal_files, last_files).
 pub fn discover_files(
     config: &Config,
-    stop_signal: Arc<AtomicBool>,
+    token: &CancellationToken,
 ) -> Result<(Vec<FileInfo>, Vec<FileInfo>)> {
     let mut normal_files = Vec::new();
     let mut last_files = Vec::<FileInfo>::new();
@@ -26,7 +25,7 @@ pub fn discover_files(
     );
 
     // Check for stop signal before starting the walk
-    if !stop_signal.load(Ordering::Relaxed) {
+    if token.is_cancelled() {
         return Err(Error::Interrupted);
     }
 
@@ -34,8 +33,8 @@ pub fn discover_files(
 
     for entry_result in walker {
         // Check for Ctrl+C signal
-        if !stop_signal.load(Ordering::Relaxed) {
-            log::error!("Discovery loop interrupted by stop_signal!");
+        if token.is_cancelled() {
+            log::error!("Discovery loop interrupted by token!");
             return Err(Error::Interrupted);
         }
 

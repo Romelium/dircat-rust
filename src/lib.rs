@@ -20,8 +20,8 @@
 //!
 //! ```no_run
 //! use dircat::{discover, process, format};
+//! use dircat::cancellation::CancellationToken;
 //! use dircat::config::{self, ConfigBuilder};
-//! use std::sync::{Arc, atomic::AtomicBool};
 //! use std::fs;
 //! use tempfile::tempdir;
 //!
@@ -44,15 +44,15 @@
 //!     .build(resolved_input)
 //!     .unwrap();
 //!
-//! // 3. Set up a stop signal for graceful interruption (e.g., by Ctrl+C).
-//! let stop_signal = Arc::new(AtomicBool::new(true));
+//! // 3. Set up a cancellation token for graceful interruption (e.g., by Ctrl+C).
+//! let token = CancellationToken::new();
 //!
 //! // 4. Execute the dircat pipeline.
 //! // Stage 1: Discover files.
-//! let discovered_files = discover(&config, stop_signal.clone()).unwrap();
+//! let discovered_files = discover(&config, &token).unwrap();
 //!
 //! // Stage 2: Process file content.
-//! let processed_files = process(discovered_files, &config, stop_signal).unwrap();
+//! let processed_files = process(discovered_files, &config, &token).unwrap();
 //!
 //! // Stage 3: Format the output into a buffer.
 //! let mut output_buffer = Vec::new();
@@ -80,6 +80,7 @@
 //! ```
 
 // Make modules public if they contain public types used in the API
+pub mod cancellation;
 pub mod cli;
 pub mod config;
 pub mod constants;
@@ -93,21 +94,20 @@ pub mod progress;
 pub mod signal;
 
 // Re-export key public types for easier use as a library
+pub use cancellation::CancellationToken;
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
+pub use filtering::{is_likely_text, is_likely_text_from_buffer};
 pub use processing::filters::{
     remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
     RemoveEmptyLinesFilter,
 };
-pub use filtering::{is_likely_text, is_likely_text_from_buffer};
 
 use crate::errors::{Error, Result};
 mod filtering;
 use anyhow::Context;
 use rayon::prelude::*;
 use std::io::Write; // Import Write trait
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 /// Represents the successful result of a dircat execution.
 ///
@@ -130,13 +130,13 @@ pub struct DircatResult {
 ///
 /// # Arguments
 /// * `config` - The configuration for the discovery process.
-/// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` containing a vector of `FileInfo` structs, sorted in the final
 /// processing order (normal files alphabetically, then "last" files in the specified order).
-pub fn discover(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<Vec<FileInfo>> {
-    let (mut normal_files, mut last_files) = discovery::discover_files(config, stop_signal)?;
+pub fn discover(config: &Config, token: &CancellationToken) -> Result<Vec<FileInfo>> {
+    let (mut normal_files, mut last_files) = discovery::discover_files(config, token)?;
 
     // Sort normal files alphabetically by relative path
     normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
@@ -157,7 +157,7 @@ pub fn discover(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<Vec<Fil
 /// # Arguments
 /// * `files` - A vector of `FileInfo` structs from the `discover` stage.
 /// * `config` - The configuration for the processing stage.
-/// * `stop_signal` - An `Arc<AtomicBool>` for graceful interruption.
+/// * `token` - A `CancellationToken` for graceful interruption.
 ///
 /// # Returns
 /// A `Result` containing a new vector of `FileInfo` structs that have been processed
@@ -166,13 +166,9 @@ pub fn discover(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<Vec<Fil
 pub fn process(
     files: Vec<FileInfo>,
     config: &Config,
-    stop_signal: Arc<AtomicBool>,
+    token: &CancellationToken,
 ) -> Result<Vec<FileInfo>> {
-    Ok(processing::process_and_filter_files(
-        files,
-        config,
-        stop_signal,
-    )?)
+    Ok(processing::process_and_filter_files(files, config, token)?)
 }
 
 /// Formats the processed files into the final Markdown output.
@@ -237,42 +233,59 @@ pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
 ///
 /// # Arguments
 /// * `config` - The configuration for the entire run.
-/// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` containing a `DircatResult` on success. The `files` vector within the
 /// result will be empty if no files matched the criteria. Other errors are propagated
 /// from the underlying stages.
-pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatResult> {
+pub fn execute(config: &Config, token: &CancellationToken) -> Result<DircatResult> {
     // Discover files based on config
-    let discovered_files = discover(config, stop_signal.clone())?;
+    let discovered_files = discover(config, token)?;
+
+    if token.is_cancelled() {
+        return Err(Error::Interrupted);
+    }
 
     let final_files = if config.dry_run {
         // For a dry run, we just need to filter out binaries and return.
         // The content isn't processed.
         discovered_files
             .into_par_iter()
-            .filter(|fi| {
+            .filter_map(|fi| {
+                if token.is_cancelled() {
+                    return None;
+                }
                 if config.include_binary {
-                    return true;
+                    return Some(fi);
                 }
                 match filtering::is_likely_text(&fi.absolute_path) {
-                    Ok(is_text) => is_text,
+                    Ok(is_text) => {
+                        if is_text {
+                            Some(fi)
+                        } else {
+                            None
+                        }
+                    }
                     Err(e) => {
                         log::warn!(
                             "Dry run: Could not check file type for '{}', skipping. Error: {}",
                             fi.absolute_path.display(),
                             e
                         );
-                        false
+                        None
                     }
                 }
             })
             .collect()
     } else {
         // For a normal run, process the files.
-        process(discovered_files, config, stop_signal)?
+        process(discovered_files, config, token)?
     };
+
+    if token.is_cancelled() {
+        return Err(Error::Interrupted);
+    }
 
     Ok(DircatResult { files: final_files })
 }
@@ -290,15 +303,15 @@ pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatRe
 ///
 /// # Arguments
 /// * `config` - The configuration for the entire run.
-/// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` that is `Ok(())` on success. It returns `Err(Error::NoFilesFound)`
 /// if the discovery and processing stages yield no files to output. Other errors
 /// are propagated from the underlying stages.
-pub fn run(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<()> {
+pub fn run(config: &Config, token: &CancellationToken) -> Result<()> {
     // Execute the core logic to get the processed files.
-    let result = execute(config, stop_signal)?;
+    let result = execute(config, token)?;
 
     // Check if any files were found. If not, this is an error condition for a full run.
     if result.files.is_empty() {
@@ -330,7 +343,6 @@ mod tests {
     use super::*;
     use crate::errors::Error;
     use std::fs;
-    use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 
     #[test]
@@ -349,10 +361,10 @@ mod tests {
             .output_file(output_file_path.to_str().unwrap())
             .build(resolved)?;
 
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, stop_signal);
+        let result = run(&config, &token);
 
         // 3. Assert
         assert!(result.is_ok());
@@ -383,10 +395,10 @@ mod tests {
             .dry_run(true)
             .build(resolved)?;
 
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, stop_signal);
+        let result = run(&config, &token);
 
         // 3. Assert
         assert!(result.is_ok());
@@ -408,9 +420,9 @@ mod tests {
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
         // 2. Execute
-        let result = execute(&config, stop_signal)?;
+        let result = execute(&config, &token)?;
 
         // 3. Assert
         assert!(result.files.is_empty());
@@ -427,10 +439,10 @@ mod tests {
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, stop_signal);
+        let result = run(&config, &token);
 
         // 3. Assert
         assert!(matches!(result, Err(Error::NoFilesFound)));
@@ -454,10 +466,10 @@ mod tests {
             .input_path(input_path_str)
             .extensions(vec!["txt".to_string()]) // Filter for .txt, but only .rs exists
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, stop_signal);
+        let result = run(&config, &token);
 
         // 3. Assert
         assert!(matches!(result, Err(Error::NoFilesFound)));
@@ -477,11 +489,12 @@ mod tests {
             .input_path(input_path_str)
             .build(resolved)?;
 
-        // Simulate an immediate stop signal
-        let stop_signal = Arc::new(AtomicBool::new(false));
+        // Simulate an immediate cancellation
+        let token = CancellationToken::new();
+        token.cancel();
 
         // 2. Execute
-        let result = run(&config, stop_signal);
+        let result = run(&config, &token);
 
         // 3. Assert
         // The error should be `Interrupted` because the discovery loop checks the signal.
@@ -506,10 +519,10 @@ mod tests {
             .input_path(input_path_str)
             .remove_comments(true) // Enable a processing step
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, stop_signal)?;
+        let result = execute(&config, &token)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 2);
@@ -541,10 +554,10 @@ mod tests {
             .dry_run(true)
             .remove_comments(true) // This should be ignored in dry run
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, stop_signal)?;
+        let result = execute(&config, &token)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 2);
@@ -577,10 +590,10 @@ mod tests {
             .input_path(input_path_str)
             .dry_run(true)
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, stop_signal)?;
+        let result = execute(&config, &token)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 1); // Binary file should be filtered out
@@ -601,11 +614,11 @@ mod tests {
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .build(resolved)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         // 2. Discover and process
-        let discovered_files = discover(&config, stop_signal.clone())?;
-        let processed_files = process(discovered_files, &config, stop_signal)?;
+        let discovered_files = discover(&config, &token)?;
+        let processed_files = process(discovered_files, &config, &token)?;
 
         // 3. Format to string
         let output_string = format_to_string(&processed_files, &config)?;

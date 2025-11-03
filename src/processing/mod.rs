@@ -4,6 +4,7 @@
 //! applying content filters (like comment removal), and calculating statistics.
 //! Operations are performed in parallel using Rayon for efficiency.
 
+use crate::cancellation::CancellationToken;
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::{io_error_with_path, Error};
@@ -12,8 +13,6 @@ use anyhow::Result;
 use log::debug;
 use rayon::prelude::*;
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 mod content_filters;
 mod counter;
@@ -43,7 +42,7 @@ pub mod filters {
 /// # Arguments
 /// * `files` - A `Vec<FileInfo>` from the discovery stage.
 /// * `config` - The application configuration.
-/// * `stop_signal` - An `Arc<AtomicBool>` to allow for graceful interruption.
+/// * `token` - A `CancellationToken` to allow for graceful interruption.
 ///
 /// # Returns
 /// A `Result` containing a new `Vec<FileInfo>` with processed content. Files that
@@ -54,7 +53,7 @@ pub mod filters {
 pub fn process_and_filter_files(
     files: Vec<FileInfo>,
     config: &Config,
-    stop_signal: Arc<AtomicBool>,
+    token: &CancellationToken,
 ) -> Result<Vec<FileInfo>> {
     if files.is_empty() {
         debug!("No files in this batch to process.");
@@ -69,8 +68,8 @@ pub fn process_and_filter_files(
     let processed_files: Vec<FileInfo> = files
         .into_par_iter()
         .filter_map(|mut file_info| {
-            // Check for Ctrl+C signal
-            if !stop_signal.load(Ordering::Relaxed) {
+            // Check for cancellation signal
+            if token.is_cancelled() {
                 return Some(Err(Error::Interrupted.into()));
             }
 
@@ -154,13 +153,12 @@ pub fn process_and_filter_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cancellation::CancellationToken;
     use crate::config::Config;
     use crate::core_types::FileInfo;
     use crate::processing::filters::{RemoveCommentsFilter, RemoveEmptyLinesFilter};
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     fn setup_test_file(content: &[u8]) -> (tempfile::TempDir, FileInfo) {
@@ -186,7 +184,7 @@ mod tests {
     fn test_process_files_applies_filters_sequentially() -> Result<()> {
         let original_content = b"// comment\n\nfn main() {}\n";
         let (_dir, file_info) = setup_test_file(original_content);
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         let mut config = Config::new_for_test();
         config.content_filters.push(Box::new(RemoveCommentsFilter));
@@ -194,7 +192,7 @@ mod tests {
             .content_filters
             .push(Box::new(RemoveEmptyLinesFilter));
 
-        let processed = process_and_filter_files(vec![file_info], &config, stop_signal)?;
+        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
 
         assert_eq!(processed.len(), 1);
         // After comment removal: "\n\nfn main() {}\n" -> trim -> "fn main() {}"
@@ -212,12 +210,12 @@ mod tests {
     fn test_process_files_no_filters() -> Result<()> {
         let original_content = b"// comment\n\nfn main() {}\n";
         let (_dir, file_info) = setup_test_file(original_content);
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         let config = Config::new_for_test(); // Has no filters by default
         assert!(config.content_filters.is_empty());
 
-        let processed = process_and_filter_files(vec![file_info], &config, stop_signal)?;
+        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
 
         assert_eq!(processed.len(), 1);
         // No filters, so content should be the original string
@@ -234,13 +232,13 @@ mod tests {
         // This content will be detected as binary
         let original_content = b"binary\0content";
         let (_dir, file_info) = setup_test_file(original_content);
-        let stop_signal = Arc::new(AtomicBool::new(true));
+        let token = CancellationToken::new();
 
         let mut config = Config::new_for_test();
         config.include_binary = true; // We must include it to process it
         config.content_filters.push(Box::new(RemoveCommentsFilter));
 
-        let processed = process_and_filter_files(vec![file_info], &config, stop_signal)?;
+        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
 
         assert_eq!(processed.len(), 1);
         assert!(processed[0].is_binary);

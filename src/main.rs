@@ -20,11 +20,12 @@ fn main() -> Result<()> {
     let cli_args = Cli::parse();
 
     // Decide whether to show a progress bar. Show it if stderr is a TTY.
-    let progress_reporter: Option<Arc<dyn ProgressReporter>> = if atty::is(atty::Stream::Stderr) {
-        Some(Arc::new(IndicatifProgress::new()))
-    } else {
-        None
-    };
+    let progress_reporter: Option<std::sync::Arc<dyn ProgressReporter>> =
+        if atty::is(atty::Stream::Stderr) {
+            Some(Arc::new(IndicatifProgress::new()))
+        } else {
+            None
+        };
 
     // --- Path Resolution (I/O heavy part) ---
     let resolved_input = resolve_input(
@@ -35,10 +36,10 @@ fn main() -> Result<()> {
         progress_reporter,
     )?;
     let config = ConfigBuilder::from_cli(cli_args).build(resolved_input)?;
-    let stop_signal = setup_signal_handler()?;
+    let token = setup_signal_handler()?;
 
     // --- Execution ---
-    let result = run(&config, stop_signal);
+    let result = run(&config, &token);
 
     // --- Error Handling ---
     if let Err(e) = result {
