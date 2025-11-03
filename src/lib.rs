@@ -89,8 +89,9 @@ pub mod signal;
 // Re-export key public types for easier use as a library
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
+pub use processing::filters;
 
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::filtering::is_likely_text;
 mod filtering;
 use rayon::prelude::*;
@@ -202,4 +203,185 @@ pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Writ
         &filtered_files,
         config,
     )?)
+}
+
+/// Executes the complete dircat pipeline: discover, process, and format.
+///
+/// This is the primary entry point for running the tool's logic programmatically
+/// in a way that mirrors the command-line execution. It orchestrates the three
+/// main stages and handles output destination logic (stdout, file, or clipboard)
+/// as specified in the `Config`.
+///
+/// For more granular control or to capture the output as a string in memory,
+/// use the individual `discover`, `process`, and `format` functions directly,
+/// as shown in the crate-level documentation example.
+///
+/// # Arguments
+/// * `config` - The configuration for the entire run.
+/// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
+///
+/// # Returns
+/// A `Result` that is `Ok(())` on success. It returns `Err(Error::NoFilesFound)`
+/// if the discovery and processing stages yield no files to output. Other errors
+/// are propagated from the underlying stages.
+pub fn run(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<()> {
+    // Discover files based on config
+    let discovered_files = discover(config, stop_signal.clone())?;
+
+    // Set up the output writer (stdout, file, or clipboard buffer)
+    let writer_setup = output::writer::setup_output_writer(config)?;
+    let mut writer: Box<dyn Write + Send> = writer_setup.writer;
+
+    if config.dry_run {
+        // Handle Dry Run
+        if discovered_files.is_empty() {
+            return Err(Error::NoFilesFound);
+        }
+        format_dry_run(&discovered_files, config, &mut writer)?;
+    } else {
+        // Handle Normal Run
+        let processed_files = process(discovered_files, config, stop_signal)?;
+        if processed_files.is_empty() {
+            return Err(Error::NoFilesFound);
+        }
+        format(&processed_files, config, &mut writer)?;
+    }
+
+    // Finalize output (e.g., copy to clipboard)
+    Ok(output::writer::finalize_output(
+        writer,
+        writer_setup.clipboard_buffer,
+        config,
+    )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::Error;
+    use std::fs;
+    use std::sync::atomic::AtomicBool;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_run_basic_success() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        let output_file_path = temp_dir.path().join("output.md");
+        fs::write(temp_dir.path().join("b.txt"), "Content B")?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .output_file(output_file_path.to_str().unwrap())
+            .build(None)?;
+
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = run(&config, stop_signal);
+
+        // 3. Assert
+        assert!(result.is_ok());
+
+        let output_content = fs::read_to_string(&output_file_path)?;
+        // discover sorts files alphabetically
+        let expected_content =
+            "## File: a.rs\n```rs\nfn a() {}\n```\n\n## File: b.txt\n```txt\nContent B\n```\n";
+        assert_eq!(output_content, expected_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_dry_run_success() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        let output_file_path = temp_dir.path().join("output.md");
+        fs::write(temp_dir.path().join("b.txt"), "Content B")?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .output_file(output_file_path.to_str().unwrap())
+            .dry_run(true)
+            .build(None)?;
+
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = run(&config, stop_signal);
+
+        // 3. Assert
+        assert!(result.is_ok());
+
+        let output_content = fs::read_to_string(&output_file_path)?;
+        let expected_content =
+            "\n--- Dry Run: Files that would be processed ---\n- a.rs\n- b.txt\n--- End Dry Run ---\n";
+        assert_eq!(output_content, expected_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_returns_no_files_found_error() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = run(&config, stop_signal);
+
+        // 3. Assert
+        assert!(matches!(result, Err(Error::NoFilesFound)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_with_filters_returns_no_files_found() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .extensions(vec!["txt".to_string()]) // Filter for .txt, but only .rs exists
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = run(&config, stop_signal);
+
+        // 3. Assert
+        assert!(matches!(result, Err(Error::NoFilesFound)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_respects_stop_signal() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .build(None)?;
+
+        // Simulate an immediate stop signal
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        // 2. Execute
+        let result = run(&config, stop_signal);
+
+        // 3. Assert
+        // The error should be `Interrupted` because the discovery loop checks the signal.
+        assert!(matches!(result, Err(Error::Interrupted)));
+
+        Ok(())
+    }
 }

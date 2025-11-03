@@ -26,6 +26,7 @@ use counter::calculate_counts;
 /// This module re-exports content transformation functions so they can be used
 /// independently of the main processing pipeline.
 pub mod filters {
+    // This is already public, but the change in lib.rs makes it more discoverable
     pub use super::content_filters::{remove_comments, remove_empty_lines};
 }
 

@@ -1,7 +1,6 @@
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::Error;
-use anyhow::Result;
+use crate::errors::{Error, Result};
 use log::debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,15 +25,18 @@ pub fn discover_files(
         config.input_path.display()
     );
 
+    // Check for stop signal before starting the walk
+    if !stop_signal.load(Ordering::Relaxed) {
+        return Err(Error::Interrupted);
+    }
+
     let (walker, _temp_file_guard) = build_walker(config)?;
 
     for entry_result in walker {
         // Check for Ctrl+C signal
         if !stop_signal.load(Ordering::Relaxed) {
-            // Check if FALSE
-            // Persistent Debug Log: Add log here
             log::error!("Discovery loop interrupted by stop_signal!");
-            return Err(Error::Interrupted.into());
+            return Err(Error::Interrupted);
         }
 
         match process_direntry(entry_result, config) {
