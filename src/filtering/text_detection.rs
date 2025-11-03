@@ -8,7 +8,7 @@ const READ_BUFFER_SIZE: usize = 1024;
 
 /// Checks if a byte buffer is likely text-based.
 /// This is the core logic used by both `is_likely_text` and the main processing loop.
-pub(crate) fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
+pub fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
     // Inspect the bytes read
     let content_type = content_inspector::inspect(buffer_slice);
 
@@ -27,7 +27,7 @@ pub(crate) fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
 /// Checks if the file content is likely text-based by reading its head.
 /// This function is suitable for checks where the file content is not already in memory (e.g., dry run).
 /// Returns Ok(true) if likely text, Ok(false) otherwise, Err on I/O error.
-pub(crate) fn is_likely_text(path: &Path) -> std::io::Result<bool> {
+pub fn is_likely_text(path: &Path) -> std::io::Result<bool> {
     let mut file = File::open(path)?;
     let mut buffer = [0; READ_BUFFER_SIZE];
     let bytes_read = file.read(&mut buffer)?;

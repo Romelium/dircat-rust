@@ -99,9 +99,9 @@ pub use processing::filters::{
     remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
     RemoveEmptyLinesFilter,
 };
+pub use filtering::{is_likely_text, is_likely_text_from_buffer};
 
 use crate::errors::{Error, Result};
-use crate::filtering::is_likely_text;
 mod filtering;
 use anyhow::Context;
 use rayon::prelude::*;
@@ -256,7 +256,7 @@ pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatRe
                 if config.include_binary {
                     return true;
                 }
-                match is_likely_text(&fi.absolute_path) {
+                match filtering::is_likely_text(&fi.absolute_path) {
                     Ok(is_text) => is_text,
                     Err(e) => {
                         log::warn!(
