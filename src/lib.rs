@@ -231,17 +231,17 @@ pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
 /// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
-/// A `Result` containing a `DircatResult` on success. It returns `Err(Error::NoFilesFound)`
-/// if the discovery and processing stages yield no files to output. Other errors
-/// are propagated from the underlying stages.
+/// A `Result` containing a `DircatResult` on success. The `files` vector within the
+/// result will be empty if no files matched the criteria. Other errors are propagated
+/// from the underlying stages.
 pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatResult> {
     // Discover files based on config
     let discovered_files = discover(config, stop_signal.clone())?;
 
-    if config.dry_run {
+    let final_files = if config.dry_run {
         // For a dry run, we just need to filter out binaries and return.
         // The content isn't processed.
-        let filtered_files: Vec<FileInfo> = discovered_files
+        discovered_files
             .into_par_iter()
             .filter(|fi| {
                 if config.include_binary {
@@ -259,24 +259,13 @@ pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatRe
                     }
                 }
             })
-            .collect();
-
-        if filtered_files.is_empty() {
-            return Err(Error::NoFilesFound);
-        }
-        Ok(DircatResult {
-            files: filtered_files,
-        })
+            .collect()
     } else {
         // For a normal run, process the files.
-        let processed_files = process(discovered_files, config, stop_signal)?;
-        if processed_files.is_empty() {
-            return Err(Error::NoFilesFound);
-        }
-        Ok(DircatResult {
-            files: processed_files,
-        })
-    }
+        process(discovered_files, config, stop_signal)?
+    };
+
+    Ok(DircatResult { files: final_files })
 }
 
 /// Executes the complete dircat pipeline: discover, process, and format.
@@ -300,8 +289,12 @@ pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatRe
 /// are propagated from the underlying stages.
 pub fn run(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<()> {
     // Execute the core logic to get the processed files.
-    // This handles discovery, processing, and the NoFilesFound error.
     let result = execute(config, stop_signal)?;
+
+    // Check if any files were found. If not, this is an error condition for a full run.
+    if result.files.is_empty() {
+        return Err(Error::NoFilesFound);
+    }
 
     // Set up the output writer (stdout, file, or clipboard buffer)
     let writer_setup = output::writer::setup_output_writer(config)?;
@@ -387,6 +380,23 @@ mod tests {
         let expected_content =
             "\n--- Dry Run: Files that would be processed ---\n- a.rs\n- b.txt\n--- End Dry Run ---\n";
         assert_eq!(output_content, expected_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_returns_empty_vec_when_no_files_found() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+        // 2. Execute
+        let result = execute(&config, stop_signal)?;
+
+        // 3. Assert
+        assert!(result.files.is_empty());
 
         Ok(())
     }
@@ -536,24 +546,6 @@ mod tests {
         // 3. Assert
         assert_eq!(result.files.len(), 1); // Binary file should be filtered out
         assert_eq!(result.files[0].relative_path.to_str(), Some("a.txt"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_execute_returns_no_files_found() -> anyhow::Result<()> {
-        // 1. Setup
-        let temp_dir = tempdir()?;
-        let config = ConfigBuilder::new()
-            .input_path(temp_dir.path().to_str().unwrap())
-            .build(None)?;
-        let stop_signal = Arc::new(AtomicBool::new(true));
-
-        // 2. Execute
-        let result = execute(&config, stop_signal);
-
-        // 3. Assert
-        assert!(matches!(result, Err(Error::NoFilesFound)));
 
         Ok(())
     }
