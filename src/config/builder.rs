@@ -13,6 +13,7 @@ use super::{
 };
 use crate::cli::Cli;
 use crate::git;
+use crate::processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
 use crate::progress::ProgressReporter;
 use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
@@ -296,6 +297,15 @@ impl ConfigBuilder {
             return Err(anyhow!("--only cannot be used with --last or --only-last."));
         }
 
+        // --- Build content filters vector ---
+        let mut content_filters: Vec<Box<dyn ContentFilter>> = Vec::new();
+        if self.remove_comments.unwrap_or(false) {
+            content_filters.push(Box::new(RemoveCommentsFilter));
+        }
+        if self.remove_empty_lines.unwrap_or(false) {
+            content_filters.push(Box::new(RemoveEmptyLinesFilter));
+        }
+
         let input_path_str = self.input_path.unwrap_or_else(|| ".".to_string());
         let base_path_display: String = input_path_str.clone();
 
@@ -322,8 +332,7 @@ impl ConfigBuilder {
             use_gitignore: !self.no_gitignore.unwrap_or(false),
             include_binary: self.include_binary.unwrap_or(false),
             skip_lockfiles: self.no_lockfiles.unwrap_or(false),
-            remove_comments: self.remove_comments.unwrap_or(false),
-            remove_empty_lines: self.remove_empty_lines.unwrap_or(false),
+            content_filters,
             filename_only_header: self.filename_only.unwrap_or(false),
             line_numbers: self.line_numbers.unwrap_or(false),
             backticks: self.backticks.unwrap_or(false),
@@ -510,6 +519,38 @@ mod tests {
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])
         );
         assert!(config.only_last);
+        Ok(())
+    }
+
+    #[test]
+    fn test_builder_content_filters_from_cli() -> Result<()> {
+        // No filters
+        let cli_none = Cli::parse_from(["dircat", "."]);
+        let config_none = ConfigBuilder::from_cli(cli_none).build(None)?;
+        assert!(config_none.content_filters.is_empty());
+
+        // Comments only
+        let cli_c = Cli::parse_from(["dircat", ".", "-c"]);
+        let config_c = ConfigBuilder::from_cli(cli_c).build(None)?;
+        assert_eq!(config_c.content_filters.len(), 1);
+        assert_eq!(config_c.content_filters[0].name(), "RemoveCommentsFilter");
+
+        // Empty lines only
+        let cli_l = Cli::parse_from(["dircat", ".", "-l"]);
+        let config_l = ConfigBuilder::from_cli(cli_l).build(None)?;
+        assert_eq!(config_l.content_filters.len(), 1);
+        assert_eq!(config_l.content_filters[0].name(), "RemoveEmptyLinesFilter");
+
+        // Both filters
+        let cli_cl = Cli::parse_from(["dircat", ".", "-c", "-l"]);
+        let config_cl = ConfigBuilder::from_cli(cli_cl).build(None)?;
+        assert_eq!(config_cl.content_filters.len(), 2);
+        assert_eq!(config_cl.content_filters[0].name(), "RemoveCommentsFilter");
+        assert_eq!(
+            config_cl.content_filters[1].name(),
+            "RemoveEmptyLinesFilter"
+        );
+
         Ok(())
     }
 }

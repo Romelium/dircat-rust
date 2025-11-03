@@ -4,7 +4,9 @@
 //! making them available to the rest of the application in a structured and
 //! type-safe manner.
 
+use crate::processing::filters::ContentFilter;
 use regex::Regex;
+use std::fmt;
 use std::path::PathBuf;
 
 pub use builder::ConfigBuilder;
@@ -12,11 +14,9 @@ mod builder;
 mod parsing;
 mod path_resolve;
 
-/// Internal configuration derived from command-line arguments.
 ///
 /// This struct holds all the settings parsed and validated from the CLI,
 /// ready to be used by the core logic (discovery, processing, output).
-#[derive(Debug)]
 pub struct Config {
     /// The resolved, absolute path to the input directory or file.
     pub input_path: PathBuf,
@@ -45,12 +45,10 @@ pub struct Config {
     pub use_gitignore: bool,
     /// Whether to include files detected as binary/non-text.
     pub include_binary: bool,
-    /// Whether to skip common lockfiles.
+    /// Whether to skip common lockfiles (e.g., Cargo.lock, package-lock.json).
     pub skip_lockfiles: bool,
-    /// Whether to remove C/C++ style comments (`//`, `/* ... */`) from file content.
-    pub remove_comments: bool,
-    /// Whether to remove lines containing only whitespace from file content.
-    pub remove_empty_lines: bool,
+    /// A vector of content filters to be applied sequentially to each file's content.
+    pub content_filters: Vec<Box<dyn ContentFilter>>,
     /// Whether to display only the filename (basename) in the `## File:` header instead of the relative path.
     pub filename_only_header: bool,
     /// Whether to add line numbers (`N | `) to the output.
@@ -79,6 +77,41 @@ pub struct Config {
     pub git_cache_path: PathBuf,
 }
 
+// Custom Debug implementation for Config, as Box<dyn ContentFilter> does not implement Debug.
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("input_path", &self.input_path)
+            .field("base_path_display", &self.base_path_display)
+            .field("input_is_file", &self.input_is_file)
+            .field("max_size", &self.max_size)
+            .field("recursive", &self.recursive)
+            .field("extensions", &self.extensions)
+            .field("exclude_extensions", &self.exclude_extensions)
+            .field("ignore_patterns", &self.ignore_patterns)
+            .field("exclude_path_regex", &self.exclude_path_regex)
+            .field("path_regex", &self.path_regex)
+            .field("filename_regex", &self.filename_regex)
+            .field("use_gitignore", &self.use_gitignore)
+            .field("include_binary", &self.include_binary)
+            .field("skip_lockfiles", &self.skip_lockfiles)
+            .field("content_filters", &self.content_filters)
+            .field("filename_only_header", &self.filename_only_header)
+            .field("line_numbers", &self.line_numbers)
+            .field("backticks", &self.backticks)
+            .field("num_ticks", &self.num_ticks)
+            .field("output_destination", &self.output_destination)
+            .field("summary", &self.summary)
+            .field("counts", &self.counts)
+            .field("process_last", &self.process_last)
+            .field("only_last", &self.only_last)
+            .field("dry_run", &self.dry_run)
+            .field("git_branch", &self.git_branch)
+            .field("git_depth", &self.git_depth)
+            .field("git_cache_path", &self.git_cache_path)
+            .finish()
+    }
+}
 impl Config {
     /// Creates a default `Config` for testing purposes.
     ///
@@ -101,8 +134,7 @@ impl Config {
             use_gitignore: true,
             include_binary: false,
             skip_lockfiles: false,
-            remove_comments: false,
-            remove_empty_lines: false,
+            content_filters: Vec::new(),
             filename_only_header: false,
             line_numbers: false,
             backticks: false,
