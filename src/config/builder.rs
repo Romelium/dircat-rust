@@ -12,10 +12,11 @@ use super::{
     Config, OutputDestination,
 };
 use crate::cli::Cli;
+use crate::errors::{Error, Result};
 use crate::git;
 use crate::processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
 use crate::progress::ProgressReporter;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result as AnyhowResult};
 use directories::ProjectDirs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -285,16 +286,24 @@ impl ConfigBuilder {
     pub fn build(self, progress: Option<Arc<dyn ProgressReporter>>) -> Result<Config> {
         // --- Validation ---
         if self.output_file.is_some() && self.paste.unwrap_or(false) {
-            return Err(anyhow!("Cannot use --output and --paste simultaneously."));
+            return Err(Error::Config(
+                "Cannot use --output and --paste simultaneously.".to_string(),
+            ));
         }
         if self.ticks.unwrap_or(3) < 3 {
-            return Err(anyhow!("The number of ticks must be 3 or greater."));
+            return Err(Error::Config(
+                "The number of ticks must be 3 or greater.".to_string(),
+            ));
         }
         if self.only_last.unwrap_or(false) && self.process_last.is_none() {
-            return Err(anyhow!("--only-last requires --last to be specified."));
+            return Err(Error::Config(
+                "--only-last requires --last to be specified.".to_string(),
+            ));
         }
         if self.only.is_some() && (self.process_last.is_some() || self.only_last.unwrap_or(false)) {
-            return Err(anyhow!("--only cannot be used with --last or --only-last."));
+            return Err(Error::Config(
+                "--only cannot be used with --last or --only-last.".to_string(),
+            ));
         }
 
         // --- Build content filters vector ---
@@ -315,7 +324,10 @@ impl ConfigBuilder {
             (self.process_last, self.only_last.unwrap_or(false))
         };
 
-        let git_cache_path = Self::determine_cache_dir(self.git_cache_path.as_deref())?;
+        let git_cache_path =
+            Self::determine_cache_dir(self.git_cache_path.as_deref()).map_err(|e| {
+                Error::Config(format!("Failed to determine git cache directory: {}", e))
+            })?;
 
         let mut config = Config {
             input_path: PathBuf::new(),
@@ -365,7 +377,7 @@ impl ConfigBuilder {
     }
 
     /// Determines the absolute path for the git cache directory.
-    fn determine_cache_dir(cli_path: Option<&str>) -> Result<PathBuf> {
+    fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
         if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
             let path = PathBuf::from(cache_override);
             if !path.exists() {
@@ -418,9 +430,9 @@ impl ConfigBuilder {
             log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
             Self::handle_github_folder_url(parsed_url, config, progress)
         } else if git::is_git_url(input_path_str) {
-            git::get_repo(input_path_str, config, progress)
+            git::get_repo(input_path_str, config, progress).map_err(|e| Error::Git(e.to_string()))
         } else {
-            resolve_input_path(input_path_str)
+            resolve_input_path(input_path_str).map_err(Error::from)
         }
     }
 
@@ -435,10 +447,10 @@ impl ConfigBuilder {
                 log::debug!("Successfully downloaded from GitHub API.");
                 let path = temp_dir_root.join(&parsed_url.subdirectory);
                 if !path.exists() {
-                    return Err(anyhow!(
+                    return Err(Error::Git(format!(
                         "Subdirectory '{}' not found in repository. It might be empty or invalid.",
                         parsed_url.subdirectory
-                    ));
+                    )));
                 }
                 Ok(path)
             }
@@ -456,26 +468,29 @@ impl ConfigBuilder {
                         "To avoid this, set a GITHUB_TOKEN environment variable with 'repo' scope."
                     );
 
-                    let cloned_repo_root = git::get_repo(&parsed_url.clone_url, config, progress)?;
+                    let cloned_repo_root = git::get_repo(&parsed_url.clone_url, config, progress)
+                        .map_err(|e| Error::Git(e.to_string()))?;
                     let path = cloned_repo_root.join(&parsed_url.subdirectory);
                     if !path.exists() {
-                        return Err(anyhow!(
+                        return Err(Error::Git(format!(
                             "Subdirectory '{}' not found in the cloned repository '{}'.",
-                            parsed_url.subdirectory,
-                            parsed_url.clone_url
-                        ));
+                            parsed_url.subdirectory, parsed_url.clone_url
+                        )));
                     }
                     Ok(path)
                 } else {
                     if let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() {
                         if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                            return Err(anyhow!(
+                            return Err(Error::Git(format!(
                                 "Subdirectory '{}' not found in repository. It might be empty or invalid.",
                                 parsed_url.subdirectory
-                            ));
+                            )));
                         }
                     }
-                    Err(anyhow!("Failed to download from GitHub API: {}", e))
+                    Err(Error::Git(format!(
+                        "Failed to download from GitHub API: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -486,7 +501,59 @@ impl ConfigBuilder {
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use crate::errors::Error;
     use clap::Parser;
+
+    #[test]
+    fn test_builder_validation_errors() {
+        // Conflict: output and paste
+        let res1 = ConfigBuilder::new()
+            .output_file("f")
+            .paste(true)
+            .build(None);
+        assert!(matches!(res1, Err(Error::Config(_))));
+        assert!(res1.unwrap_err().to_string().contains("simultaneously"));
+
+        // Invalid ticks
+        let res2 = ConfigBuilder::new().ticks(2).build(None);
+        assert!(matches!(res2, Err(Error::Config(_))));
+        assert!(res2
+            .unwrap_err()
+            .to_string()
+            .contains("ticks must be 3 or greater"));
+
+        // --only-last without --last
+        let res3 = ConfigBuilder::new().only_last(true).build(None);
+        assert!(matches!(res3, Err(Error::Config(_))));
+        assert!(res3
+            .unwrap_err()
+            .to_string()
+            .contains("--only-last requires --last"));
+
+        // --only with --last
+        let res4 = ConfigBuilder::new()
+            .only(vec!["*.rs".to_string()])
+            .process_last(vec!["*.md".to_string()])
+            .build(None);
+        assert!(matches!(res4, Err(Error::Config(_))));
+        assert!(res4
+            .unwrap_err()
+            .to_string()
+            .contains("--only cannot be used with --last"));
+    }
+
+    #[test]
+    #[ignore = "requires network access and is slow"]
+    fn test_builder_git_clone_error_returns_structured_error() {
+        // Use a URL that is syntactically valid but points to a non-existent repo
+        let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
+        let result = ConfigBuilder::new().input_path(invalid_git_url).build(None);
+
+        assert!(matches!(result, Err(Error::Git(_))));
+        let err_msg = result.unwrap_err().to_string();
+        // Check for a substring that indicates a clone failure
+        assert!(err_msg.contains("Failed to clone repository"));
+    }
 
     #[test]
     fn test_builder_basic_config() -> Result<()> {

@@ -32,6 +32,10 @@ pub enum Error {
     #[error("Invalid configuration: {0}")]
     Config(String),
 
+    /// Error related to git operations (cloning, fetching, etc.).
+    #[error("Git error: {0}")]
+    Git(String),
+
     // --- Clipboard Errors ---
     /// Error related to clipboard operations (copying).
     #[error("Clipboard error: {0}")]
