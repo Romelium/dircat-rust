@@ -15,9 +15,6 @@ categories = ["command-line-utilities"]
 [dependencies]
 # --- Caching ---
 directories = "5.0"
-# --- Core Functionality & Utilities ---
-# Filesystem traversal (recursive)
-walkdir = "2.5"
 # Regex matching for filtering
 regex = "1.12"
 # .gitignore handling (respecting ignore rules)

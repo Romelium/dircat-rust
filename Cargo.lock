@@ -606,7 +606,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
- "walkdir",
 ]
 
 [[package]]
