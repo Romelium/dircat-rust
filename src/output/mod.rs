@@ -6,46 +6,76 @@ use anyhow::Result;
 use log::debug;
 use std::io::Write;
 
-pub(crate) mod dry_run;
+pub mod dry_run;
 pub mod file_block;
 pub mod formatter;
 pub mod header;
 pub mod summary;
 pub mod writer;
 
-/// Orchestrates the generation of the final output string or file content.
-pub(crate) fn generate_output(
-    files: &[FileInfo],
-    config: &Config,
-    writer: &mut dyn Write,
-) -> Result<()> {
-    debug!("Starting output generation...");
+/// A trait for formatting the processed file data into a specific output format.
+pub trait OutputFormatter {
+    /// Formats the processed files into the final output.
+    fn format(&self, files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()>;
 
-    header::write_global_header(writer)?;
+    /// Formats the discovered files for a dry run.
+    fn format_dry_run(
+        &self,
+        files: &[FileInfo],
+        config: &Config,
+        writer: &mut dyn Write,
+    ) -> Result<()>;
+}
 
-    let all_files_iter = files.iter();
+/// The default formatter that generates Markdown output.
+pub struct MarkdownFormatter;
 
-    let mut first_block = true;
-    for file_info in all_files_iter {
-        if !first_block {
-            // Add a blank line separator between file blocks
-            writeln!(writer)?;
+impl OutputFormatter for MarkdownFormatter {
+    /// Orchestrates the generation of the final Markdown output.
+    fn format(&self, files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
+        debug!("Starting Markdown output generation...");
+
+        if files.is_empty() {
+            // No files to process, do nothing.
+            return Ok(());
         }
-        file_block::write_file_block(writer, file_info, config)?;
-        first_block = false;
+
+        header::write_global_header(writer)?;
+
+        let all_files_iter = files.iter();
+
+        let mut first_block = true;
+        for file_info in all_files_iter {
+            if !first_block {
+                // Add a blank line separator between file blocks
+                writeln!(writer)?;
+            }
+            file_block::write_file_block(writer, file_info, config)?;
+            first_block = false;
+        }
+
+        if config.summary {
+            if !first_block {
+                writeln!(writer)?;
+            }
+            let all_processed_files: Vec<&FileInfo> = files.iter().collect();
+            summary::write_summary(writer, &all_processed_files, config)?;
+        }
+
+        debug!("Markdown output generation complete.");
+        writer.flush()?; // Ensure all buffered data is written before finalizing
+        Ok(())
     }
 
-    if config.summary {
-        if !first_block {
-            writeln!(writer)?;
-        }
-        let all_processed_files: Vec<&FileInfo> = files.iter().collect();
-        summary::write_summary(writer, &all_processed_files, config)?;
+    fn format_dry_run(
+        &self,
+        files: &[FileInfo],
+        config: &Config,
+        writer: &mut dyn Write,
+    ) -> Result<()> {
+        let file_refs: Vec<&FileInfo> = files.iter().collect();
+        dry_run::write_dry_run_output(writer, &file_refs, config)
     }
-
-    debug!("Output generation complete.");
-    writer.flush()?; // Ensure all buffered data is written before finalizing
-    Ok(())
 }
 
 // Internal test module for output generation logic
@@ -88,7 +118,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_generate_output_basic() -> Result<()> {
+    fn test_markdown_formatter_basic() -> Result<()> {
         let config = create_mock_config(false, false, false, false);
         let content_b = "Content B";
         let content_a = "Content A";
@@ -96,10 +126,11 @@ pub(crate) mod tests {
         file1.processed_content = Some(content_b.to_string());
         let mut file2 = create_mock_file_info("a.rs", 20);
         file2.processed_content = Some(content_a.to_string());
+        let formatter = MarkdownFormatter;
         let normal_files = vec![file1, file2]; // Unsorted input
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &config, &mut output)?;
+        formatter.format(&normal_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert exact output and order
@@ -112,7 +143,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_generate_output_with_last_files() -> Result<()> {
+    fn test_markdown_formatter_with_last_files() -> Result<()> {
         let config = create_mock_config(false, false, false, false);
         let content_c = "Content C";
         let content_a = "Content A";
@@ -141,9 +172,10 @@ pub(crate) mod tests {
         last_files.sort_by_key(|f| f.process_last_order); // Sorts to [last1.md, last0.toml]
 
         let all_files: Vec<FileInfo> = normal_files.into_iter().chain(last_files).collect();
+        let formatter = MarkdownFormatter;
         let mut output = Vec::new();
 
-        generate_output(&all_files, &config, &mut output)?;
+        formatter.format(&all_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert order and separators
@@ -166,7 +198,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_generate_output_with_summary() -> Result<()> {
+    fn test_markdown_formatter_with_summary() -> Result<()> {
         let mut config = create_mock_config(false, false, false, true); // summary = true
         config.counts = true; // Enable counts as well for completeness
         let content_b = "Content B";
@@ -188,9 +220,10 @@ pub(crate) mod tests {
         });
 
         let normal_files = vec![file1, file2];
+        let formatter = MarkdownFormatter;
         let mut output = Vec::new();
 
-        generate_output(&normal_files, &config, &mut output)?;
+        formatter.format(&normal_files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // Assert key components and separators
@@ -207,16 +240,66 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_generate_output_no_files() -> Result<()> {
+    fn test_markdown_formatter_no_files() -> Result<()> {
         let config = create_mock_config(false, false, false, false);
         let files = vec![];
+        let formatter = MarkdownFormatter;
         let mut output = Vec::new();
 
-        generate_output(&files, &config, &mut output)?;
+        formatter.format(&files, &config, &mut output)?;
         let output_str = String::from_utf8(output)?;
 
         // With no files, output should be empty
         assert_eq!(output_str, "");
+        Ok(())
+    }
+
+    #[test]
+    fn test_markdown_formatter_file_with_no_content() -> Result<()> {
+        let config = create_mock_config(false, false, false, false);
+        let file = create_mock_file_info("empty.txt", 0); // processed_content is None
+        let files = vec![file];
+        let formatter = MarkdownFormatter;
+        let mut output = Vec::new();
+
+        formatter.format(&files, &config, &mut output)?;
+        let output_str = String::from_utf8(output)?;
+
+        let expected = "## File: empty.txt\n```txt\n// Content not available\n```\n";
+        assert_eq!(output_str, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_markdown_formatter_file_with_only_newline() -> Result<()> {
+        let config = create_mock_config(false, false, false, false);
+        let mut file = create_mock_file_info("newline.txt", 1);
+        file.processed_content = Some("\n".to_string());
+        let files = vec![file];
+        let formatter = MarkdownFormatter;
+        let mut output = Vec::new();
+
+        formatter.format(&files, &config, &mut output)?;
+        let output_str = String::from_utf8(output)?;
+
+        // The content has one line ("") and then the loop finishes.
+        let expected = "## File: newline.txt\n```txt\n\n```\n";
+        assert_eq!(output_str, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_markdown_formatter_dry_run_no_files() -> Result<()> {
+        let config = create_mock_config(false, false, false, false);
+        let files = vec![];
+        let formatter = MarkdownFormatter;
+        let mut output = Vec::new();
+
+        formatter.format_dry_run(&files, &config, &mut output)?;
+        let output_str = String::from_utf8(output)?;
+
+        let expected = "\n--- Dry Run: Files that would be processed ---\n--- End Dry Run ---\n";
+        assert_eq!(output_str, expected);
         Ok(())
     }
 }

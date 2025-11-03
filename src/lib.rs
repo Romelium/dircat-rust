@@ -104,6 +104,7 @@ pub use processing::filters::{
 };
 
 use crate::errors::{Error, Result};
+use crate::output::{MarkdownFormatter, OutputFormatter};
 mod filtering;
 use anyhow::Context;
 use rayon::prelude::*;
@@ -182,7 +183,8 @@ pub fn process(
 /// * `config` - The configuration for output formatting.
 /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
 pub fn format(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    Ok(output::generate_output(files, config, writer)?)
+    let formatter = MarkdownFormatter;
+    Ok(formatter.format(files, config, writer)?)
 }
 
 /// Formats the discovered files for a dry run.
@@ -196,12 +198,8 @@ pub fn format(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Re
 /// * `config` - The configuration for the run.
 /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
 pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    // The files are now pre-filtered by the `execute` function.
-    // We just need to collect refs to pass to the writer function.
-    let file_refs: Vec<&FileInfo> = files.iter().collect();
-    Ok(output::dry_run::write_dry_run_output(
-        writer, &file_refs, config,
-    )?)
+    let formatter = MarkdownFormatter;
+    Ok(formatter.format_dry_run(files, config, writer)?)
 }
 
 /// Formats the processed files into a single Markdown string.

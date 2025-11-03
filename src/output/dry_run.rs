@@ -9,7 +9,7 @@ use std::io::Write;
 
 /// Writes the output for a dry run (-D).
 /// Lists the files that would be processed, sorted alphabetically.
-pub(crate) fn write_dry_run_output(
+pub fn write_dry_run_output(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning full FileInfo
     config: &Config,
