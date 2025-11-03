@@ -95,7 +95,10 @@ pub mod signal;
 // Re-export key public types for easier use as a library
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
-pub use processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
+pub use processing::filters::{
+    remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
+    RemoveEmptyLinesFilter,
+};
 
 use crate::errors::{Error, Result};
 use crate::filtering::is_likely_text;

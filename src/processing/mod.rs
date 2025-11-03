@@ -25,8 +25,11 @@ use counter::calculate_counts;
 /// This module re-exports the `ContentFilter` trait and its concrete implementations
 /// so they can be used independently of the main processing pipeline.
 pub mod filters {
-    // Re-export the trait and the structs
-    pub use super::content_filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
+    // Re-export the trait, structs, and standalone functions
+    pub use super::content_filters::{
+        remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
+        RemoveEmptyLinesFilter,
+    };
 }
 
 /// Reads and processes the content of a batch of discovered files based on config.
