@@ -94,6 +94,7 @@ pub use processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLi
 use crate::errors::{Error, Result};
 use crate::filtering::is_likely_text;
 mod filtering;
+use anyhow::Context;
 use rayon::prelude::*;
 use std::io::Write; // Import Write trait
 use std::sync::atomic::AtomicBool;
@@ -196,6 +197,26 @@ pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Writ
     Ok(output::dry_run::write_dry_run_output(
         writer, &file_refs, config,
     )?)
+}
+
+/// Formats the processed files into a single Markdown string.
+///
+/// This is a convenience wrapper around the `format` function for cases where
+/// the output is needed in memory as a `String` rather than being written to a
+/// stream.
+///
+/// # Arguments
+/// * `files` - A slice of processed `FileInfo` structs from the `process` stage.
+/// * `config` - The configuration for output formatting.
+///
+/// # Returns
+/// A `Result` containing the formatted Markdown `String`.
+pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
+    let mut buffer = Vec::new();
+    format(files, config, &mut buffer)?;
+    String::from_utf8(buffer)
+        .context("Failed to convert output buffer to UTF-8 string. This can happen if binary files are included and not valid UTF-8.")
+        .map_err(Error::Generic)
 }
 
 /// Executes the discovery and processing stages of the dircat pipeline.
@@ -533,6 +554,31 @@ mod tests {
 
         // 3. Assert
         assert!(matches!(result, Err(Error::NoFilesFound)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_to_string() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Discover and process
+        let discovered_files = discover(&config, stop_signal.clone())?;
+        let processed_files = process(discovered_files, &config, stop_signal)?;
+
+        // 3. Format to string
+        let output_string = format_to_string(&processed_files, &config)?;
+
+        // 4. Assert
+        let expected_content = "## File: a.rs\n```rs\nfn a() {}\n```\n";
+        assert_eq!(output_string, expected_content);
 
         Ok(())
     }
