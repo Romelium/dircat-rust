@@ -99,6 +99,18 @@ use std::io::Write; // Import Write trait
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+/// Represents the successful result of a dircat execution.
+///
+/// This struct contains the list of files that were discovered and processed,
+/// allowing the library user to access the data directly for custom formatting
+/// or analysis.
+#[derive(Debug, Clone)]
+pub struct DircatResult {
+    /// A vector of `FileInfo` structs, sorted and processed according to the `Config`.
+    /// For a dry run, `processed_content` and `counts` will be `None`.
+    pub files: Vec<FileInfo>,
+}
+
 /// Discovers files based on the provided configuration.
 ///
 /// This is the first stage of the pipeline. It walks the filesystem according to the
@@ -169,40 +181,81 @@ pub fn format(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Re
 
 /// Formats the discovered files for a dry run.
 ///
-/// This is the final stage for a dry run. It performs a quick, parallel check for
-/// binary files and then writes a simple list of the files that would be processed
-/// to the provided writer.
+/// This is the final stage for a dry run. It takes a list of pre-filtered `FileInfo`
+/// structs and writes a simple list of the files that would be processed to the
+/// provided writer.
 ///
 /// # Arguments
-/// * `files` - A slice of discovered `FileInfo` structs from the `discover` stage.
+/// * `files` - A slice of discovered `FileInfo` structs from the `execute` stage.
 /// * `config` - The configuration for the run.
 /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
 pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    let filtered_files: Vec<&FileInfo> = files
-        .par_iter()
-        .filter(|fi| {
-            if config.include_binary {
-                return true;
-            }
-            match is_likely_text(&fi.absolute_path) {
-                Ok(is_text) => is_text,
-                Err(e) => {
-                    log::warn!(
-                        "Dry run: Could not check file type for '{}', skipping. Error: {}",
-                        fi.absolute_path.display(),
-                        e
-                    );
-                    false
-                }
-            }
-        })
-        .collect();
-
+    // The files are now pre-filtered by the `execute` function.
+    // We just need to collect refs to pass to the writer function.
+    let file_refs: Vec<&FileInfo> = files.iter().collect();
     Ok(output::dry_run::write_dry_run_output(
-        writer,
-        &filtered_files,
-        config,
+        writer, &file_refs, config,
     )?)
+}
+
+/// Executes the discovery and processing stages of the dircat pipeline.
+///
+/// This is the primary entry point for library users who want to get the processed
+/// file data without immediately writing it to an output destination. It returns
+/// a `DircatResult` containing the final list of `FileInfo` structs, which can
+/// then be passed to `format` or `format_dry_run` for rendering.
+///
+/// # Arguments
+/// * `config` - The configuration for the entire run.
+/// * `stop_signal` - An `Arc<AtomicBool>` that can be used to gracefully interrupt the process.
+///
+/// # Returns
+/// A `Result` containing a `DircatResult` on success. It returns `Err(Error::NoFilesFound)`
+/// if the discovery and processing stages yield no files to output. Other errors
+/// are propagated from the underlying stages.
+pub fn execute(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<DircatResult> {
+    // Discover files based on config
+    let discovered_files = discover(config, stop_signal.clone())?;
+
+    if config.dry_run {
+        // For a dry run, we just need to filter out binaries and return.
+        // The content isn't processed.
+        let filtered_files: Vec<FileInfo> = discovered_files
+            .into_par_iter()
+            .filter(|fi| {
+                if config.include_binary {
+                    return true;
+                }
+                match is_likely_text(&fi.absolute_path) {
+                    Ok(is_text) => is_text,
+                    Err(e) => {
+                        log::warn!(
+                            "Dry run: Could not check file type for '{}', skipping. Error: {}",
+                            fi.absolute_path.display(),
+                            e
+                        );
+                        false
+                    }
+                }
+            })
+            .collect();
+
+        if filtered_files.is_empty() {
+            return Err(Error::NoFilesFound);
+        }
+        Ok(DircatResult {
+            files: filtered_files,
+        })
+    } else {
+        // For a normal run, process the files.
+        let processed_files = process(discovered_files, config, stop_signal)?;
+        if processed_files.is_empty() {
+            return Err(Error::NoFilesFound);
+        }
+        Ok(DircatResult {
+            files: processed_files,
+        })
+    }
 }
 
 /// Executes the complete dircat pipeline: discover, process, and format.
@@ -213,8 +266,8 @@ pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Writ
 /// as specified in the `Config`.
 ///
 /// For more granular control or to capture the output as a string in memory,
-/// use the individual `discover`, `process`, and `format` functions directly,
-/// as shown in the crate-level documentation example.
+/// use the `execute` function to get the processed data first, then format it
+/// separately.
 ///
 /// # Arguments
 /// * `config` - The configuration for the entire run.
@@ -225,26 +278,20 @@ pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Writ
 /// if the discovery and processing stages yield no files to output. Other errors
 /// are propagated from the underlying stages.
 pub fn run(config: &Config, stop_signal: Arc<AtomicBool>) -> Result<()> {
-    // Discover files based on config
-    let discovered_files = discover(config, stop_signal.clone())?;
+    // Execute the core logic to get the processed files.
+    // This handles discovery, processing, and the NoFilesFound error.
+    let result = execute(config, stop_signal)?;
 
     // Set up the output writer (stdout, file, or clipboard buffer)
     let writer_setup = output::writer::setup_output_writer(config)?;
     let mut writer: Box<dyn Write + Send> = writer_setup.writer;
 
     if config.dry_run {
-        // Handle Dry Run
-        if discovered_files.is_empty() {
-            return Err(Error::NoFilesFound);
-        }
-        format_dry_run(&discovered_files, config, &mut writer)?;
+        // Handle Dry Run formatting
+        format_dry_run(&result.files, config, &mut writer)?;
     } else {
-        // Handle Normal Run
-        let processed_files = process(discovered_files, config, stop_signal)?;
-        if processed_files.is_empty() {
-            return Err(Error::NoFilesFound);
-        }
-        format(&processed_files, config, &mut writer)?;
+        // Handle Normal Run formatting
+        format(&result.files, config, &mut writer)?;
     }
 
     // Finalize output (e.g., copy to clipboard)
@@ -381,6 +428,111 @@ mod tests {
         // 3. Assert
         // The error should be `Interrupted` because the discovery loop checks the signal.
         assert!(matches!(result, Err(Error::Interrupted)));
+
+        Ok(())
+    }
+
+    // --- Rests for execute() ---
+
+    #[test]
+    fn test_execute_normal_run_returns_processed_files() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() { /* comment */ }")?;
+        fs::write(temp_dir.path().join("b.txt"), "Content B")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .remove_comments(true) // Enable a processing step
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = execute(&config, stop_signal)?;
+
+        // 3. Assert
+        assert_eq!(result.files.len(), 2);
+        // Files are sorted alphabetically by discover()
+        let file_a = &result.files[0];
+        let file_b = &result.files[1];
+
+        assert_eq!(file_a.relative_path.to_str(), Some("a.rs"));
+        assert_eq!(file_a.processed_content, Some("fn a() {  }".to_string())); // Comment removed
+
+        assert_eq!(file_b.relative_path.to_str(), Some("b.txt"));
+        assert_eq!(file_b.processed_content, Some("Content B".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_dry_run_returns_unprocessed_files() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.rs"), "fn a() { /* comment */ }")?;
+        fs::write(temp_dir.path().join("b.txt"), "Content B")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .dry_run(true)
+            .remove_comments(true) // This should be ignored in dry run
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = execute(&config, stop_signal)?;
+
+        // 3. Assert
+        assert_eq!(result.files.len(), 2);
+        let file_a = &result.files[0];
+        let file_b = &result.files[1];
+
+        assert_eq!(file_a.relative_path.to_str(), Some("a.rs"));
+        assert!(file_a.processed_content.is_none()); // Content not read in dry run
+
+        assert_eq!(file_b.relative_path.to_str(), Some("b.txt"));
+        assert!(file_b.processed_content.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_dry_run_filters_binary_files() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        fs::write(temp_dir.path().join("a.txt"), "text file")?;
+        fs::write(temp_dir.path().join("b.bin"), b"binary\0data")?;
+
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .dry_run(true)
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = execute(&config, stop_signal)?;
+
+        // 3. Assert
+        assert_eq!(result.files.len(), 1); // Binary file should be filtered out
+        assert_eq!(result.files[0].relative_path.to_str(), Some("a.txt"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_returns_no_files_found() -> anyhow::Result<()> {
+        // 1. Setup
+        let temp_dir = tempdir()?;
+        let config = ConfigBuilder::new()
+            .input_path(temp_dir.path().to_str().unwrap())
+            .build(None)?;
+        let stop_signal = Arc::new(AtomicBool::new(true));
+
+        // 2. Execute
+        let result = execute(&config, stop_signal);
+
+        // 3. Assert
+        assert!(matches!(result, Err(Error::NoFilesFound)));
 
         Ok(())
     }
