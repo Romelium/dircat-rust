@@ -7,6 +7,7 @@
 //! copying the output to the clipboard.
 
 use crate::config::{Config, OutputDestination};
+use crate::errors::ClipboardError;
 use anyhow::{anyhow, Result};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -100,13 +101,13 @@ pub fn finalize_output(
     Ok(())
 }
 
-fn copy_to_clipboard(content: &str) -> Result<()> {
-    use crate::errors::Error;
+fn copy_to_clipboard(content: &str) -> Result<(), ClipboardError> {
     use arboard::Clipboard;
-    let mut clipboard = Clipboard::new().map_err(|e| Error::Clipboard(e.to_string()))?;
+    let mut clipboard =
+        Clipboard::new().map_err(|e| ClipboardError::Initialization(e.to_string()))?;
     clipboard
         .set_text(content)
-        .map_err(|e| Error::Clipboard(e.to_string()))?;
+        .map_err(|e| ClipboardError::SetContent(e.to_string()))?;
     Ok(())
 }
 
@@ -263,10 +264,11 @@ mod tests {
         // In a test environment without a clipboard service, arboard might return an error.
         // We accept Ok or a specific ClipboardError here.
         if let Err(e) = result {
-            use crate::errors::Error; // Need Error for matching
-            assert!(e
-                .downcast_ref::<Error>()
-                .is_some_and(|ae| matches!(ae, Error::Clipboard(_))));
+            use crate::errors::{ClipboardError, Error}; // Need Error for matching
+            assert!(e.downcast_ref::<Error>().is_some_and(|ae| matches!(
+                ae,
+                Error::Clipboard(ClipboardError::Initialization(_))
+            )));
         }
     }
 

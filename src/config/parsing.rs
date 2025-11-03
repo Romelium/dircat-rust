@@ -1,18 +1,19 @@
 // src/config/parsing.rs
 
-use anyhow::{Context, Result};
+use crate::errors::ConfigError;
+use anyhow::Result;
 use byte_unit::Byte;
 use regex::Regex;
 use std::str::FromStr; // Import the FromStr trait
 
 /// Parses the optional max size string into Option<u128>.
-pub(super) fn parse_max_size(max_size_str: Option<String>) -> Result<Option<u128>> {
+pub(super) fn parse_max_size(max_size_str: Option<String>) -> Result<Option<u128>, ConfigError> {
     // Changed return type to u128
     max_size_str
         .map(|s| {
             Byte::from_str(&s)
                 .map(|b| b.as_u128()) // Use as_u128() which returns u128
-                .with_context(|| format!("Invalid size format: '{}'", s))
+                .map_err(|_| ConfigError::InvalidSizeFormat(s.clone()))
         })
         .transpose() // Convert Option<Result<u128>> to Result<Option<u128>>
 }
@@ -21,7 +22,7 @@ pub(super) fn parse_max_size(max_size_str: Option<String>) -> Result<Option<u128
 pub(super) fn compile_regex_vec(
     patterns: Option<Vec<String>>,
     name: &str,
-) -> Result<Option<Vec<Regex>>> {
+) -> Result<Option<Vec<Regex>>, ConfigError> {
     patterns
         .map(|vec| {
             vec.into_iter()
@@ -29,9 +30,13 @@ pub(super) fn compile_regex_vec(
                     regex::RegexBuilder::new(&p)
                         .case_insensitive(true) // Make regex case-insensitive as per docs
                         .build()
-                        .with_context(|| format!("Invalid {} regex: '{}'", name, p))
+                        .map_err(|e| ConfigError::InvalidRegex {
+                            name: name.to_string(),
+                            pattern: p.clone(),
+                            source: e,
+                        })
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<Result<Vec<_>, _>>()
         })
         .transpose()
 }
@@ -64,7 +69,7 @@ mod tests {
     #[test]
     fn test_parse_invalid_max_size() {
         let result = parse_max_size(Some("invalid".to_string()));
-        assert!(result.is_err());
+        assert!(matches!(result, Err(ConfigError::InvalidSizeFormat(_))));
         assert!(result
             .unwrap_err()
             .to_string()
@@ -85,7 +90,7 @@ mod tests {
     fn test_compile_invalid_regex() {
         let patterns = Some(vec!["[".to_string()]); // Invalid regex
         let result = compile_regex_vec(patterns, "test");
-        assert!(result.is_err());
+        assert!(matches!(result, Err(ConfigError::InvalidRegex { .. })));
         assert!(result
             .unwrap_err()
             .to_string()

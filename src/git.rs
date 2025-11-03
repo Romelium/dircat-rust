@@ -10,6 +10,7 @@
 //! - Provide authentication callbacks for SSH.
 
 use crate::config::Config;
+use crate::errors::GitError;
 use crate::progress::ProgressReporter;
 use anyhow::{anyhow, Context, Result};
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
@@ -154,7 +155,10 @@ fn create_fetch_options(
 /// It determines the target commit by:
 /// 1. Using the branch specified by `--git-branch`.
 /// 2. If no branch is specified, resolving the remote's `HEAD` to find the default branch.
-fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2::Commit<'a>> {
+fn find_remote_commit<'a>(
+    repo: &'a Repository,
+    config: &Config,
+) -> Result<git2::Commit<'a>, GitError> {
     if let Some(ref_name) = &config.git_branch {
         log::debug!("Using user-specified ref: {}", ref_name);
 
@@ -168,7 +172,8 @@ fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2:
                         .target()
                         .context("Remote branch reference has no target commit")?,
                 )
-                .context("Failed to find commit for branch reference");
+                .context("Failed to find commit for branch reference")
+                .map_err(GitError::Generic);
         }
 
         // 2. Try to resolve as a tag.
@@ -178,42 +183,48 @@ fn find_remote_commit<'a>(repo: &'a Repository, config: &Config) -> Result<git2:
             // A tag can be lightweight (points directly to a commit) or annotated
             // (points to a tag object, which then points to a commit).
             // `peel_to_commit` handles both cases.
-            let object = reference.peel(git2::ObjectType::Commit)?;
-            return object
-                .into_commit()
-                .map_err(|_| anyhow!("Tag '{}' does not point to a commit", ref_name));
+            let object = reference
+                .peel(git2::ObjectType::Commit)
+                .map_err(|e| GitError::Generic(anyhow!(e)))?;
+            return object.into_commit().map_err(|_| {
+                GitError::Generic(anyhow!("Tag '{}' does not point to a commit", ref_name))
+            });
         }
 
         // 3. If both fail, return a comprehensive error.
-        return Err(anyhow!(
-            "Could not find remote branch or tag named '{}' after fetch. Does this ref exist on the remote?",
-            ref_name
-        ));
+        return Err(GitError::RefNotFound {
+            name: ref_name.clone(),
+        });
     }
 
     // User did not specify a branch, so find the remote's default by resolving its HEAD.
     log::debug!("Resolving remote's default branch via origin/HEAD");
-    let remote_head = repo.find_reference("refs/remotes/origin/HEAD").context(
-        "Could not find remote's HEAD. The repository might not have a default branch set, or it may be empty. Please specify a branch with --git-branch.",
-    )?;
+    let remote_head = repo.find_reference("refs/remotes/origin/HEAD")
+        .context("Could not find remote's HEAD. The repository might not have a default branch set, or it may be empty. Please specify a branch with --git-branch.")
+        .map_err(|e| GitError::DefaultBranchResolution(e.to_string()))?;
     let remote_branch_ref_name = remote_head
         .symbolic_target()
-        .context("Remote HEAD is not a symbolic reference; cannot determine default branch.")?
+        .context("Remote HEAD is not a symbolic reference; cannot determine default branch.")
+        .map_err(|e| GitError::DefaultBranchResolution(e.to_string()))?
         .to_string();
 
     log::debug!("Targeting remote reference: {}", remote_branch_ref_name);
-    let fetch_head = repo.find_reference(&remote_branch_ref_name).with_context(|| {
-        format!(
-            "Could not find remote branch reference '{}' after fetch. Does this branch exist on the remote?",
-            remote_branch_ref_name
-        )
-    })?;
+    let fetch_head = repo
+        .find_reference(&remote_branch_ref_name)
+        .with_context(|| {
+            format!(
+                "Could not find remote branch reference '{}' after fetch. Does this branch exist on the remote?",
+                remote_branch_ref_name
+            )
+        })
+        .map_err(GitError::Generic)?;
     repo.find_commit(
         fetch_head
             .target()
             .context("Remote branch reference has no target commit")?,
     )
     .context("Failed to find commit for default branch reference")
+    .map_err(GitError::Generic)
 }
 /// Ensures the local repository is up-to-date with the remote.
 /// Fetches from the remote and performs a hard reset to the remote branch head.
@@ -221,21 +232,27 @@ fn update_repo(
     repo: &Repository,
     config: &Config,
     progress: Option<Arc<dyn ProgressReporter>>,
-) -> Result<()> {
+) -> Result<(), GitError> {
     log::info!("Updating cached repository...");
-    let mut remote = repo.find_remote("origin")?;
+    let mut remote = repo
+        .find_remote("origin")
+        .map_err(|e| GitError::Generic(anyhow!(e)))?;
     let mut fetch_options = create_fetch_options(config, progress);
 
     // Fetch updates from the remote
     remote
         .fetch(&[] as &[&str], Some(&mut fetch_options), None)
-        .context("Failed to fetch from remote 'origin'")?;
+        .map_err(|e| GitError::FetchFailed {
+            remote: "origin".to_string(),
+            source: e,
+        })?;
 
     // Find the specific commit we need to reset to.
     let target_commit = find_remote_commit(repo, config)?;
     // Detach HEAD before resetting to avoid issues with checked-out branches.
     repo.set_head_detached(target_commit.id())
-        .context("Failed to detach HEAD in cached repository")?;
+        .context("Failed to detach HEAD in cached repository")
+        .map_err(|e| GitError::UpdateFailed(e.to_string()))?;
 
     // Reset the local repository to match the fetched commit
     repo.reset(
@@ -243,7 +260,8 @@ fn update_repo(
         ResetType::Hard,
         None, // No checkout builder needed for hard reset
     )
-    .context("Failed to perform hard reset on cached repository")?;
+    .context("Failed to perform hard reset on cached repository")
+    .map_err(|e| GitError::UpdateFailed(e.to_string()))?;
 
     log::info!("Cached repository updated successfully.");
     Ok(())
@@ -256,7 +274,7 @@ pub(crate) fn get_repo_with_base_cache(
     url: &str,
     config: &Config,
     progress: Option<Arc<dyn ProgressReporter>>,
-) -> Result<PathBuf> {
+) -> Result<PathBuf, GitError> {
     let repo_path = get_repo_cache_path(base_cache_dir, url);
 
     if repo_path.exists() {
@@ -274,27 +292,30 @@ pub(crate) fn get_repo_with_base_cache(
                 }
                 return Ok(repo_path);
             }
-            Err(e) => {
+            Err(_) => {
                 log::warn!(
-                    "Cached repository at '{}' is corrupted or invalid: {}. Re-cloning...",
+                    "Cached repository at '{}' is corrupted or invalid. Re-cloning...",
                     repo_path.display(),
-                    e
                 );
                 // Robustly remove the corrupted entry, whether it's a file or a directory.
                 if repo_path.is_dir() {
-                    fs::remove_dir_all(&repo_path).with_context(|| {
-                        format!(
-                            "Failed to remove corrupted cache directory at '{}'",
-                            repo_path.display()
-                        )
-                    })?;
+                    fs::remove_dir_all(&repo_path)
+                        .with_context(|| {
+                            format!(
+                                "Failed to remove corrupted cache directory at '{}'",
+                                repo_path.display()
+                            )
+                        })
+                        .map_err(GitError::Generic)?;
                 } else if repo_path.is_file() {
-                    fs::remove_file(&repo_path).with_context(|| {
-                        format!(
-                            "Failed to remove corrupted cache file at '{}'",
-                            repo_path.display()
-                        )
-                    })?;
+                    fs::remove_file(&repo_path)
+                        .with_context(|| {
+                            format!(
+                                "Failed to remove corrupted cache file at '{}'",
+                                repo_path.display()
+                            )
+                        })
+                        .map_err(GitError::Generic)?;
                 }
             }
         }
@@ -306,7 +327,9 @@ pub(crate) fn get_repo_with_base_cache(
         url,
         repo_path.display()
     );
-    fs::create_dir_all(repo_path.parent().unwrap()).context("Failed to create cache directory")?;
+    fs::create_dir_all(repo_path.parent().unwrap())
+        .context("Failed to create cache directory")
+        .map_err(GitError::Generic)?;
 
     let fetch_options = create_fetch_options(config, progress.clone());
     let mut repo_builder = RepoBuilder::new();
@@ -324,7 +347,10 @@ pub(crate) fn get_repo_with_base_cache(
 
     let repo = repo_builder
         .clone(url, &repo_path)
-        .context("Failed to clone repository")?;
+        .map_err(|e| GitError::CloneFailed {
+            url: url.to_string(),
+            source: e,
+        })?;
     if let Some(p) = &progress {
         p.finish_with_message("Clone complete.".to_string());
     }
@@ -342,9 +368,11 @@ pub(crate) fn get_repo_with_base_cache(
 
         // Detach HEAD and reset the working directory to the target commit.
         repo.set_head_detached(target_commit.id())
-            .context("Failed to detach HEAD in newly cloned repository")?;
+            .context("Failed to detach HEAD in newly cloned repository")
+            .map_err(|e| GitError::UpdateFailed(e.to_string()))?;
         repo.reset(target_commit.as_object(), ResetType::Hard, None)
-            .context("Failed to perform hard reset on newly cloned repository")?;
+            .context("Failed to perform hard reset on newly cloned repository")
+            .map_err(|e| GitError::UpdateFailed(e.to_string()))?;
         log::info!("Successfully checked out specified ref.");
     }
 
@@ -369,7 +397,7 @@ pub fn get_repo(
     url: &str,
     config: &Config,
     progress: Option<Arc<dyn ProgressReporter>>,
-) -> Result<PathBuf> {
+) -> Result<PathBuf, GitError> {
     let base_cache_dir = &config.git_cache_path;
     get_repo_with_base_cache(base_cache_dir, url, config, progress)
 }

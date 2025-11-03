@@ -4,11 +4,91 @@
 //! that can occur during execution, offering more context than generic I/O or
 //! `anyhow` errors.
 
-use anyhow;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// A public result type for the `dircat` library.
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Errors related to invalid configuration settings or combinations.
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Options '{option1}' and '{option2}' cannot be used simultaneously.")]
+    Conflict { option1: String, option2: String },
+
+    #[error("Invalid value for option '{option}': {reason}")]
+    InvalidValue { option: String, reason: String },
+
+    #[error("Option '{option}' requires option '{required}' to be specified.")]
+    MissingDependency { option: String, required: String },
+
+    #[error("Failed to determine or create git cache directory: {0}")]
+    CacheDir(String),
+
+    #[error("Invalid {name} regex: '{pattern}': {source}")]
+    InvalidRegex {
+        name: String,
+        pattern: String,
+        #[source]
+        source: regex::Error,
+    },
+
+    #[error("Invalid size format: '{0}'")]
+    InvalidSizeFormat(String),
+}
+
+/// Errors related to git operations (cloning, fetching, API interaction, etc.).
+#[derive(Error, Debug)]
+pub enum GitError {
+    #[error("Failed to clone repository from '{url}': {source}")]
+    CloneFailed {
+        url: String,
+        #[source]
+        source: git2::Error,
+    },
+
+    #[error("Failed to fetch from remote '{remote}': {source}")]
+    FetchFailed {
+        remote: String,
+        #[source]
+        source: git2::Error,
+    },
+
+    #[error("Failed to update local repository: {0}")]
+    UpdateFailed(String),
+
+    #[error("Could not find remote branch or tag named '{name}' after fetch.")]
+    RefNotFound { name: String },
+
+    #[error("Failed to download from GitHub API for '{url}': {source}")]
+    ApiDownloadFailed {
+        url: String,
+        #[source]
+        source: anyhow::Error,
+    },
+
+    #[error("Subdirectory '{path}' not found in repository '{repo}'.")]
+    SubdirectoryNotFound { path: String, repo: String },
+
+    #[error("Cached repository at '{path}' is corrupted or invalid.")]
+    CorruptedCache { path: PathBuf },
+
+    #[error("Could not determine remote's default branch: {0}")]
+    DefaultBranchResolution(String),
+
+    #[error(transparent)]
+    Generic(#[from] anyhow::Error),
+}
+
+/// Errors related to clipboard operations.
+#[derive(Error, Debug)]
+pub enum ClipboardError {
+    #[error("Failed to initialize clipboard: {0}")]
+    Initialization(String),
+
+    #[error("Failed to set clipboard content: {0}")]
+    SetContent(String),
+}
 
 /// Public-facing errors for the `dircat` library.
 ///
@@ -29,17 +109,17 @@ pub enum Error {
 
     // --- Configuration Errors ---
     /// Error related to invalid configuration settings or combinations.
-    #[error("Invalid configuration: {0}")]
-    Config(String),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 
     /// Error related to git operations (cloning, fetching, etc.).
-    #[error("Git error: {0}")]
-    Git(String),
+    #[error(transparent)]
+    Git(#[from] GitError),
 
     // --- Clipboard Errors ---
     /// Error related to clipboard operations (copying).
-    #[error("Clipboard error: {0}")]
-    Clipboard(String),
+    #[error(transparent)]
+    Clipboard(#[from] ClipboardError),
 
     // --- Signal Handling ---
     /// Error indicating that the operation was cancelled by the user (e.g., Ctrl+C).

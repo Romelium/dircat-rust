@@ -35,11 +35,8 @@ fn test_error_output_and_paste_conflict() -> Result<(), Box<dyn std::error::Erro
         .arg("-p") // Conflict
         .current_dir(temp.path())
         .assert()
-        .failure()
-        // This error comes from our custom validation logic
-        .stderr(predicate::str::contains(
-            "Cannot use --output and --paste simultaneously",
-        ));
+        .failure() // This error comes from our custom validation logic
+        .stderr(predicate::str::contains("cannot be used simultaneously"));
 
     temp.close()?;
     Ok(())
