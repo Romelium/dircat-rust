@@ -68,6 +68,7 @@ pub struct ConfigBuilder {
     ticks: Option<u8>,
     // --- Output Destination & Summary ---
     output_file: Option<String>,
+    #[cfg(feature = "clipboard")]
     paste: Option<bool>,
     summary: Option<bool>,
     counts: Option<bool>,
@@ -114,6 +115,7 @@ impl ConfigBuilder {
             backticks: Some(cli.backticks),
             ticks: Some(cli.ticks),
             output_file: cli.output_file,
+            #[cfg(feature = "clipboard")]
             paste: Some(cli.paste),
             summary: Some(cli.summary),
             counts: Some(cli.counts),
@@ -245,6 +247,7 @@ impl ConfigBuilder {
         self.output_file = Some(path.into());
         self
     }
+    #[cfg(feature = "clipboard")]
     #[must_use]
     pub fn paste(mut self, paste: bool) -> Self {
         self.paste = Some(paste);
@@ -293,12 +296,15 @@ impl ConfigBuilder {
     /// Returns an error if any validation of option combinations fails.
     pub fn build(self) -> Result<Config> {
         // --- Validation ---
-        if self.output_file.is_some() && self.paste.unwrap_or(false) {
-            return Err(ConfigError::Conflict {
-                option1: "--output".to_string(),
-                option2: "--paste".to_string(),
+        #[cfg(feature = "clipboard")]
+        {
+            if self.output_file.is_some() && self.paste.unwrap_or(false) {
+                return Err(ConfigError::Conflict {
+                    option1: "--output".to_string(),
+                    option2: "--paste".to_string(),
+                }
+                .into());
             }
-            .into());
         }
         if self.ticks.unwrap_or(3) < 3 {
             return Err(ConfigError::InvalidValue {
@@ -357,12 +363,21 @@ impl ConfigBuilder {
             line_numbers: self.line_numbers.unwrap_or(false),
             backticks: self.backticks.unwrap_or(false),
             num_ticks: self.ticks.unwrap_or(3),
-            output_destination: if self.paste.unwrap_or(false) {
-                OutputDestination::Clipboard
-            } else if let Some(file_path_str) = self.output_file {
-                OutputDestination::File(PathBuf::from(file_path_str))
-            } else {
-                OutputDestination::Stdout
+            output_destination: {
+                if let Some(file_path_str) = self.output_file {
+                    OutputDestination::File(PathBuf::from(file_path_str))
+                } else {
+                    #[cfg(feature = "clipboard")]
+                    if self.paste.unwrap_or(false) {
+                        OutputDestination::Clipboard
+                    } else {
+                        OutputDestination::Stdout
+                    }
+                    #[cfg(not(feature = "clipboard"))]
+                    {
+                        OutputDestination::Stdout
+                    }
+                }
             },
             summary: self.summary.unwrap_or(false) || self.counts.unwrap_or(false),
             counts: self.counts.unwrap_or(false),
@@ -391,13 +406,15 @@ mod tests {
     #[test]
     fn test_builder_validation_errors() {
         // Conflict: output and paste
-        let res1 = ConfigBuilder::new().output_file("f").paste(true).build();
-        assert!(matches!(
-            res1,
-            Err(Error::Config(ConfigError::Conflict { .. }))
-        ));
-        assert!(res1.unwrap_err().to_string().contains("simultaneously"));
-
+        #[cfg(feature = "clipboard")]
+        {
+            let res1 = ConfigBuilder::new().output_file("f").paste(true).build();
+            assert!(matches!(
+                res1,
+                Err(Error::Config(ConfigError::Conflict { .. }))
+            ));
+            assert!(res1.unwrap_err().to_string().contains("simultaneously"));
+        }
         // Invalid ticks
         let res2 = ConfigBuilder::new().ticks(2).build();
         assert!(matches!(

@@ -7,8 +7,11 @@
 //! copying the output to the clipboard.
 
 use crate::config::{Config, OutputDestination};
+#[cfg(feature = "clipboard")]
 use crate::errors::ClipboardError;
-use anyhow::{anyhow, Result};
+#[cfg(feature = "clipboard")]
+use anyhow::anyhow;
+use anyhow::Result;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc, Mutex};
@@ -37,6 +40,7 @@ pub struct OutputWriterSetup {
 /// # Errors
 /// Returns an error if a file cannot be created for writing.
 pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
+    #[cfg_attr(not(feature = "clipboard"), allow(unused_mut))]
     let mut clipboard_buffer = None;
     let writer: Box<dyn Write + Send> = match &config.output_destination {
         OutputDestination::Stdout => Box::new(io::stdout()),
@@ -45,6 +49,7 @@ pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
                 File::create(path).map_err(|e| crate::errors::io_error_with_path(e, path))?;
             Box::new(BufWriter::new(file)) // Use BufWriter for file I/O
         }
+        #[cfg(feature = "clipboard")]
         OutputDestination::Clipboard => {
             // For clipboard, write to an in-memory buffer first.
             let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
@@ -72,6 +77,7 @@ pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
 /// # Errors
 /// Returns an error if locking the clipboard buffer fails or if the clipboard
 /// operation itself fails.
+#[cfg_attr(not(feature = "clipboard"), allow(unused_variables))]
 pub fn finalize_output(
     mut writer: Box<dyn Write + Send>, // Take ownership to ensure drop/flush
     clipboard_buffer: Option<Arc<Mutex<Vec<u8>>>>,
@@ -80,27 +86,31 @@ pub fn finalize_output(
     // Ensure final flush before potential clipboard op or drop
     writer.flush()?;
 
-    if config.output_destination == OutputDestination::Clipboard {
-        if let Some(buffer_arc) = clipboard_buffer {
-            let buffer = buffer_arc
-                .lock()
-                .map_err(|e| anyhow!("Failed to lock clipboard buffer mutex: {}", e))?;
-            let content = String::from_utf8(buffer.clone())?; // Clone buffer data
+    #[cfg(feature = "clipboard")]
+    {
+        if config.output_destination == OutputDestination::Clipboard {
+            if let Some(buffer_arc) = clipboard_buffer {
+                let buffer = buffer_arc
+                    .lock()
+                    .map_err(|e| anyhow!("Failed to lock clipboard buffer mutex: {}", e))?;
+                let content = String::from_utf8(buffer.clone())?; // Clone buffer data
 
-            copy_to_clipboard(&content)?;
-            // Avoid printing to stderr in library code, let the caller handle feedback
-            // eprintln!("Output copied to clipboard."); // Provide feedback
-        } else {
-            // This indicates an internal logic error in setup/finalize pairing
-            return Err(anyhow!(
-                "Clipboard destination specified, but no buffer found during finalization."
-            ));
+                copy_to_clipboard(&content)?;
+                // Avoid printing to stderr in library code, let the caller handle feedback
+                // eprintln!("Output copied to clipboard."); // Provide feedback
+            } else {
+                // This indicates an internal logic error in setup/finalize pairing
+                return Err(anyhow!(
+                    "Clipboard destination specified, but no buffer found during finalization."
+                ));
+            }
         }
     }
     // For Stdout or File, flushing happened above, and drop handles closing.
     Ok(())
 }
 
+#[cfg(feature = "clipboard")]
 fn copy_to_clipboard(content: &str) -> Result<(), ClipboardError> {
     use arboard::Clipboard;
     let mut clipboard =
@@ -114,9 +124,11 @@ fn copy_to_clipboard(content: &str) -> Result<(), ClipboardError> {
 // --- Wrapper struct for Arc<Mutex<Vec<u8>>> to implement Write ---
 // This is necessary because we cannot implement a foreign trait (Write)
 // directly on a foreign type (Arc<Mutex<Vec<u8>>>).
+#[cfg(feature = "clipboard")]
 #[derive(Debug, Clone)]
 struct ArcMutexVecWriter(Arc<Mutex<Vec<u8>>>);
 
+#[cfg(feature = "clipboard")]
 impl Write for ArcMutexVecWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Attempt to lock the mutex. If poisoned, return an error.
@@ -145,6 +157,7 @@ mod tests {
     use crate::output::tests::create_mock_config; // Use shared helper
     use tempfile::NamedTempFile;
 
+    #[cfg(feature = "clipboard")]
     #[test]
     fn test_write_impl_for_arc_mutex_vec() -> io::Result<()> {
         let buffer_arc: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
@@ -200,6 +213,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "clipboard")]
     #[test]
     fn test_setup_output_writer_clipboard() {
         // Test clipboard destination setup
@@ -250,6 +264,7 @@ mod tests {
     // Note: Testing finalize_output for Clipboard requires mocking `copy_to_clipboard`
     // or enabling the "clipboard" feature and potentially running in a specific environment.
     // The current test only checks if it attempts to access the buffer.
+    #[cfg(feature = "clipboard")]
     #[test]
     fn test_finalize_output_clipboard_buffer_access() {
         let mut config = create_mock_config(false, false, false, false);
@@ -272,6 +287,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "clipboard")]
     #[test]
     fn test_finalize_output_clipboard_missing_buffer() {
         // Test the internal error case where buffer is somehow None

@@ -24,6 +24,7 @@ fn test_error_invalid_input_path() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "clipboard")]
 #[test]
 fn test_error_output_and_paste_conflict() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempdir()?;

@@ -157,13 +157,13 @@ impl Config {
 }
 
 /// Represents the destination for the generated output.
-#[cfg_attr(not(feature = "git"), allow(dead_code))] // Clipboard is only used with git feature in main
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OutputDestination {
     /// Write to standard output.
     Stdout,
     /// Write to the specified file path.
     File(PathBuf),
+    #[cfg(feature = "clipboard")]
     /// Copy the output to the system clipboard (requires the `clipboard` feature).
     Clipboard,
 }

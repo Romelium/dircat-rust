@@ -104,6 +104,7 @@ pub struct Cli {
     #[arg(short = 'o', long, value_name = "FILE")]
     pub output_file: Option<String>, // Using String, convert to PathBuf later
 
+    #[cfg(feature = "clipboard")]
     /// Copy the output to the system clipboard instead of printing to stdout or a file.
     #[arg(short = 'p', long, action = clap::ArgAction::SetTrue)]
     pub paste: bool,

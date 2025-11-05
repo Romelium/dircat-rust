@@ -83,6 +83,7 @@ pub enum GitError {
 }
 
 /// Errors related to clipboard operations.
+#[cfg(feature = "clipboard")]
 #[derive(Error, Debug)]
 pub enum ClipboardError {
     #[error("Failed to initialize clipboard: {0}")]
@@ -120,6 +121,7 @@ pub enum Error {
     Git(#[from] GitError),
 
     // --- Clipboard Errors ---
+    #[cfg(feature = "clipboard")]
     /// Error related to clipboard operations (copying).
     #[error(transparent)]
     Clipboard(#[from] ClipboardError),
