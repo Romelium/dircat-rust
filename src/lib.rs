@@ -19,62 +19,47 @@
 //! discover, process, and format files from a temporary directory.
 //!
 //! ```no_run
-//! use dircat::{discover, process, format};
+//! use dircat::{execute, format};
 //! use dircat::cancellation::CancellationToken;
 //! use dircat::config::{self, ConfigBuilder};
 //! use dircat::progress::ProgressReporter;
 //! use std::fs;
 //! use std::sync::Arc;
 //! use tempfile::tempdir;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!
 //! // 1. Set up a temporary directory with some files.
-//! let temp_dir = tempdir().unwrap();
+//! let temp_dir = tempdir()?;
 //! let input_path_str = temp_dir.path().to_str().unwrap();
-//! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!").unwrap();
-//! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }").unwrap();
+//! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!")?;
+//! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }")?;
 //!
 //! // 2. Create a Config object programmatically using the builder.
-//! // This step is I/O-free and captures the user's intent.
 //! let config = ConfigBuilder::new()
-//!     .input_path(input_path_str) // This is used for display purposes
+//!     .input_path(input_path_str)
 //!     .remove_comments(true)
 //!     .summary(true)
-//!     .build()
-//!     .unwrap();
+//!     .build()?;
 //!
 //! // 3. Set up a cancellation token for graceful interruption.
 //! let token = CancellationToken::new();
 //!
-//! // 4. Execute the main logic, which performs I/O (path resolution)
-//! // and processing, returning the final file data.
-//! // For library use, `execute` is often preferred over `run`.
+//! // 4. Execute the main logic to get the processed file data.
+//! // This is the recommended approach for library use.
 //! let progress: Option<Arc<dyn ProgressReporter>> = None; // No progress bar in this example
-//! let dircat_result = dircat::execute(&config, &token, progress).unwrap();
+//! let dircat_result = dircat::execute(&config, &token, progress)?;
 //!
-//! // For more granular control, you can use the individual stages:
-//! // Stage 1: Resolve path (I/O).
-//! let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, None).unwrap();
-//! // Stage 2: Discover files.
-//! let discovered_files = discover(&config, &resolved, &token).unwrap();
-//! // Stage 3: Process file content.
-//! let processed_files = process(discovered_files, &config, &token).unwrap();
+//! // For more granular control, you could also use the individual stages:
+//! // let resolved = config::resolve_input(...)?;
+//! // let discovered_files = dircat::discover(&config, &resolved, &token)?;
+//! // let processed_files = dircat::process(discovered_files, &config, &token)?;
 //!
-//! // Stage 3: Format the output into a buffer.
+//! // 5. Format the output into a buffer.
 //! let mut output_buffer: Vec<u8> = Vec::new();
-//! // For more granular control, you can use the individual stages:
-//! // Stage 1: Resolve path (I/O).
-//! let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, None).unwrap();
-//! // Stage 2: Discover files.
-//! let discovered_files = discover(&config, &resolved, &token).unwrap();
-//! // Stage 3: Process file content.
-//! let processed_files = process(discovered_files, &config, &token).unwrap();
+//! format(&dircat_result.files, &config, &mut output_buffer)?;
 //!
-//! // Stage 3: Format the output into a buffer.
-//! let mut output_buffer: Vec<u8> = Vec::new();
-//! format(&processed_files, &config, &mut output_buffer).unwrap();
-//!
-//! // 5. Print the result.
-//! let output_string = String::from_utf8(output_buffer).unwrap();
+//! // 6. Print the result.
+//! let output_string = String::from_utf8(output_buffer)?;
 //! println!("{}", output_string);
 //!
 //! // The output would look something like this:
@@ -92,6 +77,8 @@
 //! // Processed Files: (2)
 //! // - file1.txt
 //! // - file2.rs
+//! # Ok(())
+//! # }
 //! ```
 
 // Make modules public if they contain public types used in the API
@@ -145,10 +132,6 @@ pub struct DircatResult {
 /// rules in the `Config` (respecting .gitignore, filters, etc.) and returns a
 /// list of `FileInfo` structs for files that match the criteria. The content of
 /// the files is not read at this stage.
-///
-/// # Arguments
-/// * `config` - The configuration for the discovery process.
-/// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
 ///
 /// # Arguments
 /// * `config` - The configuration for the discovery process.
@@ -259,7 +242,6 @@ pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 /// * `progress` - An optional progress reporter for long operations like cloning.
-/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` containing a `DircatResult` on success. The `files` vector within the
@@ -341,13 +323,6 @@ pub fn execute(
 ///
 /// # Arguments
 /// * `config` - The configuration for the entire run.
-/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
-/// * `progress` - An optional progress reporter for long operations like cloning.
-///
-/// # Arguments
-/// * `config` - The configuration for the entire run.
-/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
-/// * `progress` - An optional progress reporter for long operations like cloning.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
