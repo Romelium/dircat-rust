@@ -5,7 +5,9 @@ use clap::Parser;
 use dircat::cli::Cli;
 use dircat::config::ConfigBuilder;
 use dircat::errors::Error;
-use dircat::progress::{IndicatifProgress, ProgressReporter};
+#[cfg(feature = "git")]
+use dircat::progress::IndicatifProgress;
+use dircat::progress::ProgressReporter;
 use dircat::run;
 use dircat::signal::setup_signal_handler;
 use std::sync::Arc;
@@ -17,12 +19,20 @@ fn main() -> Result<()> {
     let cli_args = Cli::parse();
 
     // Decide whether to show a progress bar. Show it if stderr is a TTY.
-    let progress_reporter: Option<std::sync::Arc<dyn ProgressReporter>> =
-        if atty::is(atty::Stream::Stderr) {
-            Some(Arc::new(IndicatifProgress::new()))
-        } else {
+    let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
+        #[cfg(feature = "git")]
+        {
+            if atty::is(atty::Stream::Stderr) {
+                Some(Arc::new(IndicatifProgress::new()))
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "git"))]
+        {
             None
-        };
+        }
+    };
 
     // --- Configuration & Execution ---
     let config = ConfigBuilder::from_cli(cli_args).build()?;

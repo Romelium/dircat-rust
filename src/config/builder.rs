@@ -39,8 +39,11 @@ pub struct ConfigBuilder {
     // --- Input ---
     input_path: Option<String>,
     // --- Git Options ---
+    #[cfg(feature = "git")]
     git_branch: Option<String>,
+    #[cfg(feature = "git")]
     git_depth: Option<u32>,
+    #[cfg(feature = "git")]
     git_cache_path: Option<String>,
     // --- Filtering Options ---
     max_size: Option<String>,
@@ -86,8 +89,11 @@ impl ConfigBuilder {
     pub fn from_cli(cli: Cli) -> Self {
         Self {
             input_path: Some(cli.input_path),
+            #[cfg(feature = "git")]
             git_branch: cli.git_branch,
+            #[cfg(feature = "git")]
             git_depth: cli.git_depth,
+            #[cfg(feature = "git")]
             git_cache_path: cli.git_cache_path,
             max_size: cli.max_size,
             no_recursive: Some(cli.no_recursive),
@@ -124,21 +130,25 @@ impl ConfigBuilder {
         self.input_path = Some(path.into());
         self
     }
+    #[cfg(feature = "git")]
     #[must_use]
     pub fn git_branch(mut self, branch: impl Into<String>) -> Self {
         self.git_branch = Some(branch.into());
         self
     }
+    #[cfg(feature = "git")]
     #[must_use]
     pub fn git_depth(mut self, depth: u32) -> Self {
         self.git_depth = Some(depth);
         self
     }
+    #[cfg(feature = "git")]
     #[must_use]
     pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
         self.git_cache_path = Some(path.into());
         self
     }
+
     #[must_use]
     pub fn max_size(mut self, size: impl Into<String>) -> Self {
         self.max_size = Some(size.into());
@@ -359,8 +369,11 @@ impl ConfigBuilder {
             process_last,
             only_last,
             dry_run: self.dry_run.unwrap_or(false),
+            #[cfg(feature = "git")]
             git_branch: self.git_branch,
+            #[cfg(feature = "git")]
             git_depth: self.git_depth,
+            #[cfg(feature = "git")]
             git_cache_path: self.git_cache_path,
         };
 

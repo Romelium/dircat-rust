@@ -1,11 +1,17 @@
 // src/config/path_resolve.rs
 
-use crate::errors::{Error, GitError, Result};
+#[cfg(not(feature = "git"))]
+use crate::errors::ConfigError;
+#[cfg(feature = "git")]
+use crate::errors::GitError;
+use crate::errors::{Error, Result};
+#[cfg(feature = "git")]
 use crate::git;
 use crate::progress::ProgressReporter;
 use anyhow::{Context, Result as AnyhowResult};
-use directories::ProjectDirs;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "git")]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Holds the results of resolving the user's input path.
@@ -17,6 +23,7 @@ pub struct ResolvedInput {
     pub display: String,
     /// Flag indicating if the resolved path points to a file.
     pub is_file: bool,
+    #[cfg(feature = "git")]
     /// The resolved, absolute path to the git cache directory.
     pub cache_path: PathBuf,
 }
@@ -29,12 +36,14 @@ impl ResolvedInput {
             path: PathBuf::from("."),
             display: ".".to_string(),
             is_file: false,
+            #[cfg(feature = "git")]
             cache_path: PathBuf::from("/tmp/dircat-test-cache"),
         }
     }
 }
 
-/// Resolves the input path, handling local paths, git URLs, and GitHub folder URLs.
+#[cfg(feature = "git")]
+/// Resolves the input path, handling local paths and git URLs.
 ///
 /// This is the primary entry point for the I/O-heavy part of configuration. It will:
 /// - Determine the correct git cache directory.
@@ -74,11 +83,13 @@ pub fn resolve_input(
         is_file: absolute_path.is_file(),
         path: absolute_path,
         display: input_path_str.to_string(),
+        #[cfg(feature = "git")]
         cache_path,
     })
 }
 
 /// Logic for handling a parsed GitHub folder URL, including API download and fallback to clone.
+#[cfg(feature = "git")]
 fn handle_github_folder_url(
     parsed_url: git::ParsedGitUrl,
     cli_branch: &Option<String>,
@@ -153,7 +164,42 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
         .with_context(|| format!("Failed to resolve input path: '{}'", input_path_str))
 }
 
+#[cfg(not(feature = "git"))]
+/// Resolves the input path, handling only local paths.
+///
+/// This is the non-git version of the function. It will return an error if the
+/// input path appears to be a git URL.
+pub fn resolve_input(
+    input_path_str: &str,
+    _git_branch: &Option<String>,
+    _git_depth: Option<u32>,
+    _git_cache_path_str: &Option<String>,
+    _progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<ResolvedInput> {
+    // Check for likely URL patterns and return a helpful error if found.
+    if input_path_str.starts_with("https://")
+        || input_path_str.starts_with("http://")
+        || input_path_str.starts_with("git@")
+    {
+        return Err(Error::Config(ConfigError::InvalidValue {
+            option: "input_path".to_string(),
+            reason:
+                "Git URLs are not supported because dircat was compiled without the 'git' feature."
+                    .to_string(),
+        }));
+    }
+
+    let absolute_path = resolve_local_input_path(input_path_str).map_err(Error::from)?;
+
+    Ok(ResolvedInput {
+        is_file: absolute_path.is_file(),
+        path: absolute_path,
+        display: input_path_str.to_string(),
+    })
+}
+
 /// Determines the absolute path for the git cache directory.
+#[cfg(feature = "git")]
 pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
     if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
         let path = PathBuf::from(cache_override);
@@ -183,7 +229,7 @@ pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
     }
 
     // Fallback to default project cache directory.
-    let proj_dirs = ProjectDirs::from("com", "romelium", "dircat")
+    let proj_dirs = directories::ProjectDirs::from("com", "romelium", "dircat")
         .context("Could not determine project cache directory")?;
     let cache_dir = proj_dirs.cache_dir().join("repos");
     if !cache_dir.exists() {
@@ -200,7 +246,9 @@ pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::{Error, GitError};
+    use crate::errors::Error;
+    #[cfg(feature = "git")]
+    use crate::errors::GitError;
     use anyhow::Result;
     use std::fs;
     use tempfile::tempdir;
@@ -265,6 +313,7 @@ mod tests {
         assert_eq!(resolved.path, temp.path().canonicalize()?);
         assert_eq!(resolved.display, path_str);
         assert!(!resolved.is_file);
+        #[cfg(feature = "git")]
         assert!(resolved.cache_path.exists());
 
         Ok(())
@@ -284,6 +333,7 @@ mod tests {
     }
 
     /// Helper to create a local bare git repo to act as a "remote" for offline tests.
+    #[cfg(feature = "git")]
     fn setup_local_git_repo() -> Result<(tempfile::TempDir, String)> {
         let temp_dir = tempdir()?;
         let repo_path = temp_dir.path();
@@ -323,6 +373,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "git")]
     fn test_resolve_input_git_url_local_success() -> Result<()> {
         let (_remote_dir, remote_url) = setup_local_git_repo()?;
         let cache_dir = tempdir()?;
@@ -354,6 +405,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "git")]
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_git_url_remote_failure() {
         let invalid_url = "https://github.com/user/this-repo-will-never-exist-probably.git";
@@ -365,6 +417,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "git")]
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_github_folder_url_success() -> Result<()> {
         let folder_url = "https://github.com/git-fixtures/basic/tree/master/go";
@@ -378,6 +431,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "git")]
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_git_clone_error_returns_structured_error() {
         // Use a URL that is syntactically valid but points to a non-existent repo

@@ -89,6 +89,7 @@ pub mod constants;
 pub mod core_types;
 pub mod discovery;
 pub mod errors;
+#[cfg(feature = "git")]
 pub mod git;
 pub mod output;
 pub mod processing;
@@ -253,13 +254,22 @@ pub fn execute(
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<DircatResult> {
     // --- Path Resolution (I/O heavy part) ---
-    let resolved_input = config::resolve_input(
-        &config.input_path,
-        &config.git_branch,
-        config.git_depth,
-        &config.git_cache_path,
-        progress,
-    )?;
+    let resolved_input = {
+        #[cfg(feature = "git")]
+        {
+            config::resolve_input(
+                &config.input_path,
+                &config.git_branch,
+                config.git_depth,
+                &config.git_cache_path,
+                progress,
+            )?
+        }
+        #[cfg(not(feature = "git"))]
+        {
+            config::resolve_input(&config.input_path, &None, None, &None, progress)?
+        }
+    };
     // Discover files based on config
     let discovered_files = discover(config, &resolved_input, token)?;
 
@@ -622,13 +632,22 @@ mod tests {
         let token = CancellationToken::new();
 
         // 2. Discover and process
-        let resolved = config::resolve_input(
-            &config.input_path,
-            &None,
-            None,
-            &config.git_cache_path,
-            None,
-        )?;
+        let resolved = {
+            #[cfg(feature = "git")]
+            {
+                config::resolve_input(
+                    &config.input_path,
+                    &None,
+                    None,
+                    &config.git_cache_path,
+                    None,
+                )?
+            }
+            #[cfg(not(feature = "git"))]
+            {
+                config::resolve_input(&config.input_path, &None, None, &None, None)?
+            }
+        };
         let discovered_files = discover(&config, &resolved, &token)?;
         let processed_files = process(discovered_files, &config, &token)?;
 

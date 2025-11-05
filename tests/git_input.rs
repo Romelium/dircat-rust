@@ -1,4 +1,5 @@
 // tests/git_input.rs
+#![cfg(feature = "git")]
 
 mod common;
 

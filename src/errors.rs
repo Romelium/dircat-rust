@@ -4,6 +4,7 @@
 //! that can occur during execution, offering more context than generic I/O or
 //! `anyhow` errors.
 
+#[cfg(feature = "git")]
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -38,6 +39,7 @@ pub enum ConfigError {
 }
 
 /// Errors related to git operations (cloning, fetching, API interaction, etc.).
+#[cfg(feature = "git")]
 #[derive(Error, Debug)]
 pub enum GitError {
     #[error("Failed to clone repository from '{url}': {source}")]
@@ -113,6 +115,7 @@ pub enum Error {
     Config(#[from] ConfigError),
 
     /// Error related to git operations (cloning, fetching, etc.).
+    #[cfg(feature = "git")]
     #[error(transparent)]
     Git(#[from] GitError),
 

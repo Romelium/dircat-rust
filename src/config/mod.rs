@@ -64,10 +64,13 @@ pub struct Config {
     pub only_last: bool,
     /// If `true`, perform a dry run: print the list of files that would be processed, but not their content.
     pub dry_run: bool,
+    #[cfg(feature = "git")]
     /// The specific git branch to clone.
     pub git_branch: Option<String>,
+    #[cfg(feature = "git")]
     /// The depth for a shallow git clone.
     pub git_depth: Option<u32>,
+    #[cfg(feature = "git")]
     /// The original, unresolved path to the directory for caching cloned git repositories.
     pub git_cache_path: Option<String>,
 }
@@ -75,7 +78,8 @@ pub struct Config {
 // Custom Debug implementation for Config, as Box<dyn ContentFilter> does not implement Debug.
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Config")
+        let mut builder = f.debug_struct("Config");
+        builder
             .field("input_path", &self.input_path)
             .field("max_size", &self.max_size)
             .field("recursive", &self.recursive)
@@ -98,11 +102,17 @@ impl fmt::Debug for Config {
             .field("counts", &self.counts)
             .field("process_last", &self.process_last)
             .field("only_last", &self.only_last)
-            .field("dry_run", &self.dry_run)
-            .field("git_branch", &self.git_branch)
-            .field("git_depth", &self.git_depth)
-            .field("git_cache_path", &self.git_cache_path)
-            .finish()
+            .field("dry_run", &self.dry_run);
+
+        #[cfg(feature = "git")]
+        {
+            builder
+                .field("git_branch", &self.git_branch)
+                .field("git_depth", &self.git_depth)
+                .field("git_cache_path", &self.git_cache_path);
+        }
+
+        builder.finish()
     }
 }
 impl Config {
@@ -136,14 +146,18 @@ impl Config {
             process_last: None,
             only_last: false,
             dry_run: false,
+            #[cfg(feature = "git")]
             git_branch: None,
+            #[cfg(feature = "git")]
             git_depth: None,
+            #[cfg(feature = "git")]
             git_cache_path: None,
         }
     }
 }
 
 /// Represents the destination for the generated output.
+#[cfg_attr(not(feature = "git"), allow(dead_code))] // Clipboard is only used with git feature in main
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OutputDestination {
     /// Write to standard output.
@@ -155,4 +169,7 @@ pub enum OutputDestination {
 }
 
 /// Re-export the public path resolution function and its related types.
+#[cfg(feature = "git")]
 pub use path_resolve::{determine_cache_dir, resolve_input, ResolvedInput};
+#[cfg(not(feature = "git"))]
+pub use path_resolve::{resolve_input, ResolvedInput};

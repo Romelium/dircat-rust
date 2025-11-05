@@ -13,14 +13,17 @@ pub struct Cli {
     pub input_path: String,
 
     // --- Git Options ---
+    #[cfg(feature = "git")]
     /// For git URL inputs, check out a specific branch, tag, or commitish instead of the default.
     #[arg(long, alias = "git-ref", value_name = "BRANCH_OR_TAG")]
     pub git_branch: Option<String>,
 
+    #[cfg(feature = "git")]
     /// For git URL inputs, perform a shallow clone with a limited history depth.
     #[arg(long, value_name = "DEPTH")]
     pub git_depth: Option<u32>,
 
+    #[cfg(feature = "git")]
     /// Path to the directory for caching cloned git repositories.
     #[arg(long, value_name = "PATH")]
     pub git_cache_path: Option<String>,

@@ -1,6 +1,7 @@
 // src/progress.rs
 
 //! Defines a trait for reporting progress of long-running operations.
+#[cfg(feature = "git")]
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// A trait for reporting progress, abstracting over specific implementations like `indicatif`.
@@ -29,11 +30,13 @@ impl ProgressReporter for NoOpProgress {
 }
 
 /// An implementation of `ProgressReporter` using the `indicatif` crate.
+#[cfg(feature = "git")]
 #[derive(Clone)]
 pub struct IndicatifProgress {
     bar: ProgressBar,
 }
 
+#[cfg(feature = "git")]
 impl IndicatifProgress {
     /// Creates a new progress bar with a default style.
     pub fn new() -> Self {
@@ -50,12 +53,14 @@ impl IndicatifProgress {
     }
 }
 
+#[cfg(feature = "git")]
 impl Default for IndicatifProgress {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "git")]
 impl ProgressReporter for IndicatifProgress {
     fn set_length(&self, len: u64) {
         self.bar.set_length(len);
