@@ -57,6 +57,7 @@ pub struct ConfigBuilder {
     // --- Content Processing Options ---
     remove_comments: Option<bool>,
     remove_empty_lines: Option<bool>,
+    content_filters: Vec<Box<dyn ContentFilter>>,
     // --- Output Formatting Options ---
     filename_only: Option<bool>,
     line_numbers: Option<bool>,
@@ -101,6 +102,7 @@ impl ConfigBuilder {
             no_lockfiles: Some(cli.no_lockfiles),
             remove_comments: Some(cli.remove_comments),
             remove_empty_lines: Some(cli.remove_empty_lines),
+            content_filters: Vec::new(),
             filename_only: Some(cli.filename_only),
             line_numbers: Some(cli.line_numbers),
             backticks: Some(cli.backticks),
@@ -202,6 +204,12 @@ impl ConfigBuilder {
         self.remove_empty_lines = Some(remove);
         self
     }
+    #[must_use]
+    pub fn content_filter(mut self, filter: Box<dyn ContentFilter>) -> Self {
+        self.content_filters.push(filter);
+        self
+    }
+
     #[must_use]
     pub fn filename_only(mut self, filename_only: bool) -> Self {
         self.filename_only = Some(filename_only);
@@ -305,7 +313,7 @@ impl ConfigBuilder {
         }
 
         // --- Build content filters vector ---
-        let mut content_filters: Vec<Box<dyn ContentFilter>> = Vec::new();
+        let mut content_filters = self.content_filters;
         if self.remove_comments.unwrap_or(false) {
             content_filters.push(Box::new(RemoveCommentsFilter));
         }
@@ -476,6 +484,46 @@ mod tests {
             "RemoveEmptyLinesFilter"
         );
 
+        Ok(())
+    }
+
+    // A custom filter for testing purposes
+    #[derive(Debug)]
+    struct UppercaseFilter;
+
+    impl ContentFilter for UppercaseFilter {
+        fn apply(&self, content: &str) -> String {
+            content.to_uppercase()
+        }
+        fn name(&self) -> &'static str {
+            "UppercaseFilter"
+        }
+    }
+
+    #[test]
+    fn test_builder_with_custom_content_filter() -> Result<()> {
+        let config = ConfigBuilder::new()
+            .content_filter(Box::new(UppercaseFilter))
+            .build()?;
+
+        assert_eq!(config.content_filters.len(), 1);
+        assert_eq!(config.content_filters[0].name(), "UppercaseFilter");
+        Ok(())
+    }
+
+    #[test]
+    fn test_builder_combines_custom_and_cli_filters() -> Result<()> {
+        let config = ConfigBuilder::new()
+            .remove_comments(true) // Simulates a CLI flag
+            .content_filter(Box::new(UppercaseFilter)) // Programmatic custom filter
+            .remove_empty_lines(true) // Another CLI flag
+            .build()?;
+
+        assert_eq!(config.content_filters.len(), 3);
+        // The custom filter is added first from the builder's vec, then the CLI ones are appended.
+        assert_eq!(config.content_filters[0].name(), "UppercaseFilter");
+        assert_eq!(config.content_filters[1].name(), "RemoveCommentsFilter");
+        assert_eq!(config.content_filters[2].name(), "RemoveEmptyLinesFilter");
         Ok(())
     }
 }
