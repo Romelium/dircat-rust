@@ -3,7 +3,6 @@
 //! Builds the `Config` struct from command-line arguments or other sources.
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
-    path_resolve::ResolvedInput,
     Config, OutputDestination,
 };
 use crate::cli::Cli;
@@ -19,22 +18,21 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```
-/// use dircat::config::ConfigBuilder;
-///
 /// // Programmatic construction
-/// # use dircat::config::path_resolve::{resolve_input, ResolvedInput};
-/// # use std::path::PathBuf;
-/// let resolved = resolve_input(".", &None, None, &None, None).unwrap();
+/// use dircat::config::ConfigBuilder;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// let config = ConfigBuilder::new()
 ///     .input_path(".")
 ///     .extensions(vec!["rs".to_string()])
 ///     .summary(true)
-///     .build(resolved)
+///     .build()
 ///     .expect("Failed to build config");
 ///
 /// assert!(config.summary);
 /// assert_eq!(config.extensions, Some(vec!["rs".to_string()]));
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Default)]
 pub struct ConfigBuilder {
@@ -275,7 +273,7 @@ impl ConfigBuilder {
     /// # Errors
     ///
     /// Returns an error if any validation of option combinations fails.
-    pub fn build(self, resolved_input: ResolvedInput) -> Result<Config> {
+    pub fn build(self) -> Result<Config> {
         // --- Validation ---
         if self.output_file.is_some() && self.paste.unwrap_or(false) {
             return Err(ConfigError::Conflict {
@@ -322,9 +320,7 @@ impl ConfigBuilder {
         };
 
         let config = Config {
-            input_path: resolved_input.path,
-            base_path_display: resolved_input.display,
-            input_is_file: resolved_input.is_file,
+            input_path: self.input_path.unwrap_or_else(|| ".".to_string()),
             max_size: parse_max_size(self.max_size).map_err(Error::from)?,
             recursive: !self.no_recursive.unwrap_or(false),
             extensions: normalize_extensions(self.extensions),
@@ -357,7 +353,7 @@ impl ConfigBuilder {
             dry_run: self.dry_run.unwrap_or(false),
             git_branch: self.git_branch,
             git_depth: self.git_depth,
-            git_cache_path: resolved_input.cache_path,
+            git_cache_path: self.git_cache_path,
         };
 
         Ok(config)
@@ -368,17 +364,13 @@ impl ConfigBuilder {
 mod tests {
     use super::*;
     use crate::cli::Cli;
-    use crate::config::path_resolve::{resolve_input, ResolvedInput};
-    use crate::errors::{ConfigError, Error, GitError};
+    use crate::errors::{ConfigError, Error};
     use clap::Parser;
 
     #[test]
     fn test_builder_validation_errors() {
         // Conflict: output and paste
-        let res1 = ConfigBuilder::new()
-            .output_file("f")
-            .paste(true)
-            .build(ResolvedInput::default_for_test());
+        let res1 = ConfigBuilder::new().output_file("f").paste(true).build();
         assert!(matches!(
             res1,
             Err(Error::Config(ConfigError::Conflict { .. }))
@@ -386,9 +378,7 @@ mod tests {
         assert!(res1.unwrap_err().to_string().contains("simultaneously"));
 
         // Invalid ticks
-        let res2 = ConfigBuilder::new()
-            .ticks(2)
-            .build(ResolvedInput::default_for_test());
+        let res2 = ConfigBuilder::new().ticks(2).build();
         assert!(matches!(
             res2,
             Err(Error::Config(ConfigError::InvalidValue { .. }))
@@ -399,9 +389,7 @@ mod tests {
             .contains("must be 3 or greater"));
 
         // --only-last without --last
-        let res3 = ConfigBuilder::new()
-            .only_last(true)
-            .build(ResolvedInput::default_for_test());
+        let res3 = ConfigBuilder::new().only_last(true).build();
         assert!(matches!(
             res3,
             Err(Error::Config(ConfigError::MissingDependency { .. }))
@@ -415,7 +403,7 @@ mod tests {
         let res4 = ConfigBuilder::new()
             .only(vec!["*.rs".to_string()])
             .process_last(vec!["*.md".to_string()])
-            .build(ResolvedInput::default_for_test());
+            .build();
         assert!(matches!(
             res4,
             Err(Error::Config(ConfigError::Conflict { .. }))
@@ -427,40 +415,21 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires network access and is slow"]
-    fn test_builder_git_clone_error_returns_structured_error() {
-        // Use a URL that is syntactically valid but points to a non-existent repo
-        let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
-        let result = resolve_input(invalid_git_url, &None, None, &None, None);
-
-        assert!(matches!(
-            result,
-            Err(Error::Git(GitError::CloneFailed { .. }))
-        ));
-        let err_msg = result.unwrap_err().to_string();
-        // Check for a substring that indicates a clone failure
-        assert!(err_msg.contains("Failed to clone repository"));
-    }
-
-    #[test]
     fn test_builder_basic_config() -> Result<()> {
-        let resolved = resolve_input(".", &None, None, &None, None)?;
-        let config = ConfigBuilder::new().input_path(".").build(resolved)?;
-        assert!(config.input_path.is_absolute());
+        let config = ConfigBuilder::new().input_path(".").build()?;
+        assert_eq!(config.input_path, ".");
         assert_eq!(config.output_destination, OutputDestination::Stdout);
         assert!(config.recursive);
         assert!(config.use_gitignore);
         Ok(())
     }
-
     #[test]
     fn test_builder_with_flags() -> Result<()> {
-        let resolved = resolve_input(".", &None, None, &None, None)?;
         let config = ConfigBuilder::new()
             .input_path(".")
             .no_recursive(true)
             .include_binary(true)
-            .build(resolved)?;
+            .build()?;
         assert!(!config.recursive);
         assert!(config.include_binary);
         Ok(())
@@ -469,8 +438,7 @@ mod tests {
     #[test]
     fn test_builder_only_shorthand_from_cli() -> Result<()> {
         let cli = Cli::parse_from(["dircat", ".", "--only", "*.rs", "*.toml"]);
-        let resolved = resolve_input(".", &None, None, &None, None)?;
-        let config = ConfigBuilder::from_cli(cli).build(resolved)?;
+        let config = ConfigBuilder::from_cli(cli).build()?;
         assert_eq!(
             config.process_last,
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])
@@ -482,26 +450,25 @@ mod tests {
     #[test]
     fn test_builder_content_filters_from_cli() -> Result<()> {
         // No filters
-        let resolved = resolve_input(".", &None, None, &None, None)?;
         let cli_none = Cli::parse_from(["dircat", "."]);
-        let config_none = ConfigBuilder::from_cli(cli_none).build(resolved.clone())?;
+        let config_none = ConfigBuilder::from_cli(cli_none).build()?;
         assert!(config_none.content_filters.is_empty());
 
         // Comments only
         let cli_c = Cli::parse_from(["dircat", ".", "-c"]);
-        let config_c = ConfigBuilder::from_cli(cli_c).build(resolved.clone())?;
+        let config_c = ConfigBuilder::from_cli(cli_c).build()?;
         assert_eq!(config_c.content_filters.len(), 1);
         assert_eq!(config_c.content_filters[0].name(), "RemoveCommentsFilter");
 
         // Empty lines only
         let cli_l = Cli::parse_from(["dircat", ".", "-l"]);
-        let config_l = ConfigBuilder::from_cli(cli_l).build(resolved.clone())?;
+        let config_l = ConfigBuilder::from_cli(cli_l).build()?;
         assert_eq!(config_l.content_filters.len(), 1);
         assert_eq!(config_l.content_filters[0].name(), "RemoveEmptyLinesFilter");
 
         // Both filters
         let cli_cl = Cli::parse_from(["dircat", ".", "-c", "-l"]);
-        let config_cl = ConfigBuilder::from_cli(cli_cl).build(resolved)?;
+        let config_cl = ConfigBuilder::from_cli(cli_cl).build()?;
         assert_eq!(config_cl.content_filters.len(), 2);
         assert_eq!(config_cl.content_filters[0].name(), "RemoveCommentsFilter");
         assert_eq!(

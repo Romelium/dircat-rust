@@ -1,5 +1,6 @@
 // src/discovery/entry_processor.rs
 
+use crate::config::path_resolve::ResolvedInput;
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::Error;
@@ -24,6 +25,7 @@ use tracing::instrument;
 pub(crate) fn process_direntry(
     entry_result: Result<DirEntry, ignore::Error>,
     config: &Config,
+    resolved: &ResolvedInput,
 ) -> Result<Option<FileInfo>, Error> {
     // --- 1. Handle Walker Errors ---
     let entry = match entry_result {
@@ -38,7 +40,7 @@ pub(crate) fn process_direntry(
     trace!("Processing entry: {}", absolute_path.display());
 
     // --- 2. Calculate Relative Path ---
-    let relative_path = if config.input_is_file {
+    let relative_path = if resolved.is_file {
         absolute_path
             .file_name()
             .map(PathBuf::from)
@@ -51,12 +53,12 @@ pub(crate) fn process_direntry(
             })
     } else {
         absolute_path
-            .strip_prefix(&config.input_path)
+            .strip_prefix(&resolved.path)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|err| {
                 warn!(
                     "Failed to strip prefix '{}' from '{}': {}. Using absolute path.",
-                    config.input_path.display(),
+                    resolved.path.display(),
                     absolute_path.display(),
                     err
                 );

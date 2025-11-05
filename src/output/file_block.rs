@@ -147,8 +147,7 @@ mod tests {
     // Mock Config for testing purposes - using a helper function now
     fn create_test_config(line_numbers: bool, filename_only: bool, backticks: bool) -> Config {
         let mut config = Config::new_for_test();
-        config.input_path = PathBuf::from("/base");
-        config.base_path_display = "/base".to_string();
+        config.input_path = "/base".to_string();
         config.line_numbers = line_numbers;
         config.filename_only_header = filename_only;
         config.backticks = backticks;

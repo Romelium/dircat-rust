@@ -41,12 +41,11 @@ pub(crate) fn check_process_last(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     fn create_test_config(process_last: Option<Vec<&str>>) -> Config {
         let mut config = Config::new_for_test();
-        config.input_path = PathBuf::from("/base");
-        config.base_path_display = "/base".to_string();
+        config.input_path = "/base".to_string();
         config.process_last = process_last.map(|v| v.iter().map(|s| s.to_string()).collect());
         config
     }

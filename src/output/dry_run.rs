@@ -47,8 +47,7 @@ mod tests {
     // Helper to create a minimal Config for testing
     fn create_test_config(backticks: bool) -> Config {
         let mut config = Config::new_for_test();
-        config.input_path = PathBuf::from("/base");
-        config.base_path_display = "/base".to_string();
+        config.input_path = "/base".to_string();
         config.backticks = backticks;
         config.dry_run = true; // Assume dry run for these tests
         config

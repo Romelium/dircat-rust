@@ -94,8 +94,7 @@ pub(crate) mod tests {
         summary: bool,
     ) -> Config {
         let mut config = Config::new_for_test();
-        config.input_path = PathBuf::from("/base");
-        config.base_path_display = "/base".to_string();
+        config.input_path = "/base".to_string();
         config.backticks = backticks;
         config.filename_only_header = filename_only;
         config.line_numbers = line_numbers;

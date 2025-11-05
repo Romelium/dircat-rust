@@ -2,15 +2,12 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dircat::{
-    cli::Cli,
-    config::resolve_input,
-    config::ConfigBuilder,
-    errors::Error,
-    progress::{IndicatifProgress, ProgressReporter},
-    run,
-    signal::setup_signal_handler,
-};
+use dircat::cli::Cli;
+use dircat::config::ConfigBuilder;
+use dircat::errors::Error;
+use dircat::progress::{IndicatifProgress, ProgressReporter};
+use dircat::run;
+use dircat::signal::setup_signal_handler;
 use std::sync::Arc;
 
 fn main() -> Result<()> {
@@ -27,19 +24,11 @@ fn main() -> Result<()> {
             None
         };
 
-    // --- Path Resolution (I/O heavy part) ---
-    let resolved_input = resolve_input(
-        &cli_args.input_path,
-        &cli_args.git_branch,
-        cli_args.git_depth,
-        &cli_args.git_cache_path,
-        progress_reporter,
-    )?;
-    let config = ConfigBuilder::from_cli(cli_args).build(resolved_input)?;
+    // --- Configuration & Execution ---
+    let config = ConfigBuilder::from_cli(cli_args).build()?;
     let token = setup_signal_handler()?;
 
-    // --- Execution ---
-    let result = run(&config, &token);
+    let result = run(&config, &token, progress_reporter);
 
     // --- Error Handling ---
     if let Err(e) = result {

@@ -22,7 +22,9 @@
 //! use dircat::{discover, process, format};
 //! use dircat::cancellation::CancellationToken;
 //! use dircat::config::{self, ConfigBuilder};
+//! use dircat::progress::ProgressReporter;
 //! use std::fs;
+//! use std::sync::Arc;
 //! use tempfile::tempdir;
 //!
 //! // 1. Set up a temporary directory with some files.
@@ -31,31 +33,44 @@
 //! fs::write(temp_dir.path().join("file1.txt"), "Hello, world!").unwrap();
 //! fs::write(temp_dir.path().join("file2.rs"), "fn main() { /* comment */ }").unwrap();
 //!
-//! // 2. Resolve the input path. This is a separate step that performs I/O.
-//! let resolved_input = config::resolve_input(
-//!     input_path_str, &None, None, &None, None
-//! ).unwrap();
-//!
 //! // 2. Create a Config object programmatically using the builder.
+//! // This step is I/O-free and captures the user's intent.
 //! let config = ConfigBuilder::new()
 //!     .input_path(input_path_str) // This is used for display purposes
 //!     .remove_comments(true)
 //!     .summary(true)
-//!     .build(resolved_input)
+//!     .build()
 //!     .unwrap();
 //!
-//! // 3. Set up a cancellation token for graceful interruption (e.g., by Ctrl+C).
+//! // 3. Set up a cancellation token for graceful interruption.
 //! let token = CancellationToken::new();
 //!
-//! // 4. Execute the dircat pipeline.
-//! // Stage 1: Discover files.
-//! let discovered_files = discover(&config, &token).unwrap();
+//! // 4. Execute the main logic, which performs I/O (path resolution)
+//! // and processing, returning the final file data.
+//! // For library use, `execute` is often preferred over `run`.
+//! let progress: Option<Arc<dyn ProgressReporter>> = None; // No progress bar in this example
+//! let dircat_result = dircat::execute(&config, &token, progress).unwrap();
 //!
-//! // Stage 2: Process file content.
+//! // For more granular control, you can use the individual stages:
+//! // Stage 1: Resolve path (I/O).
+//! let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, None).unwrap();
+//! // Stage 2: Discover files.
+//! let discovered_files = discover(&config, &resolved, &token).unwrap();
+//! // Stage 3: Process file content.
 //! let processed_files = process(discovered_files, &config, &token).unwrap();
 //!
 //! // Stage 3: Format the output into a buffer.
-//! let mut output_buffer = Vec::new();
+//! let mut output_buffer: Vec<u8> = Vec::new();
+//! // For more granular control, you can use the individual stages:
+//! // Stage 1: Resolve path (I/O).
+//! let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, None).unwrap();
+//! // Stage 2: Discover files.
+//! let discovered_files = discover(&config, &resolved, &token).unwrap();
+//! // Stage 3: Process file content.
+//! let processed_files = process(discovered_files, &config, &token).unwrap();
+//!
+//! // Stage 3: Format the output into a buffer.
+//! let mut output_buffer: Vec<u8> = Vec::new();
 //! format(&processed_files, &config, &mut output_buffer).unwrap();
 //!
 //! // 5. Print the result.
@@ -106,9 +121,11 @@ pub use processing::filters::{
 use crate::errors::{Error, Result};
 use crate::output::{MarkdownFormatter, OutputFormatter};
 mod filtering;
+use crate::progress::ProgressReporter;
 use anyhow::Context;
 use rayon::prelude::*;
-use std::io::Write; // Import Write trait
+use std::io::Write;
+use std::sync::Arc; // Import Write trait
 
 /// Represents the successful result of a dircat execution.
 ///
@@ -131,13 +148,22 @@ pub struct DircatResult {
 ///
 /// # Arguments
 /// * `config` - The configuration for the discovery process.
+/// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
+///
+/// # Arguments
+/// * `config` - The configuration for the discovery process.
+/// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` containing a vector of `FileInfo` structs, sorted in the final
 /// processing order (normal files alphabetically, then "last" files in the specified order).
-pub fn discover(config: &Config, token: &CancellationToken) -> Result<Vec<FileInfo>> {
-    let (mut normal_files, mut last_files) = discovery::discover_files(config, token)?;
+pub fn discover(
+    config: &Config,
+    resolved: &config::path_resolve::ResolvedInput,
+    token: &CancellationToken,
+) -> Result<Vec<FileInfo>> {
+    let (mut normal_files, mut last_files) = discovery::discover_files(config, resolved, token)?;
 
     // Sort normal files alphabetically by relative path
     normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
@@ -232,14 +258,28 @@ pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
 /// # Arguments
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
+/// * `progress` - An optional progress reporter for long operations like cloning.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` containing a `DircatResult` on success. The `files` vector within the
 /// result will be empty if no files matched the criteria. Other errors are propagated
 /// from the underlying stages.
-pub fn execute(config: &Config, token: &CancellationToken) -> Result<DircatResult> {
+pub fn execute(
+    config: &Config,
+    token: &CancellationToken,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<DircatResult> {
+    // --- Path Resolution (I/O heavy part) ---
+    let resolved_input = config::resolve_input(
+        &config.input_path,
+        &config.git_branch,
+        config.git_depth,
+        &config.git_cache_path,
+        progress,
+    )?;
     // Discover files based on config
-    let discovered_files = discover(config, token)?;
+    let discovered_files = discover(config, &resolved_input, token)?;
 
     if token.is_cancelled() {
         return Err(Error::Interrupted);
@@ -302,14 +342,25 @@ pub fn execute(config: &Config, token: &CancellationToken) -> Result<DircatResul
 /// # Arguments
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
+/// * `progress` - An optional progress reporter for long operations like cloning.
+///
+/// # Arguments
+/// * `config` - The configuration for the entire run.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
+/// * `progress` - An optional progress reporter for long operations like cloning.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
 /// # Returns
 /// A `Result` that is `Ok(())` on success. It returns `Err(Error::NoFilesFound)`
 /// if the discovery and processing stages yield no files to output. Other errors
 /// are propagated from the underlying stages.
-pub fn run(config: &Config, token: &CancellationToken) -> Result<()> {
+pub fn run(
+    config: &Config,
+    token: &CancellationToken,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<()> {
     // Execute the core logic to get the processed files.
-    let result = execute(config, token)?;
+    let result = execute(config, token, progress)?;
 
     // Check if any files were found. If not, this is an error condition for a full run.
     if result.files.is_empty() {
@@ -352,17 +403,16 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .output_file(output_file_path.to_str().unwrap())
-            .build(resolved)?;
+            .build()?;
 
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, &token);
+        let result = run(&config, &token, None);
 
         // 3. Assert
         assert!(result.is_ok());
@@ -385,18 +435,17 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .output_file(output_file_path.to_str().unwrap())
             .dry_run(true)
-            .build(resolved)?;
+            .build()?;
 
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, &token);
+        let result = run(&config, &token, None);
 
         // 3. Assert
         assert!(result.is_ok());
@@ -414,13 +463,10 @@ mod tests {
         // 1. Setup
         let temp_dir = tempdir()?;
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
-        let config = ConfigBuilder::new()
-            .input_path(input_path_str)
-            .build(resolved)?;
+        let config = ConfigBuilder::new().input_path(input_path_str).build()?;
         let token = CancellationToken::new();
         // 2. Execute
-        let result = execute(&config, &token)?;
+        let result = execute(&config, &token, None)?;
 
         // 3. Assert
         assert!(result.files.is_empty());
@@ -433,14 +479,11 @@ mod tests {
         // 1. Setup
         let temp_dir = tempdir()?;
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
-        let config = ConfigBuilder::new()
-            .input_path(input_path_str)
-            .build(resolved)?;
+        let config = ConfigBuilder::new().input_path(input_path_str).build()?;
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, &token);
+        let result = run(&config, &token, None);
 
         // 3. Assert
         assert!(matches!(result, Err(Error::NoFilesFound)));
@@ -458,16 +501,15 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .extensions(vec!["txt".to_string()]) // Filter for .txt, but only .rs exists
-            .build(resolved)?;
+            .build()?;
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = run(&config, &token);
+        let result = run(&config, &token, None);
 
         // 3. Assert
         assert!(matches!(result, Err(Error::NoFilesFound)));
@@ -482,17 +524,14 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
-        let config = ConfigBuilder::new()
-            .input_path(input_path_str)
-            .build(resolved)?;
+        let config = ConfigBuilder::new().input_path(input_path_str).build()?;
 
         // Simulate an immediate cancellation
         let token = CancellationToken::new();
         token.cancel();
 
         // 2. Execute
-        let result = run(&config, &token);
+        let result = run(&config, &token, None);
 
         // 3. Assert
         // The error should be `Interrupted` because the discovery loop checks the signal.
@@ -511,16 +550,15 @@ mod tests {
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .remove_comments(true) // Enable a processing step
-            .build(resolved)?;
+            .build()?;
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, &token)?;
+        let result = execute(&config, &token, None)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 2);
@@ -545,17 +583,16 @@ mod tests {
         fs::write(temp_dir.path().join("b.txt"), "Content B")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .dry_run(true)
             .remove_comments(true) // This should be ignored in dry run
-            .build(resolved)?;
+            .build()?;
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, &token)?;
+        let result = execute(&config, &token, None)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 2);
@@ -582,16 +619,15 @@ mod tests {
         fs::write(temp_dir.path().join("b.bin"), b"binary\0data")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
 
         let config = ConfigBuilder::new()
             .input_path(input_path_str)
             .dry_run(true)
-            .build(resolved)?;
+            .build()?;
         let token = CancellationToken::new();
 
         // 2. Execute
-        let result = execute(&config, &token)?;
+        let result = execute(&config, &token, None)?;
 
         // 3. Assert
         assert_eq!(result.files.len(), 1); // Binary file should be filtered out
@@ -607,15 +643,18 @@ mod tests {
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
 
         let input_path_str = temp_dir.path().to_str().unwrap();
-        let resolved = config::resolve_input(input_path_str, &None, None, &None, None)?;
-
-        let config = ConfigBuilder::new()
-            .input_path(input_path_str)
-            .build(resolved)?;
+        let config = ConfigBuilder::new().input_path(input_path_str).build()?;
         let token = CancellationToken::new();
 
         // 2. Discover and process
-        let discovered_files = discover(&config, &token)?;
+        let resolved = config::resolve_input(
+            &config.input_path,
+            &None,
+            None,
+            &config.git_cache_path,
+            None,
+        )?;
+        let discovered_files = discover(&config, &resolved, &token)?;
         let processed_files = process(discovered_files, &config, &token)?;
 
         // 3. Format to string

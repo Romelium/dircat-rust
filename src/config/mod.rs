@@ -18,13 +18,8 @@ pub mod path_resolve;
 /// This struct holds all the settings parsed and validated from the CLI,
 /// ready to be used by the core logic (discovery, processing, output).
 pub struct Config {
-    /// The resolved, absolute path to the input directory or file.
-    pub input_path: PathBuf,
-    /// The original input path string provided by the user, used for display purposes
-    /// and potentially for calculating relative paths if `input_path` stripping fails.
-    pub base_path_display: String,
-    /// Flag indicating if the resolved input_path points to a file rather than a directory.
-    pub input_is_file: bool,
+    /// The original, unresolved path to the directory/file to process, or a git repository URL.
+    pub input_path: String,
     /// Maximum file size in bytes. Files larger than this will be skipped.
     pub max_size: Option<u128>, // Changed from u64 to u128
     /// Whether to recurse into subdirectories.
@@ -73,8 +68,8 @@ pub struct Config {
     pub git_branch: Option<String>,
     /// The depth for a shallow git clone.
     pub git_depth: Option<u32>,
-    /// The resolved, absolute path to the git cache directory.
-    pub git_cache_path: PathBuf,
+    /// The original, unresolved path to the directory for caching cloned git repositories.
+    pub git_cache_path: Option<String>,
 }
 
 // Custom Debug implementation for Config, as Box<dyn ContentFilter> does not implement Debug.
@@ -82,8 +77,6 @@ impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
             .field("input_path", &self.input_path)
-            .field("base_path_display", &self.base_path_display)
-            .field("input_is_file", &self.input_is_file)
             .field("max_size", &self.max_size)
             .field("recursive", &self.recursive)
             .field("extensions", &self.extensions)
@@ -120,9 +113,7 @@ impl Config {
     #[doc(hidden)]
     pub fn new_for_test() -> Self {
         Self {
-            input_path: PathBuf::from("."),
-            base_path_display: ".".to_string(),
-            input_is_file: false,
+            input_path: ".".to_string(),
             max_size: None,
             recursive: true,
             extensions: None,
@@ -147,7 +138,7 @@ impl Config {
             dry_run: false,
             git_branch: None,
             git_depth: None,
-            git_cache_path: PathBuf::from("/tmp/dircat-test-cache"),
+            git_cache_path: None,
         }
     }
 }

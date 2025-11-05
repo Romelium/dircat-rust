@@ -376,4 +376,20 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    #[ignore = "requires network access and is slow"]
+    fn test_resolve_input_git_clone_error_returns_structured_error() {
+        // Use a URL that is syntactically valid but points to a non-existent repo
+        let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
+        let result = resolve_input(invalid_git_url, &None, None, &None, None);
+
+        assert!(matches!(
+            result,
+            Err(Error::Git(GitError::CloneFailed { .. }))
+        ));
+        let err_msg = result.unwrap_err().to_string();
+        // Check for a substring that indicates a clone failure
+        assert!(err_msg.contains("Failed to clone repository"));
+    }
 }

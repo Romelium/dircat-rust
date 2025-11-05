@@ -1,3 +1,4 @@
+use crate::config::path_resolve::ResolvedInput;
 use crate::config::Config;
 use anyhow::{Context, Result};
 use glob::Pattern;
@@ -7,8 +8,11 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 /// Configures and builds the `ignore::WalkBuilder` based on `Config`.
-pub(super) fn build_walker(config: &Config) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
-    let mut walker_builder = WalkBuilder::new(&config.input_path);
+pub(super) fn build_walker(
+    config: &Config,
+    resolved: &ResolvedInput,
+) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
+    let mut walker_builder = WalkBuilder::new(&resolved.path);
     let mut temp_override_file: Option<NamedTempFile> = None;
 
     // If --last or --only is used, we can add those patterns as overrides.
@@ -85,7 +89,7 @@ pub(super) fn build_walker(config: &Config) -> Result<(ignore::Walk, Option<Name
                 custom_ignore_globs.len()
             );
             // Clone data needed by the closure
-            let input_path_clone = config.input_path.clone();
+            let input_path_clone = resolved.path.clone();
 
             walker_builder.filter_entry(move |entry| {
                 // This closure only runs if standard filters passed the entry.

@@ -1,4 +1,5 @@
 use crate::cancellation::CancellationToken;
+use crate::config::path_resolve::ResolvedInput;
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::{Error, Result};
@@ -14,22 +15,20 @@ use walker::build_walker;
 /// Returns a tuple of two vectors: (normal_files, last_files).
 pub fn discover_files(
     config: &Config,
+    resolved: &ResolvedInput,
     token: &CancellationToken,
 ) -> Result<(Vec<FileInfo>, Vec<FileInfo>)> {
     let mut normal_files = Vec::new();
     let mut last_files = Vec::<FileInfo>::new();
 
-    debug!(
-        "Starting file discovery in: {}",
-        config.input_path.display()
-    );
+    debug!("Starting file discovery in: {}", resolved.path.display());
 
     // Check for stop signal before starting the walk
     if token.is_cancelled() {
         return Err(Error::Interrupted);
     }
 
-    let (walker, _temp_file_guard) = build_walker(config)?;
+    let (walker, _temp_file_guard) = build_walker(config, resolved)?;
 
     for entry_result in walker {
         // Check for Ctrl+C signal
@@ -38,7 +37,7 @@ pub fn discover_files(
             return Err(Error::Interrupted);
         }
 
-        match process_direntry(entry_result, config) {
+        match process_direntry(entry_result, config, resolved) {
             Ok(Some(file_info)) => {
                 if file_info.is_process_last {
                     last_files.push(file_info);
