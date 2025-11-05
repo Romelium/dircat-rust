@@ -5,7 +5,7 @@ use clap::Parser;
 use dircat::cli::Cli;
 use dircat::config::ConfigBuilder;
 use dircat::errors::Error;
-#[cfg(feature = "git")]
+#[cfg(feature = "progress")]
 use dircat::progress::IndicatifProgress;
 use dircat::progress::ProgressReporter;
 use dircat::run;
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
 
     // Decide whether to show a progress bar. Show it if stderr is a TTY.
     let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
-        #[cfg(feature = "git")]
+        #[cfg(feature = "progress")]
         {
             if atty::is(atty::Stream::Stderr) {
                 Some(Arc::new(IndicatifProgress::new()))
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
                 None
             }
         }
-        #[cfg(not(feature = "git"))]
+        #[cfg(not(feature = "progress"))]
         {
             None
         }

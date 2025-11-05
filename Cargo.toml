@@ -13,11 +13,13 @@ categories = ["command-line-utilities"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["git", "clipboard"]
+default = ["git", "clipboard", "progress"]
 # Enables cloning git repositories and downloading from the GitHub API.
-git = ["git2", "sha2", "hex", "reqwest", "serde", "serde_json", "indicatif"]
+git = ["git2", "sha2", "hex", "reqwest", "serde", "serde_json"]
 # Enables copying output to the system clipboard.
 clipboard = ["arboard"]
+# Enables the progress bar during long operations like git clones.
+progress = ["indicatif", "atty"]
 
 [dependencies]
 # --- Caching ---
@@ -74,7 +76,7 @@ ctrlc = { version = "3.5", features = ["termination"] } # termination feature si
 # For cross-platform clipboard access (-p/--paste option)
 arboard = { version = "3.6", optional = true }
 # For checking if stdout/stderr is a TTY
-atty = "0.2"
+atty = { version = "0.2", optional = true }
 # For displaying progress bars during long operations
 indicatif = { version = "0.17", optional = true }
 
