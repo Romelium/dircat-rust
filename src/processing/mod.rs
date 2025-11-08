@@ -7,11 +7,9 @@
 use crate::cancellation::CancellationToken;
 use crate::config::Config;
 use crate::core_types::FileInfo;
-use crate::errors::{io_error_with_path, Error};
+use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
-use anyhow::Result;
 use log::debug;
-use rayon::prelude::*;
 use std::fs;
 
 mod content_filters;
@@ -50,104 +48,88 @@ pub mod filters {
 ///
 /// # Errors
 /// Returns an error if file I/O fails for any file or if the operation is interrupted.
-pub fn process_and_filter_files(
-    files: Vec<FileInfo>,
-    config: &Config,
-    token: &CancellationToken,
-) -> Result<Vec<FileInfo>> {
-    if files.is_empty() {
-        debug!("No files in this batch to process.");
-        return Ok(Vec::new());
-    }
-    let initial_file_count = files.len();
-    debug!(
-        "Starting parallel processing for {} files.",
-        initial_file_count
-    );
+pub fn process_and_filter_files<'a>(
+    files: impl Iterator<Item = FileInfo> + 'a,
+    config: &'a Config,
+    token: &'a CancellationToken,
+) -> impl Iterator<Item = Result<FileInfo>> + 'a {
+    files.filter_map(move |mut file_info| {
+        // The closure captures `config` and `token` which have lifetime 'a
+        // Check for cancellation signal. If cancelled, return an error for this item
+        // and subsequent calls will be filtered out by the was_cancelled flag.
+        if token.is_cancelled() {
+            return Some(Err(Error::Interrupted));
+        }
 
-    let processed_files: Vec<FileInfo> = files
-        .into_par_iter()
-        .filter_map(|mut file_info| {
-            // Check for cancellation signal
-            if token.is_cancelled() {
-                return Some(Err(Error::Interrupted.into()));
+        debug!("Processing file: {}", file_info.absolute_path.display());
+
+        // --- 1. Read File Content (once) ---
+        let content_bytes = match fs::read(&file_info.absolute_path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                let app_err = io_error_with_path(e, &file_info.absolute_path);
+                return Some(Err(app_err));
             }
+        };
 
-            debug!("Processing file: {}", file_info.absolute_path.display());
+        // --- 2. Perform Binary Check ---
+        let is_binary = !is_likely_text_from_buffer(&content_bytes);
+        file_info.is_binary = is_binary;
 
-            // --- 1. Read File Content (once) ---
-            let content_bytes = match fs::read(&file_info.absolute_path) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    let app_err = io_error_with_path(e, &file_info.absolute_path);
-                    // The .context() call was incorrect as anyhow::Error doesn't have it.
-                    // The AppError itself provides sufficient context (path + source error).
-                    return Some(Err(anyhow::Error::new(app_err)));
-                }
-            };
+        // --- 3. Filter Based on Binary Check ---
+        if is_binary && !config.include_binary {
+            debug!(
+                "Skipping binary file: {}",
+                file_info.relative_path.display()
+            );
+            return None; // Filter out this file by returning None
+        }
 
-            // --- 2. Perform Binary Check ---
-            let is_binary = !is_likely_text_from_buffer(&content_bytes);
-            file_info.is_binary = is_binary;
+        // --- 4. Process Content ---
+        let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
 
-            // --- 3. Filter Based on Binary Check ---
-            if is_binary && !config.include_binary {
-                debug!(
-                    "Skipping binary file: {}",
-                    file_info.relative_path.display()
-                );
-                return None; // Filter out this file by returning None
-            }
-
-            // --- 4. Process Content ---
-            let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
-
-            // --- Calculate Counts ---
-            if config.counts {
-                if is_binary {
-                    file_info.counts = Some(crate::core_types::FileCounts {
-                        lines: 0,
-                        characters: content_bytes.len(),
-                        words: 0,
-                    });
-                } else {
-                    file_info.counts = Some(calculate_counts(&original_content_str));
-                }
-                debug!(
-                    "Calculated counts for {}: {:?}",
-                    file_info.relative_path.display(),
-                    file_info.counts
-                );
-            }
-
-            // --- Apply Content Filters ---
-            let mut processed_content = original_content_str;
-            if !is_binary {
-                // Apply all configured filters sequentially
-                for filter in &config.content_filters {
-                    processed_content = filter.apply(&processed_content);
-                    debug!(
-                        "Applied filter '{}' to {}",
-                        filter.name(),
-                        file_info.relative_path.display()
-                    );
-                }
+        // --- Calculate Counts ---
+        if config.counts {
+            if is_binary {
+                file_info.counts = Some(crate::core_types::FileCounts {
+                    lines: 0,
+                    characters: content_bytes.len(),
+                    words: 0,
+                });
             } else {
+                file_info.counts = Some(calculate_counts(&original_content_str));
+            }
+            debug!(
+                "Calculated counts for {}: {:?}",
+                file_info.relative_path.display(),
+                file_info.counts
+            );
+        }
+
+        // --- Apply Content Filters ---
+        let mut processed_content = original_content_str;
+        if !is_binary {
+            // Apply all configured filters sequentially
+            for filter in &config.content_filters {
+                processed_content = filter.apply(&processed_content);
                 debug!(
-                    "Skipping content filters for binary file {}",
+                    "Applied filter '{}' to {}",
+                    filter.name(),
                     file_info.relative_path.display()
                 );
             }
+        } else {
+            debug!(
+                "Skipping content filters for binary file {}",
+                file_info.relative_path.display()
+            );
+        }
 
-            // Store the final processed content
-            file_info.processed_content = Some(processed_content);
+        // Store the final processed content
+        file_info.processed_content = Some(processed_content);
 
-            Some(Ok(file_info))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    debug!("Finished processing batch of {} files.", initial_file_count);
-    Ok(processed_files)
+        Some(Ok(file_info))
+    })
 }
 
 #[cfg(test)]
@@ -192,7 +174,9 @@ mod tests {
             .content_filters
             .push(Box::new(RemoveEmptyLinesFilter));
 
-        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
+        let processed: Vec<_> =
+            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+                .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);
         // After comment removal: "\n\nfn main() {}\n" -> trim -> "fn main() {}"
@@ -215,7 +199,9 @@ mod tests {
         let config = Config::new_for_test(); // Has no filters by default
         assert!(config.content_filters.is_empty());
 
-        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
+        let processed: Vec<_> =
+            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+                .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);
         // No filters, so content should be the original string
@@ -238,7 +224,9 @@ mod tests {
         config.include_binary = true; // We must include it to process it
         config.content_filters.push(Box::new(RemoveCommentsFilter));
 
-        let processed = process_and_filter_files(vec![file_info], &config, &token)?;
+        let processed: Vec<_> =
+            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+                .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);
         assert!(processed[0].is_binary);

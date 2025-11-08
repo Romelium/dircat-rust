@@ -109,9 +109,7 @@ pub use processing::filters::{
 use crate::errors::{Error, Result};
 use crate::output::{MarkdownFormatter, OutputFormatter};
 mod filtering;
-use crate::progress::ProgressReporter;
 use anyhow::Context;
-use rayon::prelude::*;
 use std::io::Write;
 use std::sync::Arc; // Import Write trait
 
@@ -146,15 +144,14 @@ pub fn discover(
     config: &Config,
     resolved: &config::path_resolve::ResolvedInput,
     token: &CancellationToken,
-) -> Result<Vec<FileInfo>> {
-    let (mut normal_files, mut last_files) = discovery::discover_files(config, resolved, token)?;
+) -> Result<impl Iterator<Item = FileInfo>> {
+    let (mut normal_files, last_files) = discovery::discover_files(config, resolved, token)?;
 
     // Sort normal files alphabetically by relative path
     normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
     // "last_files" are already sorted correctly by the discovery module.
-    normal_files.append(&mut last_files);
-    Ok(normal_files)
+    Ok(normal_files.into_iter().chain(last_files))
 }
 
 /// Processes a list of discovered files.
@@ -174,12 +171,12 @@ pub fn discover(
 /// A `Result` containing a new vector of `FileInfo` structs that have been processed
 /// and filtered. Files identified as binary (and not explicitly included) will be
 /// removed from this list.
-pub fn process(
-    files: Vec<FileInfo>,
-    config: &Config,
-    token: &CancellationToken,
-) -> Result<Vec<FileInfo>> {
-    Ok(processing::process_and_filter_files(files, config, token)?)
+pub fn process<'a>(
+    files: impl Iterator<Item = FileInfo> + 'a,
+    config: &'a Config,
+    token: &'a CancellationToken,
+) -> impl Iterator<Item = Result<FileInfo>> + 'a {
+    processing::process_and_filter_files(files, config, token)
 }
 
 /// Formats the processed files into the final Markdown output.
@@ -251,7 +248,7 @@ pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
 pub fn execute(
     config: &Config,
     token: &CancellationToken,
-    progress: Option<Arc<dyn ProgressReporter>>,
+    progress: Option<Arc<dyn progress::ProgressReporter>>,
 ) -> Result<DircatResult> {
     // --- Path Resolution (I/O heavy part) ---
     let resolved_input = {
@@ -271,17 +268,16 @@ pub fn execute(
         }
     };
     // Discover files based on config
-    let discovered_files = discover(config, &resolved_input, token)?;
+    let discovered_iter = discover(config, &resolved_input, token)?;
 
     if token.is_cancelled() {
         return Err(Error::Interrupted);
     }
 
     let final_files = if config.dry_run {
-        // For a dry run, we just need to filter out binaries and return.
-        // The content isn't processed.
-        discovered_files
-            .into_par_iter()
+        // For a dry run, we just need to filter out binaries from the discovered files.
+        // The content isn't processed, but we still need to read the file head to check for binary content.
+        discovered_iter
             .filter_map(|fi| {
                 if token.is_cancelled() {
                     return None;
@@ -289,11 +285,13 @@ pub fn execute(
                 if config.include_binary {
                     return Some(fi);
                 }
+                // Check if the file is likely text. If it is, keep it.
                 match filtering::is_likely_text(&fi.absolute_path) {
                     Ok(is_text) => {
                         if is_text {
                             Some(fi)
                         } else {
+                            // It's binary and we're not including binaries, so filter it out.
                             None
                         }
                     }
@@ -303,6 +301,7 @@ pub fn execute(
                             fi.absolute_path.display(),
                             e
                         );
+                        // Skip files we can't read during the check.
                         None
                     }
                 }
@@ -310,7 +309,8 @@ pub fn execute(
             .collect()
     } else {
         // For a normal run, process the files.
-        process(discovered_files, config, token)?
+        let processed_iter = process(discovered_iter, config, token);
+        processed_iter.collect::<Result<Vec<_>>>()?
     };
 
     if token.is_cancelled() {
@@ -342,7 +342,7 @@ pub fn execute(
 pub fn run(
     config: &Config,
     token: &CancellationToken,
-    progress: Option<Arc<dyn ProgressReporter>>,
+    progress: Option<Arc<dyn progress::ProgressReporter>>,
 ) -> Result<()> {
     // Execute the core logic to get the processed files.
     let result = execute(config, token, progress)?;
@@ -648,8 +648,9 @@ mod tests {
                 config::resolve_input(&config.input_path, &None, None, &None, None)?
             }
         };
-        let discovered_files = discover(&config, &resolved, &token)?;
-        let processed_files = process(discovered_files, &config, &token)?;
+        let discovered_files = discover(&config, &resolved, &token)?.collect::<Vec<_>>();
+        let processed_files =
+            process(discovered_files.into_iter(), &config, &token).collect::<Result<Vec<_>>>()?;
 
         // 3. Format to string
         let output_string = format_to_string(&processed_files, &config)?;

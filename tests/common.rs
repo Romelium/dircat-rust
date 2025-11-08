@@ -3,6 +3,7 @@
 use std::process::Command;
 
 // Helper function to get the binary command
+#[allow(dead_code)] // This is used by many integration tests, but not all.
 pub fn dircat_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("dircat"))
 }

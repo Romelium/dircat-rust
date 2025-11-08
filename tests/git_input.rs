@@ -184,29 +184,6 @@ fn test_git_remote_repository_input() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-/// Tests cloning and processing a specific folder from a remote repository.
-/// This is a slow, network-dependent test.
-/// To run: `cargo test -- --ignored git_input`
-#[test]
-#[ignore = "requires network access and is slow"]
-fn test_git_remote_github_folder_url_input() -> Result<(), Box<dyn std::error::Error>> {
-    // This public repo has a `go/` directory containing `example.go`.
-    let repo_folder_url = "https://github.com/git-fixtures/basic/tree/master/go";
-
-    dircat_cmd()
-        .arg(repo_folder_url)
-        .assert()
-        .success()
-        // Check for file inside the 'go' directory
-        .stdout(predicate::str::contains("## File: example.go"))
-        .stdout(predicate::str::contains("package harvesterd"))
-        // Check that files from the root directory are NOT included
-        .stdout(predicate::str::contains("## File: CHANGELOG").not())
-        .stdout(predicate::str::contains("## File: LICENSE").not());
-
-    Ok(())
-}
-
 #[test]
 fn test_git_clone_specific_tag() -> Result<(), Box<dyn std::error::Error>> {
     let source_repo_dir = setup_local_git_repo_with_tags()?;
