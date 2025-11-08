@@ -35,7 +35,7 @@ use super::builder_logic;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ConfigBuilder {
     // --- Input ---
     pub(crate) input_path: Option<String>,
@@ -79,50 +79,6 @@ pub struct ConfigBuilder {
     pub(crate) only: Option<Vec<String>>,
     // --- Execution Control ---
     pub(crate) dry_run: Option<bool>,
-}
-
-impl Clone for ConfigBuilder {
-    fn clone(&self) -> Self {
-        // Manually implement Clone because `Vec<Box<dyn ContentFilter>>` is not Clone.
-        // The tests that require cloning the builder do not use the `content_filter` method,
-        // so the `content_filters` vector will be empty and this is safe.
-        Self {
-            input_path: self.input_path.clone(),
-            #[cfg(feature = "git")]
-            git_branch: self.git_branch.clone(),
-            #[cfg(feature = "git")]
-            git_depth: self.git_depth,
-            #[cfg(feature = "git")]
-            git_cache_path: self.git_cache_path.clone(),
-            max_size: self.max_size.clone(),
-            no_recursive: self.no_recursive,
-            extensions: self.extensions.clone(),
-            exclude_extensions: self.exclude_extensions.clone(),
-            exclude_path_regex: self.exclude_path_regex.clone(),
-            ignore_patterns: self.ignore_patterns.clone(),
-            path_regex: self.path_regex.clone(),
-            filename_regex: self.filename_regex.clone(),
-            no_gitignore: self.no_gitignore,
-            include_binary: self.include_binary,
-            no_lockfiles: self.no_lockfiles,
-            remove_comments: self.remove_comments,
-            remove_empty_lines: self.remove_empty_lines,
-            content_filters: Vec::new(), // This is the key part.
-            filename_only: self.filename_only,
-            line_numbers: self.line_numbers,
-            backticks: self.backticks,
-            ticks: self.ticks,
-            output_file: self.output_file.clone(),
-            #[cfg(feature = "clipboard")]
-            paste: self.paste,
-            summary: self.summary,
-            counts: self.counts,
-            process_last: self.process_last.clone(),
-            only_last: self.only_last,
-            only: self.only.clone(),
-            dry_run: self.dry_run,
-        }
-    }
 }
 
 impl ConfigBuilder {

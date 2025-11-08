@@ -1,6 +1,7 @@
 //! Provides a trait and implementations for transforming file content.
 
 use std::fmt;
+use dyn_clone::DynClone;
 
 mod comments;
 mod empty_lines;
@@ -12,12 +13,14 @@ pub use empty_lines::remove_empty_lines;
 /// A trait for content transformation filters.
 ///
 /// Filters are applied sequentially to the content of each text file.
-pub trait ContentFilter: Send + Sync {
+pub trait ContentFilter: DynClone + Send + Sync {
     /// Applies the filter to the given content string.
     fn apply(&self, content: &str) -> String;
     /// Returns a descriptive name for the filter.
     fn name(&self) -> &'static str;
 }
+
+dyn_clone::clone_trait_object!(ContentFilter);
 
 // Implement Debug manually for Box<dyn ContentFilter> by using the name method.
 impl fmt::Debug for Box<dyn ContentFilter> {
