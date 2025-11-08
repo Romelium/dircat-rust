@@ -111,7 +111,8 @@ pub use processing::filters::{
 // Re-export key git utility functions for library users
 #[cfg(feature = "git")]
 pub use git::{
-    download_directory_via_api, get_repo, is_git_url, parse_github_folder_url, ParsedGitUrl,
+    download_directory_via_api, get_repo, is_git_url, parse_clone_url, parse_github_folder_url,
+    ParsedGitUrl,
 };
 
 use crate::errors::{Error, Result};
