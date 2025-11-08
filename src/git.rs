@@ -376,27 +376,24 @@ pub(crate) fn get_repo_with_base_cache(
     Ok(repo_path)
 }
 
-/// Public-facing function to get a repo, using the configured cache directory.
+/// Clones or updates a git repository into a local cache directory.
 ///
-/// This function will clone a remote git repository into a local cache directory.
-/// If the repository is already cached, it will fetch updates from the remote.
-///
-/// # Arguments
-/// * `url` - The URL of the git repository to clone.
-/// * `branch` - The specific git branch or tag to check out.
+/// This function will clone a remote git repository into a specified local cache directory.
+/// If the repository is already cached, it will fetch updates from the remote to ensure it is up-to-date.
 ///
 /// # Arguments
 /// * `url` - The URL of the git repository to clone.
-/// * `branch` - The specific git branch or tag to check out.
-/// * `depth` - The depth for a shallow clone.
-/// * `cache_path` - The absolute path to the directory for caching repositories.
+/// * `branch` - An optional specific git branch or tag to check out. If `None`, the remote's default branch is used.
+/// * `depth` - An optional depth for a shallow clone.
+/// * `cache_path` - The absolute path to the base directory for caching repositories. A subdirectory will be created inside this path.
+/// * `progress` - An optional progress reporter for long operations like cloning.
 ///
 /// # Returns
 /// A `Result` containing the `PathBuf` to the local, up-to-date repository on success.
 ///
 /// # Errors
-/// Returns an error if cloning or updating the repository fails.
-pub(crate) fn get_repo(
+/// Returns a `GitError` if cloning or updating the repository fails.
+pub fn get_repo(
     url: &str,
     branch: &Option<String>,
     depth: Option<u32>,
@@ -521,25 +518,26 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
     })
 }
 
-/// Downloads a directory's contents from the GitHub API into a temporary directory.
+/// Downloads a directory's contents from the GitHub API into a new temporary directory.
 ///
 /// This is much faster than a full `git clone` for large repositories. It recursively
 /// lists and downloads all files within the specified subdirectory.
 ///
 /// # Arguments
 /// * `url_parts` - A `ParsedGitUrl` struct containing the repository and path information.
-/// * `cli_branch` - The branch specified via the CLI, which takes precedence.
+/// * `branch_override` - An optional branch name which, if provided, takes precedence over the branch specified in `url_parts`.
 ///
 /// # Returns
-/// A `Result` containing the `PathBuf` to the temporary directory where files were downloaded.
-/// The caller is responsible for managing the lifetime of this directory.
+/// A `Result` containing the `PathBuf` to a new temporary directory where files were downloaded.
+/// **Note:** The temporary directory is intentionally leaked (not automatically deleted) and the caller
+/// is responsible for its cleanup if necessary.
 ///
 /// # Errors
 /// Returns an error if API requests fail, the directory is not found, or file I/O fails.
 /// If a `GITHUB_TOKEN` environment variable is not set, this may fail due to API rate limiting.
 pub fn download_directory_via_api(
     url_parts: &ParsedGitUrl,
-    cli_branch: &Option<String>,
+    branch_override: &Option<String>,
 ) -> Result<PathBuf> {
     // 1. Setup
     let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
@@ -547,10 +545,10 @@ pub fn download_directory_via_api(
     let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
 
     // 2. Resolve branch
-    let branch_to_use = if let Some(cli_branch) = cli_branch {
+    let branch_to_use = if let Some(branch_override) = branch_override {
         // Always prioritize the branch specified on the command line.
-        log::debug!("Using branch from --git-branch flag: {}", cli_branch);
-        cli_branch.clone()
+        log::debug!("Using branch from override: {}", branch_override);
+        branch_override.clone()
     } else if url_parts.branch != "HEAD" {
         // Otherwise, use the branch from the URL if it's not a root URL.
         log::debug!("Using branch from URL: {}", url_parts.branch);
