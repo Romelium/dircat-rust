@@ -97,6 +97,9 @@ pub mod processing;
 pub mod progress;
 pub mod signal;
 
+/// A prelude for conveniently importing the most common types.
+pub mod prelude;
+
 // Re-export key public types for easier use as a library
 pub use cancellation::CancellationToken;
 pub use config::{Config, ConfigBuilder, OutputDestination};
