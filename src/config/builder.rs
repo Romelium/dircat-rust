@@ -339,53 +339,22 @@ impl ConfigBuilder {
     ///
     /// Returns an error if any validation of option combinations fails.
     pub fn build(self) -> Result<Config> {
-        // --- Validation ---
-        #[cfg(feature = "clipboard")]
-        {
-            if self.output_file.is_some() && self.paste.unwrap_or(false) {
-                return Err(ConfigError::Conflict {
-                    option1: "--output".to_string(),
-                    option2: "--paste".to_string(),
-                }
-                .into());
-            }
-        }
-        if self.ticks.unwrap_or(3) < 3 {
-            return Err(ConfigError::InvalidValue {
-                option: "--ticks".to_string(),
-                reason: "must be 3 or greater".to_string(),
-            }
-            .into());
-        }
-        if self.only_last.unwrap_or(false) && self.process_last.is_none() {
-            return Err(ConfigError::MissingDependency {
-                option: "--only-last".to_string(),
-                required: "--last".to_string(),
-            }
-            .into());
-        }
-        if self.only.is_some() && (self.process_last.is_some() || self.only_last.unwrap_or(false)) {
-            return Err(ConfigError::Conflict {
-                option1: "--only".to_string(),
-                option2: "--last or --only-last".to_string(),
-            }
-            .into());
-        }
+        validate_builder_options(&self)?;
 
-        // --- Build content filters vector ---
-        let mut content_filters = self.content_filters;
-        if self.remove_comments.unwrap_or(false) {
-            content_filters.push(Box::new(RemoveCommentsFilter));
-        }
-        if self.remove_empty_lines.unwrap_or(false) {
-            content_filters.push(Box::new(RemoveEmptyLinesFilter));
-        }
+        let content_filters = build_content_filters(
+            self.content_filters,
+            self.remove_comments,
+            self.remove_empty_lines,
+        );
 
-        let (process_last, only_last) = if let Some(only_patterns) = self.only {
-            (Some(only_patterns), true)
-        } else {
-            (self.process_last, self.only_last.unwrap_or(false))
-        };
+        let (process_last, only_last) =
+            determine_process_order(self.only, self.process_last, self.only_last);
+
+        let output_destination = determine_output_destination(
+            self.output_file,
+            #[cfg(feature = "clipboard")]
+            self.paste,
+        );
 
         let config = Config {
             input_path: self.input_path.unwrap_or_else(|| ".".to_string()),
@@ -407,22 +376,7 @@ impl ConfigBuilder {
             line_numbers: self.line_numbers.unwrap_or(false),
             backticks: self.backticks.unwrap_or(false),
             num_ticks: self.ticks.unwrap_or(3),
-            output_destination: {
-                if let Some(file_path_str) = self.output_file {
-                    OutputDestination::File(PathBuf::from(file_path_str))
-                } else {
-                    #[cfg(feature = "clipboard")]
-                    if self.paste.unwrap_or(false) {
-                        OutputDestination::Clipboard
-                    } else {
-                        OutputDestination::Stdout
-                    }
-                    #[cfg(not(feature = "clipboard"))]
-                    {
-                        OutputDestination::Stdout
-                    }
-                }
-            },
+            output_destination,
             summary: self.summary.unwrap_or(false) || self.counts.unwrap_or(false),
             counts: self.counts.unwrap_or(false),
             process_last,
@@ -437,6 +391,95 @@ impl ConfigBuilder {
         };
 
         Ok(config)
+    }
+}
+
+// --- Private Helper Functions for Build ---
+
+/// Validates combinations of options on the `ConfigBuilder`.
+fn validate_builder_options(builder: &ConfigBuilder) -> Result<()> {
+    #[cfg(feature = "clipboard")]
+    {
+        if builder.output_file.is_some() && builder.paste.unwrap_or(false) {
+            return Err(ConfigError::Conflict {
+                option1: "--output".to_string(),
+                option2: "--paste".to_string(),
+            }
+            .into());
+        }
+    }
+    if builder.ticks.unwrap_or(3) < 3 {
+        return Err(ConfigError::InvalidValue {
+            option: "--ticks".to_string(),
+            reason: "must be 3 or greater".to_string(),
+        }
+        .into());
+    }
+    if builder.only_last.unwrap_or(false) && builder.process_last.is_none() {
+        return Err(ConfigError::MissingDependency {
+            option: "--only-last".to_string(),
+            required: "--last".to_string(),
+        }
+        .into());
+    }
+    if builder.only.is_some()
+        && (builder.process_last.is_some() || builder.only_last.unwrap_or(false))
+    {
+        return Err(ConfigError::Conflict {
+            option1: "--only".to_string(),
+            option2: "--last or --only-last".to_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Constructs the vector of content filters based on builder settings.
+fn build_content_filters(
+    mut content_filters: Vec<Box<dyn ContentFilter>>,
+    remove_comments: Option<bool>,
+    remove_empty_lines: Option<bool>,
+) -> Vec<Box<dyn ContentFilter>> {
+    if remove_comments.unwrap_or(false) {
+        content_filters.push(Box::new(RemoveCommentsFilter));
+    }
+    if remove_empty_lines.unwrap_or(false) {
+        content_filters.push(Box::new(RemoveEmptyLinesFilter));
+    }
+    content_filters
+}
+
+/// Determines the final `process_last` and `only_last` values, handling the `--only` shorthand.
+fn determine_process_order(
+    only: Option<Vec<String>>,
+    process_last: Option<Vec<String>>,
+    only_last: Option<bool>,
+) -> (Option<Vec<String>>, bool) {
+    if let Some(only_patterns) = only {
+        (Some(only_patterns), true)
+    } else {
+        (process_last, only_last.unwrap_or(false))
+    }
+}
+
+/// Determines the final output destination.
+fn determine_output_destination(
+    output_file: Option<String>,
+    #[cfg(feature = "clipboard")] paste: Option<bool>,
+) -> OutputDestination {
+    if let Some(file_path_str) = output_file {
+        OutputDestination::File(PathBuf::from(file_path_str))
+    } else {
+        #[cfg(feature = "clipboard")]
+        if paste.unwrap_or(false) {
+            OutputDestination::Clipboard
+        } else {
+            OutputDestination::Stdout
+        }
+        #[cfg(not(feature = "clipboard"))]
+        {
+            OutputDestination::Stdout
+        }
     }
 }
 
