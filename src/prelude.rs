@@ -22,11 +22,13 @@
 pub use crate::cancellation::CancellationToken;
 pub use crate::config::{Config, ConfigBuilder, OutputDestination};
 pub use crate::core_types::{FileCounts, FileInfo};
+pub use crate::discovery::{discover_with_options, DiscoveryOptions};
 pub use crate::errors::{Error, Result};
 pub use crate::filtering::{
     check_process_last, is_file_type, is_likely_text, is_likely_text_from_buffer, is_lockfile,
     passes_extension_filters, passes_size_filter,
 };
+pub use crate::output::OutputOptions;
 pub use crate::output::{MarkdownFormatter, OutputFormatter};
 pub use crate::processing::{
     calculate_counts,
@@ -35,6 +37,7 @@ pub use crate::processing::{
         RemoveEmptyLinesFilter,
     },
 };
+pub use crate::processing::{process_with_options, ProcessingOptions};
 pub use crate::{execute, run, DircatResult};
 
 // Also re-export key git utility functions if the feature is enabled.

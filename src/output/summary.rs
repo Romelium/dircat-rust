@@ -1,9 +1,9 @@
 // src/output/summary.rs
 
-use crate::config::Config;
 use crate::constants;
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
+use crate::output::OutputOptions;
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
@@ -13,7 +13,7 @@ use std::io::Write;
 pub fn write_summary(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning
-    config: &Config,
+    opts: &OutputOptions,
 ) -> Result<()> {
     debug!("Writing summary for {} files...", files.len());
     writeln!(writer, "{}", constants::SUMMARY_SEPARATOR)?;
@@ -29,8 +29,8 @@ pub fn write_summary(
     sorted_files.sort_by_key(|fi| &fi.relative_path);
 
     for file_info in sorted_files {
-        let path_str = format_path_for_display(&file_info.relative_path, config);
-        if config.counts {
+        let path_str = format_path_for_display(&file_info.relative_path, opts);
+        if opts.counts {
             if let Some(counts) = file_info.counts {
                 if file_info.is_binary {
                     // Special format for binary files in counts summary
@@ -58,19 +58,16 @@ pub fn write_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::core_types::{FileCounts, FileInfo};
     use std::io::Cursor;
     use std::path::PathBuf;
 
     // Helper to create a minimal Config for testing
-    fn create_test_config(counts: bool, backticks: bool) -> Config {
-        let mut config = Config::new_for_test();
-        config.input_path = "/base".to_string();
-        config.counts = counts;
-        config.backticks = backticks;
-        config.summary = true; // Summary must be true for these tests
-        config
+    fn create_test_opts(counts: bool, backticks: bool) -> OutputOptions {
+        let mut opts = crate::output::tests::create_mock_config(backticks, false, false, true);
+        opts.counts = counts;
+        opts.summary = true; // Summary must be true for these tests
+        opts
     }
 
     // Helper to create dummy FileInfo
@@ -93,10 +90,10 @@ mod tests {
 
     #[test]
     fn test_summary_empty() -> Result<()> {
-        let config = create_test_config(false, false);
+        let opts = create_test_opts(false, false);
         let files = vec![];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (0)\n";
@@ -106,13 +103,13 @@ mod tests {
 
     #[test]
     fn test_summary_no_counts() -> Result<()> {
-        let config = create_test_config(false, false);
+        let opts = create_test_opts(false, false);
         let fi1 = create_file_info("z_file.txt", None, false);
         let fi2 = create_file_info("a_file.rs", None, false);
         let fi3 = create_file_info("sub/b_file.md", None, false);
         let files = vec![&fi1, &fi2, &fi3]; // Unsorted input refs
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (3)\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n";
@@ -122,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_summary_with_counts() -> Result<()> {
-        let config = create_test_config(true, false); // Counts ON
+        let opts = create_test_opts(true, false); // Counts ON
         let counts1 = Some(FileCounts {
             lines: 10,
             characters: 100,
@@ -137,7 +134,7 @@ mod tests {
         let fi2 = create_file_info("a_file.rs", counts2, false);
         let files = vec![&fi1, &fi2];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (2)\n- a_file.rs (L:1 C:5 W:1)\n- z_file.txt (L:10 C:100 W:20)\n";
@@ -148,7 +145,7 @@ mod tests {
     #[test]
     fn test_summary_with_counts_missing() -> Result<()> {
         // Test the defensive handling when counts are requested but missing on a FileInfo
-        let config = create_test_config(true, false); // Counts ON
+        let opts = create_test_opts(true, false); // Counts ON
         let counts1 = Some(FileCounts {
             lines: 10,
             characters: 100,
@@ -158,7 +155,7 @@ mod tests {
         let fi2 = create_file_info("a_file.rs", None, false); // Counts missing
         let files = vec![&fi1, &fi2];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (2)\n- a_file.rs (Counts not available)\n- z_file.txt (L:10 C:100 W:20)\n";
@@ -168,12 +165,12 @@ mod tests {
 
     #[test]
     fn test_summary_with_backticks() -> Result<()> {
-        let config = create_test_config(false, true); // Backticks ON
+        let opts = create_test_opts(false, true); // Backticks ON
         let fi1 = create_file_info("file with space.txt", None, false);
         let fi2 = create_file_info("another.rs", None, false);
         let files = vec![&fi1, &fi2];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (2)\n- `another.rs`\n- `file with space.txt`\n"; // Paths are backticked and sorted
@@ -183,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_summary_with_counts_and_backticks() -> Result<()> {
-        let config = create_test_config(true, true); // Counts and Backticks ON
+        let opts = create_test_opts(true, true); // Counts and Backticks ON
         let counts1 = Some(FileCounts {
             lines: 2,
             characters: 15,
@@ -192,7 +189,7 @@ mod tests {
         let fi1 = create_file_info("data.csv", counts1, false);
         let files = vec![&fi1];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "---\nProcessed Files: (1)\n- `data.csv` (L:2 C:15 W:3)\n";
@@ -202,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_summary_with_binary_counts() -> Result<()> {
-        let config = create_test_config(true, false); // Counts ON
+        let opts = create_test_opts(true, false); // Counts ON
         let counts_text = Some(FileCounts {
             lines: 10,
             characters: 100,
@@ -217,7 +214,7 @@ mod tests {
         let fi_binary = create_file_info("binary.bin", counts_binary, true); // Mark as binary
         let files = vec![&fi_text, &fi_binary];
         let mut writer = Cursor::new(Vec::new());
-        write_summary(&mut writer, &files, &config)?;
+        write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         // Expect different format for binary file count

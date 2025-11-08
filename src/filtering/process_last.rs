@@ -1,6 +1,6 @@
 // src/filtering/process_last.rs
 
-use crate::config::Config;
+use crate::discovery::DiscoveryOptions;
 use glob::Pattern;
 use log::warn; // Import warn
 use std::ffi::OsStr;
@@ -17,28 +17,30 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```
-/// use dircat::config::Config;
+/// use dircat::config::ConfigBuilder;
 /// use dircat::filtering::check_process_last;
 /// use std::path::Path;
 ///
-/// let mut config = Config::new_for_test();
-/// config.process_last = Some(vec!["README.md".to_string(), "*.toml".to_string()]);
+/// let config = ConfigBuilder::new()
+///     .process_last(vec!["README.md".to_string(), "*.toml".to_string()])
+///     .build().unwrap();
+/// let opts = dircat::discovery::DiscoveryOptions::from(&config);
 ///
 /// let path1 = Path::new("README.md");
-/// assert_eq!(check_process_last(path1, path1.file_name(), &config), (true, Some(0)));
+/// assert_eq!(check_process_last(path1, path1.file_name(), &opts), (true, Some(0)));
 ///
 /// let path2 = Path::new("config/app.toml");
-/// assert_eq!(check_process_last(path2, path2.file_name(), &config), (true, Some(1)));
+/// assert_eq!(check_process_last(path2, path2.file_name(), &opts), (true, Some(1)));
 ///
 /// let path3 = Path::new("src/main.rs");
-/// assert_eq!(check_process_last(path3, path3.file_name(), &config), (false, None));
+/// assert_eq!(check_process_last(path3, path3.file_name(), &opts), (false, None));
 /// ```
 pub fn check_process_last(
     relative_path: &Path,
     _filename: Option<&OsStr>, // Filename no longer needed for matching
-    config: &Config,
+    opts: &DiscoveryOptions,
 ) -> (bool, Option<usize>) {
-    if let Some(ref last_patterns) = config.process_last {
+    if let Some(ref last_patterns) = opts.process_last {
         for (index, pattern_str) in last_patterns.iter().enumerate() {
             match Pattern::new(pattern_str) {
                 Ok(pattern) => {
@@ -63,55 +65,51 @@ pub fn check_process_last(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::config::ConfigBuilder;
     use std::path::Path;
 
-    fn create_test_config(process_last: Option<Vec<&str>>) -> Config {
-        let mut config = Config::new_for_test();
-        config.input_path = "/base".to_string();
-        config.process_last = process_last.map(|v| v.iter().map(|s| s.to_string()).collect());
-        config
+    fn create_test_opts(process_last: Option<Vec<&str>>) -> DiscoveryOptions<'static> {
+        let mut builder = ConfigBuilder::new().input_path("/base");
+        if let Some(p) = process_last {
+            builder = builder.process_last(p.iter().map(|s| s.to_string()).collect());
+        }
+        let config = Box::leak(Box::new(builder.build().unwrap()));
+        DiscoveryOptions::from(&*config)
     }
 
     #[test]
     fn test_no_last_patterns() {
-        let config = create_test_config(None);
+        let opts = create_test_opts(None);
         let rel_path = Path::new("src/main.rs");
         let filename = rel_path.file_name();
-        assert_eq!(
-            check_process_last(rel_path, filename, &config),
-            (false, None)
-        );
+        assert_eq!(check_process_last(rel_path, filename, &opts), (false, None));
     }
 
     #[test]
     fn test_match_exact_filename_glob() {
-        let config = create_test_config(Some(vec!["other.txt", "main.rs"]));
+        let opts = create_test_opts(Some(vec!["other.txt", "main.rs"]));
         let rel_path = Path::new("src/main.rs"); // Relative path includes directory
         let filename = rel_path.file_name();
         // "main.rs" glob does NOT match "src/main.rs"
-        assert_eq!(
-            check_process_last(rel_path, filename, &config),
-            (false, None)
-        );
+        assert_eq!(check_process_last(rel_path, filename, &opts), (false, None));
 
         let rel_path_root = Path::new("main.rs"); // Relative path is just filename
         let filename_root = rel_path_root.file_name();
         // "main.rs" glob DOES match "main.rs"
         assert_eq!(
-            check_process_last(rel_path_root, filename_root, &config),
+            check_process_last(rel_path_root, filename_root, &opts),
             (true, Some(1))
         );
     }
 
     #[test]
     fn test_match_wildcard_filename_glob() {
-        let config = create_test_config(Some(vec!["*.txt", "*.rs"]));
+        let opts = create_test_opts(Some(vec!["*.txt", "*.rs"]));
         let rel_path = Path::new("src/main.rs");
         let filename = rel_path.file_name();
         // "*.rs" glob DOES match "src/main.rs"
         assert_eq!(
-            check_process_last(rel_path, filename, &config),
+            check_process_last(rel_path, filename, &opts),
             (true, Some(1))
         );
 
@@ -119,19 +117,19 @@ mod tests {
         let filename_txt = rel_path_txt.file_name();
         // "*.txt" glob DOES match "docs/README.txt"
         assert_eq!(
-            check_process_last(rel_path_txt, filename_txt, &config),
+            check_process_last(rel_path_txt, filename_txt, &opts),
             (true, Some(0))
         );
     }
 
     #[test]
     fn test_match_relative_path_glob() {
-        let config = create_test_config(Some(vec!["src/*.rs", "data/**/config.toml"]));
+        let opts = create_test_opts(Some(vec!["src/*.rs", "data/**/config.toml"]));
         let rel_path = Path::new("src/lib.rs");
         let filename = rel_path.file_name();
         // "src/*.rs" glob DOES match "src/lib.rs"
         assert_eq!(
-            check_process_last(rel_path, filename, &config),
+            check_process_last(rel_path, filename, &opts),
             (true, Some(0))
         );
 
@@ -139,7 +137,7 @@ mod tests {
         let filename_toml = rel_path_toml.file_name();
         // "data/**/config.toml" glob DOES match "data/prod/config.toml"
         assert_eq!(
-            check_process_last(rel_path_toml, filename_toml, &config),
+            check_process_last(rel_path_toml, filename_toml, &opts),
             (true, Some(1))
         );
 
@@ -147,31 +145,28 @@ mod tests {
         let filename_toml_deep = rel_path_toml_deep.file_name();
         // "data/**/config.toml" glob DOES match "data/dev/nested/config.toml"
         assert_eq!(
-            check_process_last(rel_path_toml_deep, filename_toml_deep, &config),
+            check_process_last(rel_path_toml_deep, filename_toml_deep, &opts),
             (true, Some(1))
         );
     }
 
     #[test]
     fn test_no_match_glob() {
-        let config = create_test_config(Some(vec!["lib.rs", "*.toml"]));
+        let opts = create_test_opts(Some(vec!["lib.rs", "*.toml"]));
         let rel_path = Path::new("src/main.rs");
         let filename = rel_path.file_name();
-        assert_eq!(
-            check_process_last(rel_path, filename, &config),
-            (false, None)
-        );
+        assert_eq!(check_process_last(rel_path, filename, &opts), (false, None));
     }
 
     #[test]
     fn test_invalid_glob_pattern() {
         // Should log a warning but not panic, and not match
-        let config = create_test_config(Some(vec!["[invalid", "*.rs"])); // First pattern is invalid
+        let opts = create_test_opts(Some(vec!["[invalid", "*.rs"])); // First pattern is invalid
         let rel_path = Path::new("src/main.rs");
         let filename = rel_path.file_name();
         // Should still match the second, valid pattern
         assert_eq!(
-            check_process_last(rel_path, filename, &config),
+            check_process_last(rel_path, filename, &opts),
             (true, Some(1))
         );
 
@@ -179,7 +174,7 @@ mod tests {
         let filename_other = rel_path_other.file_name();
         // Should not match anything
         assert_eq!(
-            check_process_last(rel_path_other, filename_other, &config),
+            check_process_last(rel_path_other, filename_other, &opts),
             (false, None)
         );
         // Check logs manually or using a test logger if needed to confirm warning

@@ -324,7 +324,7 @@ mod git_feature_tests {
         fn format(
             &self,
             files: &[FileInfo],
-            _config: &Config,
+            _opts: &dircat::output::OutputOptions,
             writer: &mut dyn std::io::Write,
         ) -> anyhow::Result<()> {
             // serde_json is available because the tests run with the 'git' feature enabled
@@ -339,7 +339,7 @@ mod git_feature_tests {
         fn format_dry_run(
             &self,
             files: &[FileInfo],
-            _config: &Config,
+            _opts: &dircat::output::OutputOptions,
             writer: &mut dyn std::io::Write,
         ) -> anyhow::Result<()> {
             let paths: Vec<_> = files
@@ -366,7 +366,8 @@ mod git_feature_tests {
 
         // Format using the custom JSON formatter
         let mut buffer = Vec::new();
-        result.format_with(&JsonFormatter, &config, &mut buffer)?;
+        let output_opts = dircat::output::OutputOptions::from(&config);
+        result.format_with(&JsonFormatter, &output_opts, &mut buffer)?;
 
         let output_str = String::from_utf8(buffer)?;
         // The order is deterministic because `execute` sorts the files.

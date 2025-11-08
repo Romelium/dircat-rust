@@ -15,7 +15,25 @@ pub mod counter;
 pub mod filters;
 
 pub use counter::calculate_counts;
+use filters::ContentFilter;
 use std::fs;
+
+/// A struct holding only the configuration options relevant to content processing.
+pub struct ProcessingOptions<'a> {
+    pub include_binary: bool,
+    pub counts: bool,
+    pub content_filters: &'a Vec<Box<dyn ContentFilter>>,
+}
+
+impl<'a> From<&'a Config> for ProcessingOptions<'a> {
+    fn from(config: &'a Config) -> Self {
+        Self {
+            include_binary: config.include_binary,
+            counts: config.counts,
+            content_filters: &config.content_filters,
+        }
+    }
+}
 
 /// Reads and processes the content of a batch of discovered files based on config.
 ///
@@ -36,9 +54,9 @@ use std::fs;
 ///
 /// # Errors
 /// Returns an error if file I/O fails for any file or if the operation is interrupted.
-pub fn process_and_filter_files<'a>(
+pub(crate) fn process_and_filter_files_internal<'a>(
     files: impl Iterator<Item = FileInfo> + 'a,
-    config: &'a Config,
+    opts: ProcessingOptions<'a>,
     token: &'a CancellationToken,
 ) -> impl Iterator<Item = Result<FileInfo>> + 'a {
     files.filter_map(move |mut file_info| {
@@ -65,7 +83,7 @@ pub fn process_and_filter_files<'a>(
         file_info.is_binary = is_binary;
 
         // --- 3. Filter Based on Binary Check ---
-        if is_binary && !config.include_binary {
+        if is_binary && !opts.include_binary {
             debug!(
                 "Skipping binary file: {}",
                 file_info.relative_path.display()
@@ -77,7 +95,7 @@ pub fn process_and_filter_files<'a>(
         let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
 
         // --- Calculate Counts ---
-        if config.counts {
+        if opts.counts {
             if is_binary {
                 file_info.counts = Some(crate::core_types::FileCounts {
                     lines: 0,
@@ -98,7 +116,7 @@ pub fn process_and_filter_files<'a>(
         let mut processed_content = original_content_str;
         if !is_binary {
             // Apply all configured filters sequentially
-            for filter in &config.content_filters {
+            for filter in opts.content_filters {
                 processed_content = filter.apply(&processed_content);
                 debug!(
                     "Applied filter '{}' to {}",
@@ -118,6 +136,24 @@ pub fn process_and_filter_files<'a>(
 
         Some(Ok(file_info))
     })
+}
+
+/// Processes a list of discovered files using a specific set of `ProcessingOptions`.
+///
+/// This is the advanced, granular entry point for the processing stage. It allows for
+/// creating `ProcessingOptions` separately and passing them in, decoupling the processing
+/// logic from the main `Config` struct.
+///
+/// # Arguments
+/// * `files` - An iterator of `FileInfo` structs from the discovery stage.
+/// * `opts` - The processing-specific options.
+/// * `token` - A `CancellationToken` for graceful interruption.
+pub fn process_with_options<'a>(
+    files: impl Iterator<Item = FileInfo> + 'a,
+    opts: ProcessingOptions<'a>,
+    token: &'a CancellationToken,
+) -> impl Iterator<Item = Result<FileInfo>> + 'a {
+    process_and_filter_files_internal(files, opts, token)
 }
 
 #[cfg(test)]
@@ -162,8 +198,9 @@ mod tests {
             .content_filters
             .push(Box::new(RemoveEmptyLinesFilter));
 
+        let opts = ProcessingOptions::from(&config);
         let processed: Vec<_> =
-            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+            process_and_filter_files_internal(vec![file_info].into_iter(), opts, &token)
                 .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);
@@ -187,8 +224,9 @@ mod tests {
         let config = Config::new_for_test(); // Has no filters by default
         assert!(config.content_filters.is_empty());
 
+        let opts = ProcessingOptions::from(&config);
         let processed: Vec<_> =
-            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+            process_and_filter_files_internal(vec![file_info].into_iter(), opts, &token)
                 .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);
@@ -212,8 +250,9 @@ mod tests {
         config.include_binary = true; // We must include it to process it
         config.content_filters.push(Box::new(RemoveCommentsFilter));
 
+        let opts = ProcessingOptions::from(&config);
         let processed: Vec<_> =
-            process_and_filter_files(vec![file_info].into_iter(), &config, &token)
+            process_and_filter_files_internal(vec![file_info].into_iter(), opts, &token)
                 .collect::<Result<_>>()?;
 
         assert_eq!(processed.len(), 1);

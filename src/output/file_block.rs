@@ -1,9 +1,9 @@
 //! Handles the formatting of a single file's content into a Markdown block.
 
-use crate::config::Config;
 use crate::constants::DEFAULT_LINE_NUMBER_WIDTH;
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
+use crate::output::OutputOptions;
 use anyhow::Result;
 use log::debug; // Import debug
 use std::io::Write;
@@ -25,12 +25,11 @@ use std::path::PathBuf;
 /// # Examples
 /// ```
 /// use dircat::output::file_block::write_file_block;
+/// use dircat::output::OutputOptions;
 /// use dircat::core_types::FileInfo;
-/// use dircat::config::Config;
 /// use std::path::PathBuf;
 ///
-/// let mut config = Config::new_for_test();
-/// config.line_numbers = true; // Enable line numbers for the example
+/// let opts = OutputOptions { backticks: false, filename_only_header: false, line_numbers: true, num_ticks: 3, summary: false, counts: false };
 ///
 /// let file_info = FileInfo {
 ///     absolute_path: PathBuf::from("/tmp/test.rs"),
@@ -44,7 +43,7 @@ use std::path::PathBuf;
 /// };
 ///
 /// let mut buffer = Vec::new();
-/// write_file_block(&mut buffer, &file_info, &config).unwrap();
+/// write_file_block(&mut buffer, &file_info, &opts).unwrap();
 ///
 /// let output = String::from_utf8(buffer).unwrap();
 /// assert!(output.contains("## File: src/test.rs"));
@@ -55,9 +54,9 @@ use std::path::PathBuf;
 pub fn write_file_block(
     writer: &mut dyn Write,
     file_info: &FileInfo,
-    config: &Config,
+    opts: &OutputOptions,
 ) -> Result<()> {
-    let path_to_display = if config.filename_only_header {
+    let path_to_display = if opts.filename_only_header {
         file_info
             .relative_path
             .file_name()
@@ -71,7 +70,7 @@ pub fn write_file_block(
         "Path used for header display: '{}'",
         path_to_display.display()
     );
-    let header_path_str = format_path_for_display(&path_to_display, config);
+    let header_path_str = format_path_for_display(&path_to_display, opts);
 
     // --- Write File Header ---
     writeln!(writer, "## File: {}", header_path_str)?;
@@ -83,26 +82,26 @@ pub fn write_file_block(
         .and_then(|ext| ext.to_str())
         .unwrap_or(""); // Default to empty hint if no extension
 
-    let fence = "`".repeat(config.num_ticks as usize);
+    let fence = "`".repeat(opts.num_ticks as usize);
     writeln!(writer, "{}{}", fence, extension_hint)?;
 
     // Write content line by line, adding line numbers if requested
     if let Some(content) = &file_info.processed_content {
         let lines = content.lines().collect::<Vec<_>>();
-        let num_width = calculate_line_number_width(lines.len(), config);
+        let num_width = calculate_line_number_width(lines.len(), opts);
 
         if lines.is_empty() && content.is_empty() {
             // Handle empty file: write nothing between ``` blocks
         } else if lines.is_empty() && !content.is_empty() {
             // Handle file with content but no newline (single line)
-            if config.line_numbers {
+            if opts.line_numbers {
                 write!(writer, "{:>width$} | ", 1, width = num_width)?;
             }
             writeln!(writer, "{}", content)?;
         } else {
             // Handle multiple lines (or single line ending in newline)
             for (i, line) in lines.iter().enumerate() {
-                if config.line_numbers {
+                if opts.line_numbers {
                     // Format with dynamic padding: "{line_num:>width$} | {line_content}"
                     write!(writer, "{:>width$} | ", i + 1, width = num_width)?;
                 }
@@ -124,8 +123,8 @@ pub fn write_file_block(
 }
 
 /// Calculates the required width for line numbers based on the total number of lines.
-fn calculate_line_number_width(line_count: usize, config: &Config) -> usize {
-    if !config.line_numbers {
+fn calculate_line_number_width(line_count: usize, opts: &OutputOptions) -> usize {
+    if !opts.line_numbers {
         return 0; // No width needed if line numbers are off
     }
     if line_count == 0 {
@@ -140,18 +139,11 @@ fn calculate_line_number_width(line_count: usize, config: &Config) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use std::io::Cursor;
     use std::path::PathBuf;
 
-    // Mock Config for testing purposes - using a helper function now
-    fn create_test_config(line_numbers: bool, filename_only: bool, backticks: bool) -> Config {
-        let mut config = Config::new_for_test();
-        config.input_path = "/base".to_string();
-        config.line_numbers = line_numbers;
-        config.filename_only_header = filename_only;
-        config.backticks = backticks;
-        config
+    fn create_test_opts(line_numbers: bool, filename_only: bool, backticks: bool) -> OutputOptions {
+        crate::output::tests::create_mock_config(backticks, filename_only, line_numbers, false)
     }
 
     // Helper to create dummy FileInfo
@@ -170,35 +162,35 @@ mod tests {
 
     #[test]
     fn test_calculate_line_number_width() {
-        let config_ln_on = create_test_config(true, false, false);
-        let config_ln_off = create_test_config(false, false, false);
+        let opts_ln_on = create_test_opts(true, false, false);
+        let opts_ln_off = create_test_opts(false, false, false);
 
         assert_eq!(
-            calculate_line_number_width(0, &config_ln_on),
+            calculate_line_number_width(0, &opts_ln_on),
             DEFAULT_LINE_NUMBER_WIDTH
         ); // Min width
         assert_eq!(
-            calculate_line_number_width(9, &config_ln_on),
+            calculate_line_number_width(9, &opts_ln_on),
             DEFAULT_LINE_NUMBER_WIDTH
         ); // Min width
         assert_eq!(
-            calculate_line_number_width(10, &config_ln_on),
+            calculate_line_number_width(10, &opts_ln_on),
             DEFAULT_LINE_NUMBER_WIDTH
         ); // Min width
-        assert_eq!(calculate_line_number_width(99999, &config_ln_on), 5); // Exact width
-        assert_eq!(calculate_line_number_width(100000, &config_ln_on), 6); // Exact width
+        assert_eq!(calculate_line_number_width(99999, &opts_ln_on), 5); // Exact width
+        assert_eq!(calculate_line_number_width(100000, &opts_ln_on), 6); // Exact width
 
-        assert_eq!(calculate_line_number_width(0, &config_ln_off), 0);
-        assert_eq!(calculate_line_number_width(1000, &config_ln_off), 0);
+        assert_eq!(calculate_line_number_width(0, &opts_ln_off), 0);
+        assert_eq!(calculate_line_number_width(1000, &opts_ln_off), 0);
     }
 
     #[test]
     fn test_write_file_block_basic() -> Result<()> {
-        let config = create_test_config(false, false, false);
+        let opts = create_test_opts(false, false, false);
         let file_info =
             create_file_info("src/main.rs", Some("fn main() {\n    println!(\"Hi\");\n}"));
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: src/main.rs\n```rs\nfn main() {\n    println!(\"Hi\");\n}\n```\n";
@@ -208,10 +200,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_no_extension() -> Result<()> {
-        let config = create_test_config(false, false, false);
+        let opts = create_test_opts(false, false, false);
         let file_info = create_file_info("Makefile", Some("all: build"));
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: Makefile\n```\nall: build\n```\n"; // No language hint
@@ -221,10 +213,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_line_numbers() -> Result<()> {
-        let config = create_test_config(true, false, false); // Line numbers ON
+        let opts = create_test_opts(true, false, false); // Line numbers ON
         let file_info = create_file_info("script.sh", Some("#!/bin/bash\necho $1")); // 2 lines
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
@@ -235,10 +227,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_line_numbers_single_line_no_newline() -> Result<()> {
-        let config = create_test_config(true, false, false); // Line numbers ON
+        let opts = create_test_opts(true, false, false); // Line numbers ON
         let file_info = create_file_info("single.txt", Some("Just one line")); // 1 line, no newline
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
@@ -249,10 +241,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_line_numbers_empty_file() -> Result<()> {
-        let config = create_test_config(true, false, false); // Line numbers ON
+        let opts = create_test_opts(true, false, false); // Line numbers ON
         let file_info = create_file_info("empty.txt", Some("")); // Empty content
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: empty.txt\n```txt\n```\n"; // No lines printed
@@ -262,10 +254,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_filename_only() -> Result<()> {
-        let config = create_test_config(false, true, false); // Filename only ON
+        let opts = create_test_opts(false, true, false); // Filename only ON
         let file_info = create_file_info("path/to/file.py", Some("print('Hello')"));
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: file.py\n```py\nprint('Hello')\n```\n";
@@ -275,10 +267,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_backticks() -> Result<()> {
-        let config = create_test_config(false, false, true); // Backticks ON
+        let opts = create_test_opts(false, false, true); // Backticks ON
         let file_info = create_file_info("data/config.toml", Some("[section]"));
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: `data/config.toml`\n```toml\n[section]\n```\n";
@@ -288,11 +280,11 @@ mod tests {
 
     #[test]
     fn test_write_file_block_all_options() -> Result<()> {
-        let config = create_test_config(true, true, true); // All options ON
+        let opts = create_test_opts(true, true, true); // All options ON
         let file_info =
             create_file_info("utils/helper.js", Some("function help(){\nreturn true;\n}")); // 3 lines
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         // Assumes DEFAULT_LINE_NUMBER_WIDTH is 5
@@ -303,10 +295,10 @@ mod tests {
 
     #[test]
     fn test_write_file_block_no_content() -> Result<()> {
-        let config = create_test_config(false, false, false);
+        let opts = create_test_opts(false, false, false);
         let file_info = create_file_info("no_content.txt", None); // Content is None
         let mut writer = Cursor::new(Vec::new());
-        write_file_block(&mut writer, &file_info, &config)?;
+        write_file_block(&mut writer, &file_info, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "## File: no_content.txt\n```txt\n// Content not available\n```\n";

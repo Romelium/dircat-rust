@@ -154,8 +154,13 @@ impl Write for ArcMutexVecWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::tests::create_mock_config; // Use shared helper
+    use crate::config::Config;
     use tempfile::NamedTempFile;
+
+    // This test module needs a full Config, not just OutputOptions.
+    fn create_mock_config() -> Config {
+        Config::new_for_test()
+    }
 
     #[cfg(feature = "clipboard")]
     #[test]
@@ -179,7 +184,7 @@ mod tests {
     fn test_setup_output_writer_stdout() {
         // Simple check: Does it return *something* without panicking for stdout?
         // Testing the actual type is brittle.
-        let config = create_mock_config(false, false, false, false); // Destination is stdout
+        let config = create_mock_config(); // Destination is stdout
         let setup_result = setup_output_writer(&config);
         assert!(setup_result.is_ok());
         let setup = setup_result.unwrap();
@@ -191,7 +196,7 @@ mod tests {
     fn test_setup_output_writer_file() -> Result<()> {
         let temp_file = NamedTempFile::new()?;
         let path = temp_file.path().to_path_buf();
-        let mut config = create_mock_config(false, false, false, false);
+        let mut config = create_mock_config();
         config.output_destination = OutputDestination::File(path.clone());
 
         let setup_result = setup_output_writer(&config);
@@ -217,7 +222,7 @@ mod tests {
     #[test]
     fn test_setup_output_writer_clipboard() {
         // Test clipboard destination setup
-        let mut config = create_mock_config(false, false, false, false);
+        let mut config = create_mock_config();
         config.output_destination = OutputDestination::Clipboard;
 
         let setup_result = setup_output_writer(&config);
@@ -239,7 +244,7 @@ mod tests {
     #[test]
     fn test_finalize_output_stdout() -> Result<()> {
         // Finalize should be a no-op for stdout
-        let config = create_mock_config(false, false, false, false); // stdout
+        let config = create_mock_config(); // stdout
         let writer = Box::new(io::sink()); // Use sink to avoid printing during test
         let buffer = None;
         finalize_output(writer, buffer, &config)?; // Should just succeed
@@ -253,7 +258,7 @@ mod tests {
         let path = temp_file.path().to_path_buf();
         let file = File::create(&path)?;
         let writer = Box::new(BufWriter::new(file));
-        let mut config = create_mock_config(false, false, false, false);
+        let mut config = create_mock_config();
         config.output_destination = OutputDestination::File(path);
         let buffer = None;
 
@@ -267,7 +272,7 @@ mod tests {
     #[cfg(feature = "clipboard")]
     #[test]
     fn test_finalize_output_clipboard_buffer_access() {
-        let mut config = create_mock_config(false, false, false, false);
+        let mut config = create_mock_config();
         config.output_destination = OutputDestination::Clipboard;
         let buffer_arc: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(b"clipboard data".to_vec()));
         let writer = Box::new(ArcMutexVecWriter(buffer_arc.clone())); // Writer is the buffer wrapper
@@ -291,7 +296,7 @@ mod tests {
     #[test]
     fn test_finalize_output_clipboard_missing_buffer() {
         // Test the internal error case where buffer is somehow None
-        let mut config = create_mock_config(false, false, false, false);
+        let mut config = create_mock_config();
         config.output_destination = OutputDestination::Clipboard;
         let writer = Box::new(io::sink()); // Not a buffer
         let clipboard_buffer = None; // Missing buffer

@@ -2,7 +2,7 @@ mod common;
 
 use dircat::config::ConfigBuilder;
 use dircat::errors::Error;
-use dircat::{execute, run, CancellationToken, MarkdownFormatter};
+use dircat::{execute, run, CancellationToken, MarkdownFormatter, OutputOptions};
 use std::fs;
 use tempfile::tempdir;
 
@@ -264,7 +264,8 @@ fn test_format_to_string() -> anyhow::Result<()> {
 
     // 3. Format to a buffer and then to a string
     let mut buffer = Vec::new();
-    result.format_with(&MarkdownFormatter, &config, &mut buffer)?;
+    let output_opts = OutputOptions::from(&config);
+    result.format_with(&MarkdownFormatter, &output_opts, &mut buffer)?;
     let output_string = String::from_utf8(buffer)?;
 
     // 4. Assert

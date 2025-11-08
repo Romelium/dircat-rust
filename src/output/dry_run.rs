@@ -1,8 +1,8 @@
 // src/output/dry_run.rs
 
-use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
+use crate::output::OutputOptions;
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
@@ -12,7 +12,7 @@ use std::io::Write;
 pub fn write_dry_run_output(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning full FileInfo
-    config: &Config,
+    opts: &OutputOptions,
 ) -> Result<()> {
     debug!("Executing dry run output...");
     writeln!(writer, "\n--- Dry Run: Files that would be processed ---")?;
@@ -22,7 +22,7 @@ pub fn write_dry_run_output(
     sorted_files.sort_by_key(|fi| &fi.relative_path);
 
     for file_info in sorted_files {
-        let path_str = format_path_for_display(&file_info.relative_path, config);
+        let path_str = format_path_for_display(&file_info.relative_path, opts);
         writeln!(writer, "- {}", path_str)?;
     }
 
@@ -34,18 +34,16 @@ pub fn write_dry_run_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::core_types::FileInfo;
     use std::io::Cursor;
     use std::path::PathBuf;
 
     // Helper to create a minimal Config for testing
-    fn create_test_config(backticks: bool) -> Config {
-        let mut config = Config::new_for_test();
-        config.input_path = "/base".to_string();
-        config.backticks = backticks;
-        config.dry_run = true; // Assume dry run for these tests
-        config
+    fn create_test_opts(backticks: bool) -> OutputOptions {
+        OutputOptions {
+            backticks,
+            ..crate::output::tests::create_mock_config(false, false, false, false)
+        }
     }
 
     // Helper to create dummy FileInfo
@@ -64,10 +62,10 @@ mod tests {
 
     #[test]
     fn test_dry_run_output_empty() -> Result<()> {
-        let config = create_test_config(false);
+        let opts = create_test_opts(false);
         let files = vec![];
         let mut writer = Cursor::new(Vec::new());
-        write_dry_run_output(&mut writer, &files, &config)?;
+        write_dry_run_output(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "\n--- Dry Run: Files that would be processed ---\n--- End Dry Run ---\n";
@@ -77,13 +75,13 @@ mod tests {
 
     #[test]
     fn test_dry_run_output_sorted() -> Result<()> {
-        let config = create_test_config(false);
+        let opts = create_test_opts(false);
         let fi1 = create_file_info("z_file.txt");
         let fi2 = create_file_info("a_file.rs");
         let fi3 = create_file_info("sub/b_file.md");
         let files = vec![&fi1, &fi2, &fi3]; // Unsorted input refs
         let mut writer = Cursor::new(Vec::new());
-        write_dry_run_output(&mut writer, &files, &config)?;
+        write_dry_run_output(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected = "\n--- Dry Run: Files that would be processed ---\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n--- End Dry Run ---\n";
@@ -93,11 +91,11 @@ mod tests {
 
     #[test]
     fn test_dry_run_output_with_backticks() -> Result<()> {
-        let config = create_test_config(true); // Enable backticks
+        let opts = create_test_opts(true); // Enable backticks
         let fi1 = create_file_info("file.txt");
         let files = vec![&fi1];
         let mut writer = Cursor::new(Vec::new());
-        write_dry_run_output(&mut writer, &files, &config)?;
+        write_dry_run_output(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
         let expected =
