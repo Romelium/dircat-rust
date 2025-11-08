@@ -9,8 +9,31 @@ use std::path::Path;
 /// Checks if a file path matches any of the `-z`/`--last` glob patterns.
 /// Returns `(matches, index_of_matching_pattern)`.
 /// Matches against the relative path.
-pub(crate) fn check_process_last(
-    // Changed to pub(crate)
+///
+/// This function is used to determine if a file should be part of the "process last"
+/// group. The returned index corresponds to the order in which the glob patterns
+/// were provided on the command line, which is used for sorting these files.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::Config;
+/// use dircat::filtering::check_process_last;
+/// use std::path::Path;
+///
+/// let mut config = Config::new_for_test();
+/// config.process_last = Some(vec!["README.md".to_string(), "*.toml".to_string()]);
+///
+/// let path1 = Path::new("README.md");
+/// assert_eq!(check_process_last(path1, path1.file_name(), &config), (true, Some(0)));
+///
+/// let path2 = Path::new("config/app.toml");
+/// assert_eq!(check_process_last(path2, path2.file_name(), &config), (true, Some(1)));
+///
+/// let path3 = Path::new("src/main.rs");
+/// assert_eq!(check_process_last(path3, path3.file_name(), &config), (false, None));
+/// ```
+pub fn check_process_last(
     relative_path: &Path,
     _filename: Option<&OsStr>, // Filename no longer needed for matching
     config: &Config,

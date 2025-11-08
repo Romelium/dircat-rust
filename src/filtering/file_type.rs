@@ -3,9 +3,26 @@
 use std::fs::Metadata;
 
 /// Checks if the metadata belongs to a regular file.
+///
+/// This is a simple wrapper around `std::fs::Metadata::is_file`. It returns `false`
+/// for directories, symbolic links, and other special file types.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::fs;
+/// # use dircat::filtering::is_file_type;
+/// # fn main() -> std::io::Result<()> {
+/// let file_meta = fs::metadata("Cargo.toml")?;
+/// assert!(is_file_type(&file_meta));
+///
+/// let dir_meta = fs::metadata("src")?;
+/// assert!(!is_file_type(&dir_meta));
+/// # Ok(())
+/// # }
+/// ```
 #[inline]
-pub(crate) fn is_file_type(metadata: &Metadata) -> bool {
-    // Changed to pub(crate)
+pub fn is_file_type(metadata: &Metadata) -> bool {
     metadata.is_file()
 }
 

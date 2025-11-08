@@ -5,8 +5,29 @@ use std::fs::Metadata;
 
 /// Checks if the file's size is within the configured limit.
 #[inline]
-pub(crate) fn passes_size_filter(metadata: &Metadata, config: &Config) -> bool {
-    // Changed to pub(crate)
+///
+/// This function compares the file's length from its `Metadata` against the
+/// `max_size` value in the `Config`. If `max_size` is `None`, it always returns `true`.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::fs;
+/// # use dircat::config::Config;
+/// # use dircat::filtering::passes_size_filter;
+/// # fn main() -> std::io::Result<()> {
+/// let metadata = fs::metadata("Cargo.toml")?; // Assuming Cargo.toml is < 1000 bytes
+///
+/// let mut config_with_limit = Config::new_for_test();
+/// config_with_limit.max_size = Some(1000);
+/// assert!(passes_size_filter(&metadata, &config_with_limit));
+///
+/// let mut config_no_limit = Config::new_for_test();
+/// assert!(passes_size_filter(&metadata, &config_no_limit));
+/// # Ok(())
+/// # }
+/// ```
+pub fn passes_size_filter(metadata: &Metadata, config: &Config) -> bool {
     match config.max_size {
         // Cast metadata.len() (u64) to u128 for comparison
         Some(max_size) => (metadata.len() as u128) <= max_size,

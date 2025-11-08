@@ -115,7 +115,23 @@ const LOCKFILE_NAMES: &[&str] = &[
 ];
 
 /// Checks if a path corresponds to a common lockfile name or path suffix.
-pub(crate) fn is_lockfile(path: &Path) -> bool {
+///
+/// This function checks if the given path ends with one of the predefined common
+/// lockfile names (e.g., `Cargo.lock`, `package-lock.json`). The check is
+/// case-insensitive and normalizes path separators to `/` for cross-platform
+/// consistency.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::filtering::is_lockfile;
+/// use std::path::Path;
+///
+/// assert!(is_lockfile(Path::new("/path/to/project/Cargo.lock")));
+/// assert!(is_lockfile(Path::new("frontend/Yarn.lock"))); // Case-insensitive
+/// assert!(!is_lockfile(Path::new("src/main.rs")));
+/// ```
+pub fn is_lockfile(path: &Path) -> bool {
     // The `path` argument is the absolute path of the file being checked.
     // The `lockfile` entries are relative paths/names.
     // `path.ends_with` is case-sensitive, but lockfile names can vary in case

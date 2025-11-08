@@ -474,7 +474,7 @@ mod tests {
     }
 
     // A custom filter for testing purposes
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct UppercaseFilter;
 
     impl ContentFilter for UppercaseFilter {

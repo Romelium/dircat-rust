@@ -11,10 +11,10 @@ use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
 use log::debug;
 
-mod counter;
+pub mod counter;
 pub mod filters;
 
-use counter::calculate_counts;
+pub use counter::calculate_counts;
 use std::fs;
 
 /// Reads and processes the content of a batch of discovered files based on config.

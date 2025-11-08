@@ -18,7 +18,7 @@
 //! The following example demonstrates how to use the `dircat` library to
 //! discover, process, and format files from a temporary directory.
 //!
-//! ```no_run
+//! ```
 //! use dircat::{execute};
 //! use dircat::cancellation::CancellationToken;
 //! use dircat::config::{self, ConfigBuilder};
@@ -104,11 +104,21 @@ pub mod prelude;
 pub use cancellation::CancellationToken;
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
-pub use filtering::{is_likely_text, is_likely_text_from_buffer};
+
+/// Standalone functions for file filtering and text detection.
+pub use filtering::{
+    check_process_last, is_file_type, is_likely_text, is_likely_text_from_buffer, is_lockfile,
+    passes_extension_filters, passes_size_filter,
+};
 pub use output::MarkdownFormatter;
-pub use processing::filters::{
-    remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
-    RemoveEmptyLinesFilter,
+
+/// Standalone functions and traits for content processing.
+pub use processing::{
+    calculate_counts,
+    filters::{
+        remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
+        RemoveEmptyLinesFilter,
+    },
 };
 
 // Re-export key git utility functions for library users
@@ -120,7 +130,7 @@ pub use git::{
 
 use crate::errors::{Error, Result};
 use crate::output::OutputFormatter;
-mod filtering;
+pub mod filtering;
 use std::io::Write;
 use std::sync::Arc; // Import Write trait
 

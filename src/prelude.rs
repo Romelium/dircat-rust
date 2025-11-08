@@ -6,9 +6,9 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```
 //! use dircat::prelude::*;
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> Result<()> {
 //!
 //! // Now you can use ConfigBuilder, CancellationToken, etc. without full paths.
 //! let config = ConfigBuilder::new().input_path(".").build()?;
@@ -23,10 +23,17 @@ pub use crate::cancellation::CancellationToken;
 pub use crate::config::{Config, ConfigBuilder, OutputDestination};
 pub use crate::core_types::{FileCounts, FileInfo};
 pub use crate::errors::{Error, Result};
+pub use crate::filtering::{
+    check_process_last, is_file_type, is_likely_text, is_likely_text_from_buffer, is_lockfile,
+    passes_extension_filters, passes_size_filter,
+};
 pub use crate::output::{MarkdownFormatter, OutputFormatter};
-pub use crate::processing::filters::{
-    remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
-    RemoveEmptyLinesFilter,
+pub use crate::processing::{
+    calculate_counts,
+    filters::{
+        remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
+        RemoveEmptyLinesFilter,
+    },
 };
 pub use crate::{execute, run, DircatResult};
 

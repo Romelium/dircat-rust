@@ -1,7 +1,7 @@
 //! Provides a trait and implementations for transforming file content.
 
-use std::fmt;
 use dyn_clone::DynClone;
+use std::fmt;
 
 mod comments;
 mod empty_lines;
@@ -32,7 +32,7 @@ impl fmt::Debug for Box<dyn ContentFilter> {
 // --- Filter Implementations ---
 
 /// Filter to remove C/C++ style comments.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RemoveCommentsFilter;
 
 impl ContentFilter for RemoveCommentsFilter {
@@ -45,7 +45,7 @@ impl ContentFilter for RemoveCommentsFilter {
 }
 
 /// Filter to remove lines containing only whitespace.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RemoveEmptyLinesFilter;
 
 impl ContentFilter for RemoveEmptyLinesFilter {

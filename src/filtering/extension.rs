@@ -3,10 +3,52 @@
 use crate::config::Config;
 use std::path::Path;
 
-/// Checks if a path passes the include/exclude extension filters defined in Config.
-/// Comparison is case-insensitive.
-pub(crate) fn passes_extension_filters(path: &Path, config: &Config) -> bool {
-    // Changed to pub(crate)
+/// Checks if a path passes the include/exclude extension filters defined in `Config`.
+///
+/// The filtering logic follows these rules in order:
+///
+/// 1.  **Exclusion Precedence:** If `config.exclude_extensions` is `Some` and contains the
+///     file's extension, the function returns `false`. This check is performed first
+///     and takes priority over the inclusion filter.
+/// 2.  **Inclusion Requirement:** If `config.extensions` is `Some`, the file must have an
+///     extension, and that extension must be present in the include list. If it's not,
+///     the function returns `false`.
+/// 3.  **Default Pass:** If the file is not filtered out by the above rules, the function
+///     returns `true`.
+///
+/// The comparison is always case-insensitive.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::Config;
+/// use dircat::filtering::passes_extension_filters;
+/// use std::path::Path;
+///
+/// // --- Setup ---
+/// let mut config = Config::new_for_test();
+/// let path_rs = Path::new("src/main.rs");
+/// let path_toml = Path::new("Cargo.toml");
+/// let path_lock = Path::new("Cargo.lock");
+/// let path_no_ext = Path::new("Makefile");
+///
+/// // --- Case 1: No filters ---
+/// assert!(passes_extension_filters(path_rs, &config));
+/// assert!(passes_extension_filters(path_no_ext, &config));
+///
+/// // --- Case 2: Include filter ---
+/// config.extensions = Some(vec!["rs".to_string(), "toml".to_string()]);
+/// assert!(passes_extension_filters(path_rs, &config));
+/// assert!(passes_extension_filters(path_toml, &config));
+/// assert!(!passes_extension_filters(path_lock, &config)); // Not in include list
+/// assert!(!passes_extension_filters(path_no_ext, &config)); // No extension, fails include
+///
+/// // --- Case 3: Exclude filter takes precedence ---
+/// config.exclude_extensions = Some(vec!["toml".to_string()]);
+/// assert!(passes_extension_filters(path_rs, &config)); // Still included
+/// assert!(!passes_extension_filters(path_toml, &config)); // Excluded, even though it's in the include list
+/// ```
+pub fn passes_extension_filters(path: &Path, config: &Config) -> bool {
     let extension = path
         .extension()
         .and_then(|os_str| os_str.to_str())

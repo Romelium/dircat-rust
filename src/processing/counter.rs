@@ -5,8 +5,24 @@ use crate::core_types::FileCounts;
 /// Calculates line, character (byte), and word counts for the given content.
 /// Assumes the input is text. For binary files, only character count is reliable.
 /// Words are split by whitespace.
+///
+/// - **Lines**: The number of `\n` characters, as determined by `str::lines().count()`.
+/// - **Characters**: The total number of bytes in the string (`str::len()`).
+/// - **Words**: The number of segments separated by one or more whitespace characters.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::processing::calculate_counts;
+///
+/// let content = "Hello, world!\nThis is a test.";
+/// let counts = calculate_counts(content);
+/// assert_eq!(counts.lines, 2);
+/// assert_eq!(counts.words, 6);
+/// assert_eq!(counts.characters, 29);
+/// ```
 #[inline]
-pub(super) fn calculate_counts(content: &str) -> FileCounts {
+pub fn calculate_counts(content: &str) -> FileCounts {
     FileCounts {
         lines: content.lines().count(),
         characters: content.len(), // Number of bytes
