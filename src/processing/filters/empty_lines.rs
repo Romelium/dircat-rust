@@ -1,4 +1,3 @@
-
 /// Removes lines containing only whitespace.
 ///
 /// # Examples

@@ -3,9 +3,7 @@
 use super::ConfigBuilder;
 use crate::config::OutputDestination;
 use crate::errors::{ConfigError, Result};
-use crate::processing::filters::{
-    ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter,
-};
+use crate::processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
 use std::path::PathBuf;
 
 /// Validates combinations of options on the `ConfigBuilder`.

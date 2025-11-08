@@ -1,4 +1,3 @@
-
 //! Provides a trait and implementations for transforming file content.
 
 use std::fmt;

@@ -11,8 +11,8 @@ use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
 use log::debug;
 
-pub mod filters;
 mod counter;
+pub mod filters;
 
 use counter::calculate_counts;
 use std::fs;

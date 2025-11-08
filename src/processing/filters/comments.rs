@@ -1,4 +1,3 @@
-
 use log::debug;
 
 /// Removes C/C++ style comments (// and /* ... */) using a state machine.

@@ -11,8 +11,8 @@ use std::path::PathBuf;
 
 pub use builder::ConfigBuilder;
 mod builder;
-mod parsing;
 mod builder_logic;
+mod parsing;
 pub mod path_resolve;
 
 ///
