@@ -312,3 +312,67 @@ fn test_discover_and_process_chaining() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(feature = "git")]
+mod git_feature_tests {
+    use super::*;
+    use dircat::output::OutputFormatter;
+
+    // A custom formatter for testing purposes that relies on serde_json from the 'git' feature
+    struct JsonFormatter;
+    impl OutputFormatter for JsonFormatter {
+        fn format(
+            &self,
+            files: &[FileInfo],
+            _config: &Config,
+            writer: &mut dyn std::io::Write,
+        ) -> anyhow::Result<()> {
+            // serde_json is available because the tests run with the 'git' feature enabled
+            let paths: Vec<_> = files
+                .iter()
+                .map(|f| f.relative_path.to_string_lossy())
+                .collect();
+            let json = ::serde_json::json!({ "files": paths });
+            write!(writer, "{}", json)?;
+            Ok(())
+        }
+        fn format_dry_run(
+            &self,
+            files: &[FileInfo],
+            _config: &Config,
+            writer: &mut dyn std::io::Write,
+        ) -> anyhow::Result<()> {
+            let paths: Vec<_> = files
+                .iter()
+                .map(|f| f.relative_path.to_string_lossy())
+                .collect();
+            let json = ::serde_json::json!({ "dry_run_files": paths });
+            write!(writer, "{}", json)?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_dircat_result_format_with_custom_formatter() -> anyhow::Result<()> {
+        let harness = TestHarness::new();
+        harness.file("a.rs", b"A");
+        harness.file("b.txt", b"B");
+
+        let builder = harness.builder();
+        let (config, _resolved) = build_and_resolve(builder);
+
+        // Use the full pipeline via dircat::execute
+        let result = dircat::execute(&config, &harness.token, None)?;
+
+        // Format using the custom JSON formatter
+        let mut buffer = Vec::new();
+        result.format_with(&JsonFormatter, &config, &mut buffer)?;
+
+        let output_str = String::from_utf8(buffer)?;
+        // The order is deterministic because `execute` sorts the files.
+        let expected_json = r#"{"files":["a.rs","b.txt"]}"#;
+        assert_eq!(output_str, expected_json);
+
+        Ok(())
+    }
+}

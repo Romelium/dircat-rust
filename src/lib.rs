@@ -19,7 +19,7 @@
 //! discover, process, and format files from a temporary directory.
 //!
 //! ```no_run
-//! use dircat::{execute, format};
+//! use dircat::{execute};
 //! use dircat::cancellation::CancellationToken;
 //! use dircat::config::{self, ConfigBuilder};
 //! use dircat::progress::ProgressReporter;
@@ -55,8 +55,9 @@
 //! // let processed_files = dircat::process(discovered_files, &config, &token)?;
 //!
 //! // 5. Format the output into a buffer.
+//! let formatter = dircat::output::MarkdownFormatter; // The default formatter
 //! let mut output_buffer: Vec<u8> = Vec::new();
-//! format(&dircat_result.files, &config, &mut output_buffer)?;
+//! dircat_result.format_with(&formatter, &config, &mut output_buffer)?;
 //!
 //! // 6. Print the result.
 //! let output_string = String::from_utf8(output_buffer)?;
@@ -101,15 +102,15 @@ pub use cancellation::CancellationToken;
 pub use config::{Config, ConfigBuilder, OutputDestination};
 pub use core_types::{FileCounts, FileInfo};
 pub use filtering::{is_likely_text, is_likely_text_from_buffer};
+pub use output::MarkdownFormatter;
 pub use processing::filters::{
     remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
     RemoveEmptyLinesFilter,
 };
 
 use crate::errors::{Error, Result};
-use crate::output::{MarkdownFormatter, OutputFormatter};
+use crate::output::OutputFormatter;
 mod filtering;
-use anyhow::Context;
 use std::io::Write;
 use std::sync::Arc; // Import Write trait
 
@@ -123,6 +124,42 @@ pub struct DircatResult {
     /// A vector of `FileInfo` structs, sorted and processed according to the `Config`.
     /// For a dry run, `processed_content` and `counts` will be `None`.
     pub files: Vec<FileInfo>,
+}
+
+impl DircatResult {
+    /// Formats the result using a custom output formatter.
+    ///
+    /// This method allows library users to provide their own implementation of the
+    /// `OutputFormatter` trait to generate output in different formats (e.g., JSON, XML)
+    /// without needing to reimplement the discovery and processing logic.
+    ///
+    /// # Arguments
+    /// * `formatter` - An instance of a type that implements `OutputFormatter`.
+    /// * `config` - The configuration for output formatting.
+    /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
+    pub fn format_with<F: OutputFormatter>(
+        &self,
+        formatter: &F,
+        config: &Config,
+        writer: &mut dyn Write,
+    ) -> Result<()> {
+        Ok(formatter.format(&self.files, config, writer)?)
+    }
+
+    /// Formats the result for a dry run using a custom output formatter.
+    ///
+    /// # Arguments
+    /// * `formatter` - An instance of a type that implements `OutputFormatter`.
+    /// * `config` - The configuration for the run.
+    /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
+    pub fn format_dry_run_with<F: OutputFormatter>(
+        &self,
+        formatter: &F,
+        config: &Config,
+        writer: &mut dyn Write,
+    ) -> Result<()> {
+        Ok(formatter.format_dry_run(&self.files, config, writer)?)
+    }
 }
 
 /// Discovers files based on the provided configuration.
@@ -177,56 +214,6 @@ pub fn process<'a>(
     token: &'a CancellationToken,
 ) -> impl Iterator<Item = Result<FileInfo>> + 'a {
     processing::process_and_filter_files(files, config, token)
-}
-
-/// Formats the processed files into the final Markdown output.
-///
-/// This is the final stage of the pipeline for a normal run. It takes the processed
-/// `FileInfo` structs and writes the formatted output (headers, code blocks, summary)
-/// to the provided writer.
-///
-/// # Arguments
-/// * `files` - A slice of processed `FileInfo` structs from the `process` stage.
-/// * `config` - The configuration for output formatting.
-/// * `writer` - A mutable reference to a type that implements `std::io::Write`.
-pub fn format(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    let formatter = MarkdownFormatter;
-    Ok(formatter.format(files, config, writer)?)
-}
-
-/// Formats the discovered files for a dry run.
-///
-/// This is the final stage for a dry run. It takes a list of pre-filtered `FileInfo`
-/// structs and writes a simple list of the files that would be processed to the
-/// provided writer.
-///
-/// # Arguments
-/// * `files` - A slice of discovered `FileInfo` structs from the `execute` stage.
-/// * `config` - The configuration for the run.
-/// * `writer` - A mutable reference to a type that implements `std::io::Write`.
-pub fn format_dry_run(files: &[FileInfo], config: &Config, writer: &mut dyn Write) -> Result<()> {
-    let formatter = MarkdownFormatter;
-    Ok(formatter.format_dry_run(files, config, writer)?)
-}
-
-/// Formats the processed files into a single Markdown string.
-///
-/// This is a convenience wrapper around the `format` function for cases where
-/// the output is needed in memory as a `String` rather than being written to a
-/// stream.
-///
-/// # Arguments
-/// * `files` - A slice of processed `FileInfo` structs from the `process` stage.
-/// * `config` - The configuration for output formatting.
-///
-/// # Returns
-/// A `Result` containing the formatted Markdown `String`.
-pub fn format_to_string(files: &[FileInfo], config: &Config) -> Result<String> {
-    let mut buffer = Vec::new();
-    format(files, config, &mut buffer)?;
-    String::from_utf8(buffer)
-        .context("Failed to convert output buffer to UTF-8 string. This can happen if binary files are included and not valid UTF-8.")
-        .map_err(Error::Generic)
 }
 
 /// Executes the discovery and processing stages of the dircat pipeline.
@@ -355,13 +342,14 @@ pub fn run(
     // Set up the output writer (stdout, file, or clipboard buffer)
     let writer_setup = output::writer::setup_output_writer(config)?;
     let mut writer: Box<dyn Write + Send> = writer_setup.writer;
+    let formatter = MarkdownFormatter;
 
     if config.dry_run {
         // Handle Dry Run formatting
-        format_dry_run(&result.files, config, &mut writer)?;
+        result.format_dry_run_with(&formatter, config, &mut writer)?;
     } else {
         // Handle Normal Run formatting
-        format(&result.files, config, &mut writer)?;
+        result.format_with(&formatter, config, &mut writer)?;
     }
 
     // Finalize output (e.g., copy to clipboard)
@@ -623,6 +611,7 @@ mod tests {
 
     #[test]
     fn test_format_to_string() -> anyhow::Result<()> {
+        // This test now verifies the new recommended way of getting a string.
         // 1. Setup
         let temp_dir = tempdir()?;
         fs::write(temp_dir.path().join("a.rs"), "fn a() {}")?;
@@ -631,29 +620,13 @@ mod tests {
         let config = ConfigBuilder::new().input_path(input_path_str).build()?;
         let token = CancellationToken::new();
 
-        // 2. Discover and process
-        let resolved = {
-            #[cfg(feature = "git")]
-            {
-                config::resolve_input(
-                    &config.input_path,
-                    &None,
-                    None,
-                    &config.git_cache_path,
-                    None,
-                )?
-            }
-            #[cfg(not(feature = "git"))]
-            {
-                config::resolve_input(&config.input_path, &None, None, &None, None)?
-            }
-        };
-        let discovered_files = discover(&config, &resolved, &token)?.collect::<Vec<_>>();
-        let processed_files =
-            process(discovered_files.into_iter(), &config, &token).collect::<Result<Vec<_>>>()?;
+        // 2. Execute to get the result
+        let result = execute(&config, &token, None)?;
 
-        // 3. Format to string
-        let output_string = format_to_string(&processed_files, &config)?;
+        // 3. Format to a buffer and then to a string
+        let mut buffer = Vec::new();
+        result.format_with(&MarkdownFormatter, &config, &mut buffer)?;
+        let output_string = String::from_utf8(buffer)?;
 
         // 4. Assert
         let expected_content = "## File: a.rs\n```rs\nfn a() {}\n```\n";
