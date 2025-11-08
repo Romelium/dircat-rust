@@ -13,6 +13,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Errors related to invalid configuration settings or combinations.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ConfigError {
     #[error("Options '{option1}' and '{option2}' cannot be used simultaneously.")]
     Conflict { option1: String, option2: String },
@@ -41,6 +42,7 @@ pub enum ConfigError {
 /// Errors related to git operations (cloning, fetching, API interaction, etc.).
 #[cfg(feature = "git")]
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum GitError {
     #[error("Failed to clone repository from '{url}': {source}")]
     CloneFailed {
@@ -85,6 +87,7 @@ pub enum GitError {
 /// Errors related to clipboard operations.
 #[cfg(feature = "clipboard")]
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ClipboardError {
     #[error("Failed to initialize clipboard: {0}")]
     Initialization(String),
@@ -98,6 +101,7 @@ pub enum ClipboardError {
 /// This enum defines categorized errors that can occur during the execution,
 /// providing more context than a generic `anyhow::Error`.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     // --- I/O Errors ---
     /// Error occurring during file or directory access (read, write, metadata).

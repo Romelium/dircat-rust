@@ -158,6 +158,7 @@ impl Config {
 
 /// Represents the destination for the generated output.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[non_exhaustive]
 pub enum OutputDestination {
     /// Write to standard output.
     Stdout,
