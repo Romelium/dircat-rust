@@ -24,19 +24,15 @@ pub fn write_summary(
         files.len()
     )?;
 
-    // Sort all files alphabetically by relative path for the summary list
-    // Clone only the necessary info (relative path, counts, is_binary) for sorting/display
-    let mut summary_items: Vec<_> = files
-        .iter()
-        .map(|fi| (fi.relative_path.clone(), fi.counts, fi.is_binary)) // Clone PathBuf and copy Option<FileCounts>, is_binary
-        .collect();
-    summary_items.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by relative_path
+    // Sort the slice of references directly to avoid cloning PathBufs.
+    let mut sorted_files = files.to_vec();
+    sorted_files.sort_by_key(|fi| &fi.relative_path);
 
-    for (rel_path, counts_opt, is_binary) in summary_items {
-        let path_str = format_path_for_display(&rel_path, config);
+    for file_info in sorted_files {
+        let path_str = format_path_for_display(&file_info.relative_path, config);
         if config.counts {
-            if let Some(counts) = counts_opt {
-                if is_binary {
+            if let Some(counts) = file_info.counts {
+                if file_info.is_binary {
                     // Special format for binary files in counts summary
                     writeln!(writer, "- {} (Binary C:{})", path_str, counts.characters)?;
                 } else {

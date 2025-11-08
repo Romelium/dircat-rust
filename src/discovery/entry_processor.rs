@@ -71,10 +71,11 @@ pub(crate) fn process_direntry(
     let (is_last, last_order) =
         check_process_last(&relative_path, absolute_path.file_name(), config);
 
-    // Manual gitignore override logic is no longer needed here.
-    // The walker is now configured with `OverrideBuilder` when --last/--only is used,
-    // which correctly yields gitignored files that match an override pattern.
-    // The walker will simply not yield other gitignored files, so no manual check is required.
+    // Manual gitignore override logic is not needed here. When --last or --only is used,
+    // the walker is configured with a high-precedence temporary ignore file containing
+    // whitelist rules (`!pattern`) for the override patterns. This correctly causes the
+    // walker to yield gitignored files that match an override pattern, while still
+    // respecting other .gitignore rules.
 
     // --- 3. Get Metadata ---
     let metadata = match entry.metadata() {

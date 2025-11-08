@@ -17,17 +17,12 @@ pub fn write_dry_run_output(
     debug!("Executing dry run output...");
     writeln!(writer, "\n--- Dry Run: Files that would be processed ---")?;
 
-    // Clone only the necessary info (relative path) for sorting
-    let mut paths_to_print: Vec<_> = files
-        .iter()
-        .map(|fi| fi.relative_path.clone()) // Clone PathBuf
-        .collect();
+    // Sort the slice of references directly to avoid cloning PathBufs.
+    let mut sorted_files = files.to_vec();
+    sorted_files.sort_by_key(|fi| &fi.relative_path);
 
-    // Sort alphabetically by relative path for dry run display
-    paths_to_print.sort();
-
-    for rel_path in paths_to_print {
-        let path_str = format_path_for_display(&rel_path, config);
+    for file_info in sorted_files {
+        let path_str = format_path_for_display(&file_info.relative_path, config);
         writeln!(writer, "- {}", path_str)?;
     }
 
