@@ -12,6 +12,7 @@ use std::path::PathBuf;
 pub use builder::ConfigBuilder;
 mod builder;
 mod parsing;
+mod builder_logic;
 pub mod path_resolve;
 
 ///

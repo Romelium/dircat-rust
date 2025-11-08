@@ -10,6 +10,7 @@
 // Declare the sub-modules.
 mod api;
 mod clone;
+mod ops;
 mod url;
 
 // Re-export the public-facing API.

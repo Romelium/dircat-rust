@@ -10,24 +10,12 @@ use crate::core_types::FileInfo;
 use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
 use log::debug;
-use std::fs;
 
-mod content_filters;
+pub mod filters;
 mod counter;
 
 use counter::calculate_counts;
-
-/// Standalone content filtering components.
-///
-/// This module re-exports the `ContentFilter` trait and its concrete implementations
-/// so they can be used independently of the main processing pipeline.
-pub mod filters {
-    // Re-export the trait, structs, and standalone functions
-    pub use super::content_filters::{
-        remove_comments, remove_empty_lines, ContentFilter, RemoveCommentsFilter,
-        RemoveEmptyLinesFilter,
-    };
-}
+use std::fs;
 
 /// Reads and processes the content of a batch of discovered files based on config.
 ///

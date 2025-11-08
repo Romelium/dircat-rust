@@ -3,12 +3,13 @@
 //! Builds the `Config` struct from command-line arguments or other sources.
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
-    Config, OutputDestination,
+    Config,
 };
 use crate::cli::Cli;
-use crate::errors::{ConfigError, Error, Result};
-use crate::processing::filters::{ContentFilter, RemoveCommentsFilter, RemoveEmptyLinesFilter};
-use std::path::PathBuf;
+use crate::errors::{Error, Result};
+use crate::processing::filters::ContentFilter;
+
+use super::builder_logic;
 
 /// A builder for creating a `Config` instance from command-line arguments or programmatically.
 ///
@@ -37,47 +38,47 @@ use std::path::PathBuf;
 #[derive(Debug, Default)]
 pub struct ConfigBuilder {
     // --- Input ---
-    input_path: Option<String>,
+    pub(crate) input_path: Option<String>,
     // --- Git Options ---
     #[cfg(feature = "git")]
-    git_branch: Option<String>,
+    pub(crate) git_branch: Option<String>,
     #[cfg(feature = "git")]
-    git_depth: Option<u32>,
+    pub(crate) git_depth: Option<u32>,
     #[cfg(feature = "git")]
-    git_cache_path: Option<String>,
+    pub(crate) git_cache_path: Option<String>,
     // --- Filtering Options ---
-    max_size: Option<String>,
-    no_recursive: Option<bool>,
-    extensions: Option<Vec<String>>,
-    exclude_extensions: Option<Vec<String>>,
-    exclude_path_regex: Option<Vec<String>>,
-    ignore_patterns: Option<Vec<String>>,
-    path_regex: Option<Vec<String>>,
-    filename_regex: Option<Vec<String>>,
-    no_gitignore: Option<bool>,
-    include_binary: Option<bool>,
-    no_lockfiles: Option<bool>,
+    pub(crate) max_size: Option<String>,
+    pub(crate) no_recursive: Option<bool>,
+    pub(crate) extensions: Option<Vec<String>>,
+    pub(crate) exclude_extensions: Option<Vec<String>>,
+    pub(crate) exclude_path_regex: Option<Vec<String>>,
+    pub(crate) ignore_patterns: Option<Vec<String>>,
+    pub(crate) path_regex: Option<Vec<String>>,
+    pub(crate) filename_regex: Option<Vec<String>>,
+    pub(crate) no_gitignore: Option<bool>,
+    pub(crate) include_binary: Option<bool>,
+    pub(crate) no_lockfiles: Option<bool>,
     // --- Content Processing Options ---
-    remove_comments: Option<bool>,
-    remove_empty_lines: Option<bool>,
-    content_filters: Vec<Box<dyn ContentFilter>>,
+    pub(crate) remove_comments: Option<bool>,
+    pub(crate) remove_empty_lines: Option<bool>,
+    pub(crate) content_filters: Vec<Box<dyn ContentFilter>>,
     // --- Output Formatting Options ---
-    filename_only: Option<bool>,
-    line_numbers: Option<bool>,
-    backticks: Option<bool>,
-    ticks: Option<u8>,
+    pub(crate) filename_only: Option<bool>,
+    pub(crate) line_numbers: Option<bool>,
+    pub(crate) backticks: Option<bool>,
+    pub(crate) ticks: Option<u8>,
     // --- Output Destination & Summary ---
-    output_file: Option<String>,
+    pub(crate) output_file: Option<String>,
     #[cfg(feature = "clipboard")]
-    paste: Option<bool>,
-    summary: Option<bool>,
-    counts: Option<bool>,
+    pub(crate) paste: Option<bool>,
+    pub(crate) summary: Option<bool>,
+    pub(crate) counts: Option<bool>,
     // --- Processing Order ---
-    process_last: Option<Vec<String>>,
-    only_last: Option<bool>,
-    only: Option<Vec<String>>,
+    pub(crate) process_last: Option<Vec<String>>,
+    pub(crate) only_last: Option<bool>,
+    pub(crate) only: Option<Vec<String>>,
     // --- Execution Control ---
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 impl Clone for ConfigBuilder {
@@ -339,18 +340,18 @@ impl ConfigBuilder {
     ///
     /// Returns an error if any validation of option combinations fails.
     pub fn build(self) -> Result<Config> {
-        validate_builder_options(&self)?;
+        builder_logic::validate_builder_options(&self)?;
 
-        let content_filters = build_content_filters(
+        let content_filters = builder_logic::build_content_filters(
             self.content_filters,
             self.remove_comments,
             self.remove_empty_lines,
         );
 
         let (process_last, only_last) =
-            determine_process_order(self.only, self.process_last, self.only_last);
+            builder_logic::determine_process_order(self.only, self.process_last, self.only_last);
 
-        let output_destination = determine_output_destination(
+        let output_destination = builder_logic::determine_output_destination(
             self.output_file,
             #[cfg(feature = "clipboard")]
             self.paste,
@@ -394,99 +395,11 @@ impl ConfigBuilder {
     }
 }
 
-// --- Private Helper Functions for Build ---
-
-/// Validates combinations of options on the `ConfigBuilder`.
-fn validate_builder_options(builder: &ConfigBuilder) -> Result<()> {
-    #[cfg(feature = "clipboard")]
-    {
-        if builder.output_file.is_some() && builder.paste.unwrap_or(false) {
-            return Err(ConfigError::Conflict {
-                option1: "--output".to_string(),
-                option2: "--paste".to_string(),
-            }
-            .into());
-        }
-    }
-    if builder.ticks.unwrap_or(3) < 3 {
-        return Err(ConfigError::InvalidValue {
-            option: "--ticks".to_string(),
-            reason: "must be 3 or greater".to_string(),
-        }
-        .into());
-    }
-    if builder.only_last.unwrap_or(false) && builder.process_last.is_none() {
-        return Err(ConfigError::MissingDependency {
-            option: "--only-last".to_string(),
-            required: "--last".to_string(),
-        }
-        .into());
-    }
-    if builder.only.is_some()
-        && (builder.process_last.is_some() || builder.only_last.unwrap_or(false))
-    {
-        return Err(ConfigError::Conflict {
-            option1: "--only".to_string(),
-            option2: "--last or --only-last".to_string(),
-        }
-        .into());
-    }
-    Ok(())
-}
-
-/// Constructs the vector of content filters based on builder settings.
-fn build_content_filters(
-    mut content_filters: Vec<Box<dyn ContentFilter>>,
-    remove_comments: Option<bool>,
-    remove_empty_lines: Option<bool>,
-) -> Vec<Box<dyn ContentFilter>> {
-    if remove_comments.unwrap_or(false) {
-        content_filters.push(Box::new(RemoveCommentsFilter));
-    }
-    if remove_empty_lines.unwrap_or(false) {
-        content_filters.push(Box::new(RemoveEmptyLinesFilter));
-    }
-    content_filters
-}
-
-/// Determines the final `process_last` and `only_last` values, handling the `--only` shorthand.
-fn determine_process_order(
-    only: Option<Vec<String>>,
-    process_last: Option<Vec<String>>,
-    only_last: Option<bool>,
-) -> (Option<Vec<String>>, bool) {
-    if let Some(only_patterns) = only {
-        (Some(only_patterns), true)
-    } else {
-        (process_last, only_last.unwrap_or(false))
-    }
-}
-
-/// Determines the final output destination.
-fn determine_output_destination(
-    output_file: Option<String>,
-    #[cfg(feature = "clipboard")] paste: Option<bool>,
-) -> OutputDestination {
-    if let Some(file_path_str) = output_file {
-        OutputDestination::File(PathBuf::from(file_path_str))
-    } else {
-        #[cfg(feature = "clipboard")]
-        if paste.unwrap_or(false) {
-            OutputDestination::Clipboard
-        } else {
-            OutputDestination::Stdout
-        }
-        #[cfg(not(feature = "clipboard"))]
-        {
-            OutputDestination::Stdout
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use crate::config::OutputDestination;
     use crate::errors::{ConfigError, Error};
     use clap::Parser;
 
