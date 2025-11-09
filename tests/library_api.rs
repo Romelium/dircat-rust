@@ -202,25 +202,33 @@ fn test_process_iterator_handles_io_error() -> anyhow::Result<()> {
     ];
 
     let (config, _) = build_and_resolve(harness.builder());
-    let mut processed_iter = process(files_to_process.into_iter(), &config, &harness.token);
+    let processed_iter = process(files_to_process.into_iter(), &config, &harness.token);
 
-    // Item 1: Ok
-    assert_eq!(
-        processed_iter.next().unwrap()?.relative_path.to_str(),
-        Some("a.txt")
-    );
-    // Item 2: Err
-    assert!(matches!(
-        processed_iter.next().unwrap(),
-        Err(Error::Io { .. })
-    ));
-    // Item 3: Ok
-    assert_eq!(
-        processed_iter.next().unwrap()?.relative_path.to_str(),
-        Some("c.txt")
-    );
-    // End of iterator
-    assert!(processed_iter.next().is_none());
+    // With parallel processing, order is not guaranteed. Collect all results and inspect.
+    let results: Vec<_> = processed_iter.collect();
+    assert_eq!(results.len(), 3);
+
+    let mut ok_count = 0;
+    let mut err_count = 0;
+    let mut ok_paths = std::collections::HashSet::new();
+
+    for result in results {
+        match result {
+            Ok(fi) => {
+                ok_count += 1;
+                ok_paths.insert(fi.relative_path.to_string_lossy().to_string());
+            }
+            Err(Error::Io { .. }) => {
+                err_count += 1;
+            }
+            Err(e) => panic!("Unexpected error type: {:?}", e),
+        }
+    }
+
+    assert_eq!(ok_count, 2);
+    assert_eq!(err_count, 1);
+    assert!(ok_paths.contains("a.txt"));
+    assert!(ok_paths.contains("c.txt"));
 
     Ok(())
 }
@@ -239,14 +247,12 @@ fn test_process_iterator_handles_cancellation() {
     let (config, _) = build_and_resolve(harness.builder());
     harness.token.cancel(); // Cancel *before* processing
 
-    let mut processed_iter = process(files_to_process.into_iter(), &config, &harness.token);
+    let results: Vec<_> = process(files_to_process.into_iter(), &config, &harness.token).collect();
 
-    // The first item pulled from the iterator should immediately be an Interrupted error.
-    let result = processed_iter.next().unwrap();
-    assert!(matches!(result, Err(Error::Interrupted)));
-
-    // The iterator might yield another error or None, but it shouldn't yield Ok data.
-    // Depending on implementation, it might stop after the first error.
+    // With parallel execution, we might get one or more Interrupted errors.
+    // We should check that at least one is present.
+    assert!(!results.is_empty());
+    assert!(results.iter().any(|r| matches!(r, Err(Error::Interrupted))));
 }
 
 #[test]
@@ -280,8 +286,17 @@ fn test_discover_and_process_chaining() -> anyhow::Result<()> {
     // --- The Streaming Pipeline ---
     let discovered_iter = discover(&config, &resolved, &harness.token)?;
     let processed_iter = process(discovered_iter, &config, &harness.token);
-    let final_files: Vec<FileInfo> = processed_iter.collect::<Result<Vec<_>, Error>>()?;
+    let mut final_files: Vec<FileInfo> = processed_iter.collect::<Result<Vec<_>, Error>>()?;
     // -----------------------------
+
+    // Re-sort the files after parallel processing, which does not preserve order.
+    final_files.sort_by_key(|fi| {
+        (
+            fi.is_process_last,
+            fi.process_last_order,
+            fi.relative_path.clone(),
+        )
+    });
 
     assert_eq!(final_files.len(), 2);
 

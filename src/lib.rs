@@ -44,15 +44,18 @@
 //! // 3. Set up a cancellation token for graceful interruption.
 //! let token = CancellationToken::new();
 //!
-//! // 4. Execute the main logic to get the processed file data.
-//! // This is the recommended approach for library use.
+//! // 4. Execute the main logic to get the processed file data. This is the recommended
+//! //    approach for library use, as it guarantees a deterministically sorted result.
 //! let progress: Option<Arc<dyn ProgressReporter>> = None; // No progress bar in this example
 //! let dircat_result = dircat::execute(&config, &token, progress)?;
 //!
-//! // For more granular control, you could also use the individual stages:
-//! // let resolved = config::resolve_input(...)?;
+//! // For more granular control, you could also use the individual stages.
+//! // Note: `process` does not preserve order, so you would need to collect and sort
+//! // the results yourself to match the output of `execute`.
+//! // let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, progress)?;
 //! // let discovered_files = dircat::discover(&config, &resolved, &token)?;
-//! // let processed_files = dircat::process(discovered_files, &config, &token)?;
+//! // let mut processed_files: Vec<_> = dircat::process(discovered_files, &config, &token)?.collect::<Result<_,_>>()?;
+//! // processed_files.sort_by_key(|fi| (fi.is_process_last, fi.process_last_order, fi.relative_path.clone()));
 //!
 //! // 5. Format the output into a buffer.
 //! let formatter = dircat::output::MarkdownFormatter; // The default formatter
@@ -134,6 +137,7 @@ pub use git::{
 
 use crate::errors::{Error, Result};
 use crate::output::OutputFormatter;
+use rayon::prelude::*;
 pub mod filtering;
 use std::io::Write;
 use std::sync::Arc; // Import Write trait
@@ -145,8 +149,10 @@ use std::sync::Arc; // Import Write trait
 /// or analysis.
 #[derive(Debug, Clone)]
 pub struct DircatResult {
-    /// A vector of `FileInfo` structs, sorted and processed according to the `Config`.
-    /// For a dry run, `processed_content` and `counts` will be `None`.
+    /// A vector of `FileInfo` structs, processed according to the `Config` and
+    /// sorted in a deterministic order.
+    /// The sorting order is: normal files alphabetically by relative path, followed by
+    /// files matching `--last` patterns in the order they were specified.
     pub files: Vec<FileInfo>,
 }
 
@@ -192,14 +198,12 @@ impl DircatResult {
 /// rules in the `Config` (respecting .gitignore, filters, etc.) and returns a
 /// list of `FileInfo` structs for files that match the criteria. The content of
 /// the files is not read at this stage.
-///
 /// # Arguments
 /// * `config` - The configuration for the discovery process.
 /// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
-/// # Returns
-/// A `Result` containing a vector of `FileInfo` structs, sorted in the final
+/// # Returns /// A `Result` containing an iterator of `FileInfo` structs, sorted in the final
 /// processing order (normal files alphabetically, then "last" files in the specified order).
 pub fn discover(
     config: &Config,
@@ -221,24 +225,30 @@ pub fn discover(
 ///
 /// This is the second stage of the pipeline. It takes a vector of `FileInfo` structs,
 /// reads the content of each file in parallel, and performs several operations:
-/// - Filters out binary files (unless configured otherwise).
-/// - Calculates file statistics (lines, words, characters) if requested.
-/// - Applies content transformations (comment removal, empty line removal).
+/// - Filters out binary files (unless configured otherwise). /// - Calculates file statistics (lines, words, characters) if requested.
+/// - Applies content transformations (comment removal, empty line removal). ///
+/// # Note on Ordering
+///
+/// This function processes files in parallel for performance and **does not
+/// preserve the order** of the input iterator. If a deterministic order is
+/// required, the results must be collected and sorted afterwards. The top-level
+/// [`execute()`] function handles this automatically.
 ///
 /// # Arguments
-/// * `files` - A vector of `FileInfo` structs from the `discover` stage.
+/// * `files` - An iterator of `FileInfo` structs from the `discover` stage.
 /// * `config` - The configuration for the processing stage.
 /// * `token` - A `CancellationToken` for graceful interruption.
 ///
 /// # Returns
-/// A `Result` containing a new vector of `FileInfo` structs that have been processed
-/// and filtered. Files identified as binary (and not explicitly included) will be
-/// removed from this list.
+/// An iterator that yields `Result<FileInfo>` for each successfully processed
+/// file. Files identified as binary (and not explicitly included) will be
+/// filtered out. I/O errors or cancellation signals will be yielded as `Err`.
 pub fn process<'a>(
-    files: impl Iterator<Item = FileInfo> + 'a,
+    // The iterator from `discover` is `Send`.
+    files: impl Iterator<Item = FileInfo> + Send + 'a,
     config: &'a Config,
     token: &'a CancellationToken,
-) -> impl Iterator<Item = Result<FileInfo>> + 'a {
+) -> impl Iterator<Item = Result<FileInfo>> {
     let processing_opts = processing::ProcessingOptions::from(config);
     processing::process_with_options(files, processing_opts, token)
 }
@@ -247,18 +257,17 @@ pub fn process<'a>(
 ///
 /// This is the primary entry point for library users who want to get the processed
 /// file data without immediately writing it to an output destination. It returns
-/// a `DircatResult` containing the final list of `FileInfo` structs, which can
-/// then be passed to `format` or `format_dry_run` for rendering.
+/// a `DircatResult` containing the final list of `FileInfo` structs.
+///
+/// This function orchestrates the discovery and parallel processing stages, and
+/// ensures the final list of files is deterministically sorted before returning.
+/// The sorting order is: normal files alphabetically by relative path, followed by
+/// files matching `--last` patterns in the order they were specified.
 ///
 /// # Arguments
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 /// * `progress` - An optional progress reporter for long operations like cloning.
-///
-/// # Returns
-/// A `Result` containing a `DircatResult` on success. The `files` vector within the
-/// result will be empty if no files matched the criteria. Other errors are propagated
-/// from the underlying stages.
 pub fn execute(
     config: &Config,
     token: &CancellationToken,
@@ -288,10 +297,11 @@ pub fn execute(
         return Err(Error::Interrupted);
     }
 
-    let final_files = if config.dry_run {
+    let mut final_files = if config.dry_run {
         // For a dry run, we just need to filter out binaries from the discovered files.
         // The content isn't processed, but we still need to read the file head to check for binary content.
         discovered_iter
+            .par_bridge()
             .filter_map(|fi| {
                 if token.is_cancelled() {
                     return None;
@@ -330,6 +340,19 @@ pub fn execute(
     if token.is_cancelled() {
         return Err(Error::Interrupted);
     }
+
+    // Re-sort the files after parallel processing, which does not preserve order.
+    // The sorting criteria are:
+    // 1. Normal files before "process_last" files.
+    // 2. "process_last" files are sorted by the order of the glob pattern they matched.
+    // 3. All other files are sorted alphabetically by relative path.
+    final_files.sort_by_key(|fi| {
+        (
+            fi.is_process_last,
+            fi.process_last_order,
+            fi.relative_path.clone(),
+        )
+    });
 
     Ok(DircatResult { files: final_files })
 }

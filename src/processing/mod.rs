@@ -10,6 +10,7 @@ use crate::core_types::FileInfo;
 use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
 use log::debug;
+use rayon::prelude::*;
 
 pub mod counter;
 pub mod filters;
@@ -55,87 +56,91 @@ impl<'a> From<&'a Config> for ProcessingOptions<'a> {
 /// # Errors
 /// Returns an error if file I/O fails for any file or if the operation is interrupted.
 pub(crate) fn process_and_filter_files_internal<'a>(
-    files: impl Iterator<Item = FileInfo> + 'a,
+    files: impl Iterator<Item = FileInfo> + Send + 'a,
     opts: ProcessingOptions<'a>,
     token: &'a CancellationToken,
-) -> impl Iterator<Item = Result<FileInfo>> + 'a {
-    files.filter_map(move |mut file_info| {
-        // The closure captures `config` and `token` which have lifetime 'a
-        // Check for cancellation signal. If cancelled, return an error for this item
-        // and subsequent calls will be filtered out by the was_cancelled flag.
-        if token.is_cancelled() {
-            return Some(Err(Error::Interrupted));
-        }
-
-        debug!("Processing file: {}", file_info.absolute_path.display());
-
-        // --- 1. Read File Content (once) ---
-        let content_bytes = match fs::read(&file_info.absolute_path) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                let app_err = io_error_with_path(e, &file_info.absolute_path);
-                return Some(Err(app_err));
+) -> impl Iterator<Item = Result<FileInfo>> {
+    let results: Vec<Result<FileInfo>> = files
+        .par_bridge()
+        .filter_map(move |mut file_info| {
+            // The closure captures `config` and `token` which have lifetime 'a
+            // Check for cancellation signal. If cancelled, return an error for this item
+            // and subsequent calls will be filtered out by the was_cancelled flag.
+            if token.is_cancelled() {
+                return Some(Err(Error::Interrupted));
             }
-        };
 
-        // --- 2. Perform Binary Check ---
-        let is_binary = !is_likely_text_from_buffer(&content_bytes);
-        file_info.is_binary = is_binary;
+            debug!("Processing file: {}", file_info.absolute_path.display());
 
-        // --- 3. Filter Based on Binary Check ---
-        if is_binary && !opts.include_binary {
-            debug!(
-                "Skipping binary file: {}",
-                file_info.relative_path.display()
-            );
-            return None; // Filter out this file by returning None
-        }
+            // --- 1. Read File Content (once) ---
+            let content_bytes = match fs::read(&file_info.absolute_path) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    let app_err = io_error_with_path(e, &file_info.absolute_path);
+                    return Some(Err(app_err));
+                }
+            };
 
-        // --- 4. Process Content ---
-        let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
+            // --- 2. Perform Binary Check ---
+            let is_binary = !is_likely_text_from_buffer(&content_bytes);
+            file_info.is_binary = is_binary;
 
-        // --- Calculate Counts ---
-        if opts.counts {
-            if is_binary {
-                file_info.counts = Some(crate::core_types::FileCounts {
-                    lines: 0,
-                    characters: content_bytes.len(),
-                    words: 0,
-                });
-            } else {
-                file_info.counts = Some(calculate_counts(&original_content_str));
-            }
-            debug!(
-                "Calculated counts for {}: {:?}",
-                file_info.relative_path.display(),
-                file_info.counts
-            );
-        }
-
-        // --- Apply Content Filters ---
-        let mut processed_content = original_content_str;
-        if !is_binary {
-            // Apply all configured filters sequentially
-            for filter in opts.content_filters {
-                processed_content = filter.apply(&processed_content);
+            // --- 3. Filter Based on Binary Check ---
+            if is_binary && !opts.include_binary {
                 debug!(
-                    "Applied filter '{}' to {}",
-                    filter.name(),
+                    "Skipping binary file: {}",
+                    file_info.relative_path.display()
+                );
+                return None; // Filter out this file by returning None
+            }
+
+            // --- 4. Process Content ---
+            let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
+
+            // --- Calculate Counts ---
+            if opts.counts {
+                if is_binary {
+                    file_info.counts = Some(crate::core_types::FileCounts {
+                        lines: 0,
+                        characters: content_bytes.len(),
+                        words: 0,
+                    });
+                } else {
+                    file_info.counts = Some(calculate_counts(&original_content_str));
+                }
+                debug!(
+                    "Calculated counts for {}: {:?}",
+                    file_info.relative_path.display(),
+                    file_info.counts
+                );
+            }
+
+            // --- Apply Content Filters ---
+            let mut processed_content = original_content_str;
+            if !is_binary {
+                // Apply all configured filters sequentially
+                for filter in opts.content_filters {
+                    processed_content = filter.apply(&processed_content);
+                    debug!(
+                        "Applied filter '{}' to {}",
+                        filter.name(),
+                        file_info.relative_path.display()
+                    );
+                }
+            } else {
+                debug!(
+                    "Skipping content filters for binary file {}",
                     file_info.relative_path.display()
                 );
             }
-        } else {
-            debug!(
-                "Skipping content filters for binary file {}",
-                file_info.relative_path.display()
-            );
-        }
 
-        // Store the final processed content
-        file_info.processed_content = Some(processed_content);
+            // Store the final processed content
+            file_info.processed_content = Some(processed_content);
 
-        Some(Ok(file_info))
-    })
+            Some(Ok(file_info))
+        })
+        .collect();
+    results.into_iter()
 }
 
 /// Processes a list of discovered files using a specific set of `ProcessingOptions`.
@@ -149,10 +154,10 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 /// * `opts` - The processing-specific options.
 /// * `token` - A `CancellationToken` for graceful interruption.
 pub fn process_with_options<'a>(
-    files: impl Iterator<Item = FileInfo> + 'a,
+    files: impl Iterator<Item = FileInfo> + Send + 'a,
     opts: ProcessingOptions<'a>,
     token: &'a CancellationToken,
-) -> impl Iterator<Item = Result<FileInfo>> + 'a {
+) -> impl Iterator<Item = Result<FileInfo>> {
     process_and_filter_files_internal(files, opts, token)
 }
 

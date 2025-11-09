@@ -3,6 +3,8 @@ use crate::config::path_resolve::ResolvedInput;
 use crate::config::Config;
 use crate::core_types::FileInfo;
 use crate::errors::{Error, Result};
+use crossbeam_channel::unbounded;
+use ignore::WalkState;
 use log::debug;
 
 mod entry_processor;
@@ -62,28 +64,42 @@ pub(crate) fn discover_files_internal(
     }
 
     let (walker, _temp_file_guard) = build_walker(opts, resolved)?;
+    let (tx, rx) = unbounded();
 
-    for entry_result in walker {
-        // Check for Ctrl+C signal
-        if token.is_cancelled() {
-            log::error!("Discovery loop interrupted by token!");
-            return Err(Error::Interrupted);
-        }
-
-        match process_direntry(entry_result, opts, resolved) {
-            Ok(Some(file_info)) => {
-                if file_info.is_process_last {
-                    last_files.push(file_info);
-                } else if !opts.only_last {
-                    // Add to normal files only if not in "only_last" mode
-                    normal_files.push(file_info);
+    walker.run(|| {
+        let tx = tx.clone();
+        let token = token.clone();
+        Box::new(move |entry_result| {
+            if token.is_cancelled() {
+                return WalkState::Quit;
+            }
+            match process_direntry(entry_result, opts, resolved) {
+                Ok(Some(file_info)) => {
+                    if tx.send(file_info).is_err() {
+                        log::error!("Receiver dropped, quitting discovery walk.");
+                        return WalkState::Quit;
+                    }
+                }
+                Ok(None) => { /* Entry was filtered out, do nothing */ }
+                Err(e) => {
+                    // Log the warning from entry_processor but continue walking
+                    log::warn!("{}", e);
                 }
             }
-            Ok(None) => { /* Entry was filtered out, do nothing */ }
-            Err(e) => {
-                // Log the warning from entry_processor but continue walking
-                log::warn!("{}", e);
-            }
+            WalkState::Continue
+        })
+    });
+    drop(tx);
+
+    if token.is_cancelled() {
+        return Err(Error::Interrupted);
+    }
+
+    for file_info in rx {
+        if file_info.is_process_last {
+            last_files.push(file_info);
+        } else if !opts.only_last {
+            normal_files.push(file_info);
         }
     }
 

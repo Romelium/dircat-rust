@@ -2,7 +2,7 @@ use crate::config::path_resolve::ResolvedInput;
 use crate::discovery::DiscoveryOptions;
 use anyhow::{Context, Result};
 use glob::Pattern;
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkParallel};
 use log::debug; // Ensure debug is imported
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -11,7 +11,7 @@ use tempfile::NamedTempFile;
 pub(super) fn build_walker<'a>(
     opts: &DiscoveryOptions<'a>,
     resolved: &ResolvedInput,
-) -> Result<(ignore::Walk, Option<NamedTempFile>)> {
+) -> Result<(WalkParallel, Option<NamedTempFile>)> {
     let mut walker_builder = WalkBuilder::new(&resolved.path);
     let mut temp_override_file: Option<NamedTempFile> = None;
 
@@ -141,5 +141,5 @@ pub(super) fn build_walker<'a>(
 
     // Build the walker
     debug!("Building the final walker.");
-    Ok((walker_builder.build(), temp_override_file))
+    Ok((walker_builder.build_parallel(), temp_override_file))
 }
