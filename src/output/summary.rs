@@ -3,7 +3,7 @@
 use crate::constants;
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
-use crate::output::OutputOptions;
+use crate::output::OutputConfig;
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
@@ -13,7 +13,7 @@ use std::io::Write;
 pub fn write_summary(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning
-    opts: &OutputOptions,
+    opts: &OutputConfig,
 ) -> Result<()> {
     debug!("Writing summary for {} files...", files.len());
     writeln!(writer, "{}", constants::SUMMARY_SEPARATOR)?;
@@ -63,8 +63,9 @@ mod tests {
     use std::path::PathBuf;
 
     // Helper to create a minimal Config for testing
-    fn create_test_opts(counts: bool, backticks: bool) -> OutputOptions {
-        let mut opts = crate::output::tests::create_mock_config(backticks, false, false, true);
+    fn create_test_opts(counts: bool, backticks: bool) -> OutputConfig {
+        let mut opts =
+            crate::output::tests::create_mock_output_config(backticks, false, false, true);
         opts.counts = counts;
         opts.summary = true; // Summary must be true for these tests
         opts

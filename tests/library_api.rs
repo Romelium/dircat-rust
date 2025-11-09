@@ -5,11 +5,12 @@ mod common;
 use dircat::config::{self, ConfigBuilder, ResolvedInput};
 use dircat::core_types::FileInfo;
 use dircat::errors::Error;
-use dircat::{discover, process, CancellationToken, Config};
+use dircat::{discover, process_files, CancellationToken, Config};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::{tempdir, TempDir};
 
+use dircat::core_types::FileContent;
 // --- Test Harness for reducing boilerplate ---
 
 /// A helper struct to manage the environment for a single library API test.
@@ -77,7 +78,7 @@ fn test_discover_returns_sorted_iterator() -> anyhow::Result<()> {
     let builder = harness.builder().process_last(vec!["*.md".to_string()]);
     let (config, resolved) = build_and_resolve(builder);
 
-    let discovered_paths: Vec<String> = discover(&config, &resolved, &harness.token)?
+    let discovered_paths: Vec<String> = discover(&config.discovery, &resolved, &harness.token)?
         .map(|fi| fi.relative_path.to_string_lossy().to_string())
         .collect();
 
@@ -104,7 +105,7 @@ fn test_discover_iterator_with_complex_filters() -> anyhow::Result<()> {
 
     let (config, resolved) = build_and_resolve(builder);
 
-    let discovered_paths: Vec<String> = discover(&config, &resolved, &harness.token)?
+    let discovered_paths: Vec<String> = discover(&config.discovery, &resolved, &harness.token)?
         .map(|fi| fi.relative_path.to_string_lossy().replace('\\', "/"))
         .collect();
 
@@ -121,7 +122,8 @@ fn test_discover_with_no_matching_files() -> anyhow::Result<()> {
     let builder = harness.builder().extensions(vec!["rs".to_string()]); // Filter for something that doesn't exist
     let (config, resolved) = build_and_resolve(builder);
 
-    let discovered_files: Vec<_> = discover(&config, &resolved, &harness.token)?.collect();
+    let discovered_files: Vec<_> =
+        discover(&config.discovery, &resolved, &harness.token)?.collect();
     assert!(discovered_files.is_empty());
 
     Ok(())
@@ -143,9 +145,12 @@ fn test_process_iterator_reads_and_filters_content() -> anyhow::Result<()> {
     let builder = harness.builder().remove_comments(true);
     let (config, _) = build_and_resolve(builder);
 
-    let successful_files: Vec<FileInfo> =
-        process(files_to_process.into_iter(), &config, &harness.token)
-            .collect::<Result<Vec<_>, Error>>()?;
+    let successful_files: Vec<FileInfo> = process_files(
+        files_to_process.into_iter(),
+        &config.processing,
+        &harness.token,
+    )
+    .collect::<Result<Vec<_>, Error>>()?;
 
     assert_eq!(successful_files.len(), 2); // Binary file was filtered out
 
@@ -174,9 +179,12 @@ fn test_process_iterator_includes_binary_when_configured() -> anyhow::Result<()>
     let builder = harness.builder().include_binary(true);
     let (config, _) = build_and_resolve(builder);
 
-    let successful_files: Vec<FileInfo> =
-        process(files_to_process.into_iter(), &config, &harness.token)
-            .collect::<Result<Vec<_>, Error>>()?;
+    let successful_files: Vec<FileInfo> = process_files(
+        files_to_process.into_iter(),
+        &config.processing,
+        &harness.token,
+    )
+    .collect::<Result<Vec<_>, Error>>()?;
 
     assert_eq!(successful_files.len(), 1);
     let binary_file = &successful_files[0];
@@ -202,7 +210,11 @@ fn test_process_iterator_handles_io_error() -> anyhow::Result<()> {
     ];
 
     let (config, _) = build_and_resolve(harness.builder());
-    let processed_iter = process(files_to_process.into_iter(), &config, &harness.token);
+    let processed_iter = process_files(
+        files_to_process.into_iter(),
+        &config.processing,
+        &harness.token,
+    );
 
     // With parallel processing, order is not guaranteed. Collect all results and inspect.
     let results: Vec<_> = processed_iter.collect();
@@ -234,6 +246,57 @@ fn test_process_iterator_handles_io_error() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_process_content_decoupled_from_io() -> anyhow::Result<()> {
+    let harness = TestHarness::new();
+    // No files are actually created on the filesystem.
+
+    let files_content = vec![
+        FileContent {
+            relative_path: "a.rs".into(),
+            content: b"// comment\nfn main() {}".to_vec(),
+            is_process_last: false,
+            process_last_order: None,
+        },
+        FileContent {
+            relative_path: "b.txt".into(),
+            content: b"Hello".to_vec(),
+            is_process_last: false,
+            process_last_order: None,
+        },
+        FileContent {
+            relative_path: "c.bin".into(),
+            content: b"binary\0data".to_vec(),
+            is_process_last: false,
+            process_last_order: None,
+        },
+    ];
+
+    let builder = harness.builder().remove_comments(true);
+    let (config, _) = build_and_resolve(builder);
+    let opts = dircat::processing::ProcessingOptions::from(&config);
+
+    let successful_files: Vec<FileInfo> =
+        dircat::process_content(files_content.into_iter(), opts, &harness.token)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+    assert_eq!(successful_files.len(), 2); // Binary file was filtered out
+
+    let file_a = successful_files
+        .iter()
+        .find(|fi| fi.relative_path.to_str() == Some("a.rs"))
+        .unwrap();
+    let file_b = successful_files
+        .iter()
+        .find(|fi| fi.relative_path.to_str() == Some("b.txt"))
+        .unwrap();
+
+    assert_eq!(file_a.processed_content, Some("fn main() {}".to_string()));
+    assert_eq!(file_b.processed_content, Some("Hello".to_string()));
+
+    Ok(())
+}
+
+#[test]
 fn test_process_iterator_handles_cancellation() {
     let harness = TestHarness::new();
     harness.file("a.txt", b"A");
@@ -247,7 +310,12 @@ fn test_process_iterator_handles_cancellation() {
     let (config, _) = build_and_resolve(harness.builder());
     harness.token.cancel(); // Cancel *before* processing
 
-    let results: Vec<_> = process(files_to_process.into_iter(), &config, &harness.token).collect();
+    let results: Vec<_> = process_files(
+        files_to_process.into_iter(),
+        &config.processing,
+        &harness.token,
+    )
+    .collect();
 
     // With parallel execution, we might get one or more Interrupted errors.
     // We should check that at least one is present.
@@ -261,8 +329,12 @@ fn test_process_with_empty_iterator() -> anyhow::Result<()> {
     let (config, _) = build_and_resolve(harness.builder());
     let files_to_process: Vec<FileInfo> = vec![];
 
-    let processed_files: Vec<_> = process(files_to_process.into_iter(), &config, &harness.token)
-        .collect::<Result<Vec<_>, Error>>()?;
+    let processed_files: Vec<_> = process_files(
+        files_to_process.into_iter(),
+        &config.processing,
+        &harness.token,
+    )
+    .collect::<Result<Vec<_>, Error>>()?;
 
     assert!(processed_files.is_empty());
     Ok(())
@@ -284,8 +356,8 @@ fn test_discover_and_process_chaining() -> anyhow::Result<()> {
     let (config, resolved) = build_and_resolve(builder);
 
     // --- The Streaming Pipeline ---
-    let discovered_iter = discover(&config, &resolved, &harness.token)?;
-    let processed_iter = process(discovered_iter, &config, &harness.token);
+    let discovered_iter = discover(&config.discovery, &resolved, &harness.token)?;
+    let processed_iter = process_files(discovered_iter, &config.processing, &harness.token);
     let mut final_files: Vec<FileInfo> = processed_iter.collect::<Result<Vec<_>, Error>>()?;
     // -----------------------------
 
@@ -339,7 +411,7 @@ mod git_feature_tests {
         fn format(
             &self,
             files: &[FileInfo],
-            _opts: &dircat::output::OutputOptions,
+            _opts: &dircat::OutputConfig,
             writer: &mut dyn std::io::Write,
         ) -> anyhow::Result<()> {
             // serde_json is available because the tests run with the 'git' feature enabled
@@ -354,7 +426,7 @@ mod git_feature_tests {
         fn format_dry_run(
             &self,
             files: &[FileInfo],
-            _opts: &dircat::output::OutputOptions,
+            _opts: &dircat::OutputConfig,
             writer: &mut dyn std::io::Write,
         ) -> anyhow::Result<()> {
             let paths: Vec<_> = files
@@ -381,8 +453,8 @@ mod git_feature_tests {
 
         // Format using the custom JSON formatter
         let mut buffer = Vec::new();
-        let output_opts = dircat::output::OutputOptions::from(&config);
-        result.format_with(&JsonFormatter, &output_opts, &mut buffer)?;
+        let output_config = dircat::OutputConfig::from(&config);
+        result.format_with(&JsonFormatter, &output_config, &mut buffer)?;
 
         let output_str = String::from_utf8(buffer)?;
         // The order is deterministic because `execute` sorts the files.

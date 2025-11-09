@@ -1,5 +1,5 @@
 use crate::config::path_resolve::ResolvedInput;
-use crate::discovery::DiscoveryOptions;
+use crate::config::DiscoveryConfig;
 use anyhow::{Context, Result};
 use glob::Pattern;
 use ignore::{WalkBuilder, WalkParallel};
@@ -8,8 +8,8 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 /// Configures and builds the `ignore::WalkBuilder` based on `Config`.
-pub(super) fn build_walker<'a>(
-    opts: &DiscoveryOptions<'a>,
+pub(super) fn build_walker(
+    config: &DiscoveryConfig,
     resolved: &ResolvedInput,
 ) -> Result<(WalkParallel, Option<NamedTempFile>)> {
     let mut walker_builder = WalkBuilder::new(&resolved.path);
@@ -18,11 +18,11 @@ pub(super) fn build_walker<'a>(
     // If --last or --only is used, we can add those patterns as overrides.
     // This will cause the walker to yield matching files even if they are
     // covered by a .gitignore rule, which is the desired behavior.
-    if opts.use_gitignore {
+    if config.use_gitignore {
         walker_builder.standard_filters(true);
         debug!("Configuring WalkBuilder: standard_filters enabled.");
 
-        if let Some(last_patterns) = opts.process_last {
+        if let Some(last_patterns) = &config.process_last {
             // Using OverrideBuilder acts as an inclusion filter, which is not what we want.
             // Instead, we create a temporary, high-precedence ignore file with whitelist
             // rules (`!pattern`) for the --last patterns. This correctly overrides
@@ -56,7 +56,7 @@ pub(super) fn build_walker<'a>(
     // Explicitly setting them again might interfere or be unnecessary for ignore 0.4+.
     // ---
 
-    if !opts.recursive {
+    if !config.recursive {
         // Max depth 1 means only the immediate children of the base_path
         // If base_path is a file, walkdir handles it correctly (yields just the file)
         walker_builder.max_depth(Some(1));
@@ -66,7 +66,7 @@ pub(super) fn build_walker<'a>(
     }
 
     // --- Add custom filter ONLY if custom ignore patterns are provided ---
-    if let Some(ignore_patterns) = opts.ignore_patterns {
+    if let Some(ignore_patterns) = &config.ignore_patterns {
         // Compile custom ignore glob patterns from -i
         let custom_ignore_globs: Vec<Pattern> = ignore_patterns
             .iter()

@@ -1,6 +1,6 @@
 use crate::cancellation::CancellationToken;
 use crate::config::path_resolve::ResolvedInput;
-use crate::config::Config;
+use crate::config::DiscoveryConfig;
 use crate::core_types::FileInfo;
 use crate::errors::{Error, Result};
 use crossbeam_channel::unbounded;
@@ -13,45 +13,10 @@ mod walker;
 use entry_processor::process_direntry;
 use walker::build_walker;
 
-/// A struct holding only the configuration options relevant to file discovery.
-pub struct DiscoveryOptions<'a> {
-    pub recursive: bool,
-    pub extensions: &'a Option<Vec<String>>,
-    pub exclude_extensions: &'a Option<Vec<String>>,
-    pub ignore_patterns: &'a Option<Vec<String>>,
-    pub exclude_path_regex: &'a Option<Vec<regex::Regex>>,
-    pub path_regex: &'a Option<Vec<regex::Regex>>,
-    pub filename_regex: &'a Option<Vec<regex::Regex>>,
-    pub use_gitignore: bool,
-    pub skip_lockfiles: bool,
-    pub max_size: Option<u128>,
-    pub process_last: &'a Option<Vec<String>>,
-    pub only_last: bool,
-}
-
-impl<'a> From<&'a Config> for DiscoveryOptions<'a> {
-    fn from(config: &'a Config) -> Self {
-        Self {
-            recursive: config.recursive,
-            extensions: &config.extensions,
-            exclude_extensions: &config.exclude_extensions,
-            ignore_patterns: &config.ignore_patterns,
-            exclude_path_regex: &config.exclude_path_regex,
-            path_regex: &config.path_regex,
-            filename_regex: &config.filename_regex,
-            use_gitignore: config.use_gitignore,
-            skip_lockfiles: config.skip_lockfiles,
-            max_size: config.max_size,
-            process_last: &config.process_last,
-            only_last: config.only_last,
-        }
-    }
-}
-
 /// Discovers files based on the provided configuration, applying filters.
 /// Returns a tuple of two vectors: (normal_files, last_files).
-pub(crate) fn discover_files_internal(
-    opts: &DiscoveryOptions,
+pub fn discover_files(
+    config: &DiscoveryConfig,
     resolved: &ResolvedInput,
     token: &CancellationToken,
 ) -> Result<(Vec<FileInfo>, Vec<FileInfo>)> {
@@ -63,17 +28,27 @@ pub(crate) fn discover_files_internal(
         return Err(Error::Interrupted);
     }
 
-    let (walker, _temp_file_guard) = build_walker(opts, resolved)?;
+    let (walker, _temp_file_guard) = build_walker(config, resolved)?;
     let (tx, rx) = unbounded();
 
-    walker.run(|| {
+    // Clone the necessary data to move into the static closure.
+    let config_clone = config.clone();
+    let resolved_clone = resolved.clone();
+    let token_clone = token.clone();
+
+    walker.run(move || {
+        // This factory closure is 'static and is called for each thread.
+        // We clone the data again for each thread's closure.
         let tx = tx.clone();
-        let token = token.clone();
+        let token = token_clone.clone();
+        let config = config_clone.clone();
+        let resolved = resolved_clone.clone();
+
         Box::new(move |entry_result| {
             if token.is_cancelled() {
                 return WalkState::Quit;
             }
-            match process_direntry(entry_result, opts, resolved) {
+            match process_direntry(entry_result, &config, &resolved) {
                 Ok(Some(file_info)) => {
                     if tx.send(file_info).is_err() {
                         log::error!("Receiver dropped, quitting discovery walk.");
@@ -89,7 +64,6 @@ pub(crate) fn discover_files_internal(
             WalkState::Continue
         })
     });
-    drop(tx);
 
     if token.is_cancelled() {
         return Err(Error::Interrupted);
@@ -98,7 +72,7 @@ pub(crate) fn discover_files_internal(
     for file_info in rx {
         if file_info.is_process_last {
             last_files.push(file_info);
-        } else if !opts.only_last {
+        } else if !config.only_last {
             normal_files.push(file_info);
         }
     }
@@ -114,22 +88,4 @@ pub(crate) fn discover_files_internal(
         last_files.len()
     );
     Ok((normal_files, last_files))
-}
-
-/// Discovers files using a specific set of `DiscoveryOptions`.
-///
-/// This is the advanced, granular entry point for the discovery stage. It allows for
-/// creating `DiscoveryOptions` separately and passing them in, decoupling the discovery
-/// logic from the main `Config` struct.
-///
-/// # Arguments
-/// * `opts` - The discovery-specific options.
-/// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
-/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
-pub fn discover_with_options(
-    opts: &DiscoveryOptions,
-    resolved: &ResolvedInput,
-    token: &CancellationToken,
-) -> Result<(Vec<FileInfo>, Vec<FileInfo>)> {
-    discover_files_internal(opts, resolved, token)
 }

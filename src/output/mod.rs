@@ -1,6 +1,6 @@
 // src/output/mod.rs
 
-use crate::config::Config;
+use crate::config::{Config, OutputConfig};
 use crate::core_types::FileInfo;
 use anyhow::Result;
 use log::debug;
@@ -13,45 +13,23 @@ pub mod header;
 pub mod summary;
 pub mod writer;
 
-/// A struct holding only the configuration options relevant to output formatting.
-#[derive(Debug, Clone, Copy)]
-pub struct OutputOptions {
-    pub filename_only_header: bool,
-    pub line_numbers: bool,
-    pub backticks: bool,
-    pub num_ticks: u8,
-    pub summary: bool,
-    pub counts: bool,
-}
-
-impl From<&Config> for OutputOptions {
+impl From<&Config> for OutputConfig {
     fn from(config: &Config) -> Self {
-        Self {
-            filename_only_header: config.filename_only_header,
-            line_numbers: config.line_numbers,
-            backticks: config.backticks,
-            num_ticks: config.num_ticks,
-            summary: config.summary,
-            counts: config.counts,
-        }
+        config.output
     }
 }
 
 /// A trait for formatting the processed file data into a specific output format.
 pub trait OutputFormatter {
     /// Formats the processed files into the final output.
-    fn format(
-        &self,
-        files: &[FileInfo],
-        opts: &OutputOptions,
-        writer: &mut dyn Write,
-    ) -> Result<()>;
+    fn format(&self, files: &[FileInfo], opts: &OutputConfig, writer: &mut dyn Write)
+        -> Result<()>;
 
     /// Formats the discovered files for a dry run.
     fn format_dry_run(
         &self,
         files: &[FileInfo],
-        opts: &OutputOptions,
+        opts: &OutputConfig,
         writer: &mut dyn Write,
     ) -> Result<()>;
 }
@@ -64,7 +42,7 @@ impl OutputFormatter for MarkdownFormatter {
     fn format(
         &self,
         files: &[FileInfo],
-        opts: &OutputOptions,
+        opts: &OutputConfig,
         writer: &mut dyn Write,
     ) -> Result<()> {
         debug!("Starting Markdown output generation...");
@@ -104,7 +82,7 @@ impl OutputFormatter for MarkdownFormatter {
     fn format_dry_run(
         &self,
         files: &[FileInfo],
-        opts: &OutputOptions,
+        opts: &OutputConfig,
         writer: &mut dyn Write,
     ) -> Result<()> {
         let file_refs: Vec<&FileInfo> = files.iter().collect();
@@ -120,13 +98,13 @@ pub(crate) mod tests {
     use crate::core_types::{FileCounts, FileInfo};
     use std::path::PathBuf;
 
-    pub(crate) fn create_mock_config(
+    pub(crate) fn create_mock_output_config(
         backticks: bool,
         filename_only: bool,
         line_numbers: bool,
         summary: bool,
-    ) -> OutputOptions {
-        OutputOptions {
+    ) -> OutputConfig {
+        OutputConfig {
             backticks,
             filename_only_header: filename_only,
             line_numbers,
@@ -152,7 +130,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_basic() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let content_b = "Content B";
         let content_a = "Content A";
         let mut file1 = create_mock_file_info("b.txt", 10);
@@ -177,7 +155,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_with_last_files() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let content_c = "Content C";
         let content_a = "Content A";
         let content_last1 = "Last 1";
@@ -232,7 +210,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_with_summary() -> Result<()> {
-        let mut opts = create_mock_config(false, false, false, true); // summary = true
+        let mut opts = create_mock_output_config(false, false, false, true); // summary = true
         opts.counts = true; // Enable counts as well for completeness
         let content_b = "Content B";
         let content_a = "Content A";
@@ -274,7 +252,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_no_files() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let files = vec![];
         let formatter = MarkdownFormatter;
         let mut output = Vec::new();
@@ -289,7 +267,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_file_with_no_content() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let file = create_mock_file_info("empty.txt", 0); // processed_content is None
         let files = vec![file];
         let formatter = MarkdownFormatter;
@@ -305,7 +283,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_file_with_only_newline() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let mut file = create_mock_file_info("newline.txt", 1);
         file.processed_content = Some("\n".to_string());
         let files = vec![file];
@@ -323,7 +301,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_markdown_formatter_dry_run_no_files() -> Result<()> {
-        let opts = create_mock_config(false, false, false, false);
+        let opts = create_mock_output_config(false, false, false, false);
         let files = vec![];
         let formatter = MarkdownFormatter;
         let mut output = Vec::new();

@@ -5,6 +5,25 @@
 
 use std::path::PathBuf;
 
+/// Represents the raw content of a file, ready for processing.
+///
+/// This struct is used as input for the `process_content` function, allowing
+/// the processing logic to be decoupled from filesystem I/O.
+#[derive(Debug, Clone)]
+pub struct FileContent {
+    /// The path relative to the initial input directory.
+    /// Used for display purposes and for determining the language hint.
+    pub relative_path: PathBuf,
+    /// The raw byte content of the file.
+    pub content: Vec<u8>,
+    /// Flag indicating if this file matched one of the patterns specified
+    /// with the `-z`/`--last` argument.
+    pub is_process_last: bool,
+    /// If `is_process_last` is true, this holds the zero-based index of the
+    /// `-z` pattern that this file matched.
+    pub process_last_order: Option<usize>,
+}
+
 /// Represents a file discovered during the walk, potentially with processed content and metadata.
 ///
 /// This struct holds information about each file that passes the initial filtering criteria.

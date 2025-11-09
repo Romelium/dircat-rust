@@ -1,8 +1,8 @@
 // src/discovery/entry_processor.rs
 
 use crate::config::path_resolve::ResolvedInput;
+use crate::config::DiscoveryConfig;
 use crate::core_types::FileInfo;
-use crate::discovery::DiscoveryOptions;
 use crate::errors::Error;
 use crate::filtering::{
     check_process_last, is_file_type, is_lockfile, passes_extension_filters, passes_size_filter,
@@ -24,7 +24,7 @@ use tracing::instrument;
 /// Returns `Err(Error)` for critical errors (like permission issues accessing metadata or reading file head).
 pub(crate) fn process_direntry(
     entry_result: Result<DirEntry, ignore::Error>,
-    opts: &DiscoveryOptions,
+    config: &DiscoveryConfig,
     resolved: &ResolvedInput,
 ) -> Result<Option<FileInfo>, Error> {
     // --- 1. Handle Walker Errors ---
@@ -68,7 +68,8 @@ pub(crate) fn process_direntry(
     trace!("Calculated relative path: {}", relative_path.display());
 
     // --- 2a. Check "process last" status early, as it affects other filters ---
-    let (is_last, last_order) = check_process_last(&relative_path, absolute_path.file_name(), opts);
+    let (is_last, last_order) =
+        check_process_last(&relative_path, absolute_path.file_name(), config);
 
     // Manual gitignore override logic is not needed here. When --last or --only is used,
     // the walker is configured with a high-precedence temporary ignore file containing
@@ -97,7 +98,7 @@ pub(crate) fn process_direntry(
     trace!("Entry is a file: {}", absolute_path.display());
 
     // --- 5. Filter by Lockfile ---
-    if opts.skip_lockfiles && is_lockfile(&absolute_path) {
+    if config.skip_lockfiles && is_lockfile(&absolute_path) {
         debug!(
             "Skipping lockfile due to --no-lockfiles flag: {}",
             absolute_path.display()
@@ -107,7 +108,7 @@ pub(crate) fn process_direntry(
     trace!("File passed lockfile filter: {}", absolute_path.display());
 
     // --- 6. Filter by Size ---
-    if !passes_size_filter(&metadata, opts) {
+    if !passes_size_filter(&metadata, config) {
         debug!(
             "Skipping file due to size constraint: {} (Size: {} bytes)",
             absolute_path.display(),
@@ -118,7 +119,7 @@ pub(crate) fn process_direntry(
     trace!("File passed size filter: {}", absolute_path.display());
 
     // --- 7. Filter by Extension ---
-    if !passes_extension_filters(&absolute_path, opts) {
+    if !passes_extension_filters(&absolute_path, config) {
         debug!(
             "Skipping file due to extension filter: {}",
             absolute_path.display()
@@ -128,7 +129,7 @@ pub(crate) fn process_direntry(
     trace!("File passed extension filter: {}", absolute_path.display());
 
     // --- 8. Filter by Regex (Path and Filename) ---
-    if !passes_regex_filters(&absolute_path, &relative_path, opts)? {
+    if !passes_regex_filters(&absolute_path, &relative_path, config)? {
         debug!(
             "Skipping file due to regex filter: {}",
             absolute_path.display()
@@ -157,14 +158,14 @@ pub(crate) fn process_direntry(
 }
 
 /// Checks if a file passes the path and filename regex filters.
-#[instrument(level = "debug", skip(opts), fields(relative_path = %relative_path.display(), filename = ?path.file_name()))]
+#[instrument(level = "debug", skip(config), fields(relative_path = %relative_path.display(), filename = ?path.file_name()))]
 fn passes_regex_filters(
     path: &Path,          // Absolute path for filename extraction
     relative_path: &Path, // Relative path for path regex matching
-    opts: &DiscoveryOptions,
+    config: &DiscoveryConfig,
 ) -> Result<bool, Error> {
     // --- 1. Check Exclude Path Regex First (takes precedence) ---
-    if let Some(exclude_path_regex_vec) = opts.exclude_path_regex {
+    if let Some(exclude_path_regex_vec) = &config.exclude_path_regex {
         let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
         let is_excluded = exclude_path_regex_vec
             .iter()
@@ -179,7 +180,7 @@ fn passes_regex_filters(
     }
 
     // --- 2. Check Include Path Regex ---
-    if let Some(include_path_regex_vec) = opts.path_regex {
+    if let Some(include_path_regex_vec) = &config.path_regex {
         let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
         let matches = include_path_regex_vec
             .iter()
@@ -196,7 +197,7 @@ fn passes_regex_filters(
     }
 
     // --- 3. Check Include Filename Regex ---
-    if let Some(filename_regex_vec) = opts.filename_regex {
+    if let Some(filename_regex_vec) = &config.filename_regex {
         if let Some(filename) = path.file_name() {
             let filename_str = filename.to_string_lossy();
             let matches = filename_regex_vec
@@ -223,7 +224,7 @@ fn passes_regex_filters(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ConfigBuilder;
+    use crate::config::DiscoveryConfig;
     use regex::Regex;
     use std::collections::HashMap;
     use std::fs::{self, File};
@@ -235,7 +236,7 @@ mod tests {
         path_patterns: Option<Vec<&str>>,
         exclude_path_patterns: Option<Vec<&str>>,
         filename_patterns: Option<Vec<&str>>,
-    ) -> DiscoveryOptions<'static> {
+    ) -> DiscoveryConfig {
         let mut regex_map: HashMap<String, Option<Vec<Regex>>> = HashMap::new();
         let pattern_map = HashMap::from([
             ("path", path_patterns),
@@ -253,22 +254,11 @@ mod tests {
             regex_map.insert(key.to_string(), compiled);
         }
 
-        // This is a bit tricky. We need to create a Config, then DiscoveryOptions from it.
-        // The DiscoveryOptions will have a lifetime tied to the Config.
-        // To make this work in a test function, we need to leak the config.
-        let mut builder = ConfigBuilder::new();
-        if let Some(p) = regex_map.remove("path").unwrap() {
-            builder = builder.path_regex(p.iter().map(|r| r.to_string()).collect());
-        }
-        if let Some(p) = regex_map.remove("exclude_path").unwrap() {
-            builder = builder.exclude_path_regex(p.iter().map(|r| r.to_string()).collect());
-        }
-        if let Some(p) = regex_map.remove("filename").unwrap() {
-            builder = builder.filename_regex(p.iter().map(|r| r.to_string()).collect());
-        }
-        let config = Box::leak(Box::new(builder.build().unwrap()));
-
-        DiscoveryOptions::from(&*config)
+        let mut config = DiscoveryConfig::default_for_test();
+        config.path_regex = regex_map.remove("path").unwrap();
+        config.exclude_path_regex = regex_map.remove("exclude_path").unwrap();
+        config.filename_regex = regex_map.remove("filename").unwrap();
+        config
     }
 
     // Helper to create paths for testing
@@ -281,8 +271,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let (abs_path, rel_path) = create_paths(dir.path(), "test_file.txt");
         File::create(&abs_path).unwrap();
-        let opts = create_config_with_regex(None, None, None);
-        assert!(passes_regex_filters(&abs_path, &rel_path, &opts)?);
+        let config = create_config_with_regex(None, None, None);
+        assert!(passes_regex_filters(&abs_path, &rel_path, &config)?);
         Ok(())
     }
 
@@ -296,10 +286,10 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Regex that should match rel_path1 (starts with "subdir/")
-        let opts = create_config_with_regex(Some(vec!["^subdir/"]), None, None);
+        let config = create_config_with_regex(Some(vec!["^subdir/"]), None, None);
 
-        assert!(passes_regex_filters(&abs_path1, &rel_path1, &opts)?);
-        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &opts)?);
+        assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?);
+        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?);
         Ok(())
     }
 
@@ -314,10 +304,10 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Exclude anything in the "tests/" directory
-        let opts = create_config_with_regex(None, Some(vec!["^tests/"]), None);
+        let config = create_config_with_regex(None, Some(vec!["^tests/"]), None);
 
-        assert!(passes_regex_filters(&abs_path1, &rel_path1, &opts)?); // src/main.rs should pass
-        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &opts)?); // tests/main.rs should be excluded
+        assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?); // src/main.rs should pass
+        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?); // tests/main.rs should be excluded
         Ok(())
     }
 
@@ -331,10 +321,10 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Include everything in "src/", but exclude "main.rs"
-        let opts = create_config_with_regex(Some(vec!["^src/"]), Some(vec!["main\\.rs$"]), None);
+        let config = create_config_with_regex(Some(vec!["^src/"]), Some(vec!["main\\.rs$"]), None);
 
-        assert!(!passes_regex_filters(&abs_path1, &rel_path1, &opts)?); // main.rs is excluded
-        assert!(passes_regex_filters(&abs_path2, &rel_path2, &opts)?); // lib.rs is included
+        assert!(!passes_regex_filters(&abs_path1, &rel_path1, &config)?); // main.rs is excluded
+        assert!(passes_regex_filters(&abs_path2, &rel_path2, &config)?); // lib.rs is included
         Ok(())
     }
 
@@ -348,12 +338,12 @@ mod tests {
         File::create(&abs_path).unwrap();
 
         // Regex uses forward slashes, should match normalized relative path
-        let opts_fwd = create_config_with_regex(Some(vec!["^subdir/match"]), None, None);
+        let config_fwd = create_config_with_regex(Some(vec!["^subdir/match"]), None, None);
         // Regex uses backslashes, should NOT match normalized relative path
-        let opts_bwd = create_config_with_regex(Some(vec![r"^subdir\\match"]), None, None);
+        let config_bwd = create_config_with_regex(Some(vec![r"^subdir\\match"]), None, None);
 
-        assert!(passes_regex_filters(&abs_path, &rel_path, &opts_fwd)?);
-        assert!(!passes_regex_filters(&abs_path, &rel_path, &opts_bwd)?);
+        assert!(passes_regex_filters(&abs_path, &rel_path, &config_fwd)?);
+        assert!(!passes_regex_filters(&abs_path, &rel_path, &config_bwd)?);
         Ok(())
     }
 
@@ -366,10 +356,10 @@ mod tests {
         File::create(&abs_path2).unwrap();
 
         // Regex that should match path1's filename
-        let opts = create_config_with_regex(None, None, Some(vec![r"^match_.*\.log$"]));
+        let config = create_config_with_regex(None, None, Some(vec![r"^match_.*\.log$"]));
 
-        assert!(passes_regex_filters(&abs_path1, &rel_path1, &opts)?);
-        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &opts)?);
+        assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?);
+        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?);
         Ok(())
     }
 
@@ -388,16 +378,16 @@ mod tests {
         File::create(&abs_path4).unwrap();
 
         // Regexes that should match path1
-        let opts = create_config_with_regex(
+        let config = create_config_with_regex(
             Some(vec!["^target_dir/"]), // Matches relative path
             None,
             Some(vec![r"^target_file\.rs$"]), // Matches filename
         );
 
-        assert!(passes_regex_filters(&abs_path1, &rel_path1, &opts)?); // Both match
-        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &opts)?); // Filename fails
-        assert!(!passes_regex_filters(&abs_path3, &rel_path3, &opts)?); // Path fails
-        assert!(!passes_regex_filters(&abs_path4, &rel_path4, &opts)?); // Both fail
+        assert!(passes_regex_filters(&abs_path1, &rel_path1, &config)?); // Both match
+        assert!(!passes_regex_filters(&abs_path2, &rel_path2, &config)?); // Filename fails
+        assert!(!passes_regex_filters(&abs_path3, &rel_path3, &config)?); // Path fails
+        assert!(!passes_regex_filters(&abs_path4, &rel_path4, &config)?); // Both fail
         Ok(())
     }
 
@@ -407,20 +397,20 @@ mod tests {
         let current_dir_abs = PathBuf::from("."); // Represents current dir
         let current_dir_rel = PathBuf::from(".");
 
-        let opts_filename = create_config_with_regex(None, None, Some(vec!["anything"])); // Has filename regex
-                                                                                          // Should fail because "." has no filename component
+        let config_filename = create_config_with_regex(None, None, Some(vec!["anything"])); // Has filename regex
+                                                                                            // Should fail because "." has no filename component
         assert!(!passes_regex_filters(
             &current_dir_abs,
             &current_dir_rel,
-            &opts_filename
+            &config_filename
         )?);
 
-        let opts_path = create_config_with_regex(Some(vec![r"^\.$"]), None, None); // Match path "."
-                                                                                   // Should pass because path regex matches relative path "."
+        let config_path = create_config_with_regex(Some(vec![r"^\.$"]), None, None); // Match path "."
+                                                                                     // Should pass because path regex matches relative path "."
         assert!(passes_regex_filters(
             &current_dir_abs,
             &current_dir_rel,
-            &opts_path
+            &config_path
         )?);
 
         Ok(())

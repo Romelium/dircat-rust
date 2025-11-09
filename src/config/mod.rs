@@ -15,14 +15,11 @@ mod builder_logic;
 mod parsing;
 pub mod path_resolve;
 
-///
-/// This struct holds all the settings parsed and validated from the CLI,
-/// ready to be used by the core logic (discovery, processing, output).
-pub struct Config {
-    /// The original, unresolved path to the directory/file to process, or a git repository URL.
-    pub input_path: String,
+/// Configuration options related to file discovery and filtering.
+#[derive(Debug, Clone)]
+pub struct DiscoveryConfig {
     /// Maximum file size in bytes. Files larger than this will be skipped.
-    pub max_size: Option<u128>, // Changed from u64 to u128
+    pub max_size: Option<u128>,
     /// Whether to recurse into subdirectories.
     pub recursive: bool,
     /// List of file extensions (lowercase) to include. If `Some`, only files with these extensions are processed.
@@ -39,12 +36,38 @@ pub struct Config {
     pub filename_regex: Option<Vec<Regex>>,
     /// Whether to respect `.gitignore`, `.ignore`, and other VCS ignore files.
     pub use_gitignore: bool,
-    /// Whether to include files detected as binary/non-text.
-    pub include_binary: bool,
     /// Whether to skip common lockfiles (e.g., Cargo.lock, package-lock.json).
     pub skip_lockfiles: bool,
+    /// List of patterns (relative paths or filenames) for files to be processed last, in the specified order.
+    pub process_last: Option<Vec<String>>,
+    /// If `true`, only process files matching the `process_last` patterns.
+    pub only_last: bool,
+}
+
+/// Configuration options related to processing file content.
+pub struct ProcessingConfig {
+    /// Whether to include files detected as binary/non-text.
+    pub include_binary: bool,
+    /// Whether to calculate and display line, character, and word counts in the summary.
+    pub counts: bool,
     /// A vector of content filters to be applied sequentially to each file's content.
     pub content_filters: Vec<Box<dyn ContentFilter>>,
+}
+
+// Custom Debug implementation for ProcessingConfig
+impl fmt::Debug for ProcessingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProcessingConfig")
+            .field("include_binary", &self.include_binary)
+            .field("counts", &self.counts)
+            .field("content_filters", &self.content_filters)
+            .finish()
+    }
+}
+
+/// Configuration options related to formatting the final output.
+#[derive(Debug, Clone, Copy)]
+pub struct OutputConfig {
     /// Whether to display only the filename (basename) in the `## File:` header instead of the relative path.
     pub filename_only_header: bool,
     /// Whether to add line numbers (`N | `) to the output.
@@ -53,16 +76,46 @@ pub struct Config {
     pub backticks: bool,
     /// Number of backticks for Markdown code fences.
     pub num_ticks: u8,
-    /// Specifies where the final output should be written.
-    pub output_destination: OutputDestination,
     /// Whether to print a summary list of processed files at the end. Implied by `counts`.
     pub summary: bool,
     /// Whether to calculate and display line, character, and word counts in the summary.
     pub counts: bool,
-    /// List of patterns (relative paths or filenames) for files to be processed last, in the specified order.
-    pub process_last: Option<Vec<String>>,
-    /// If `true`, only process files matching the `process_last` patterns.
-    pub only_last: bool,
+}
+
+impl DiscoveryConfig {
+    #[doc(hidden)]
+    pub fn default_for_test() -> Self {
+        Self {
+            max_size: None,
+            recursive: true,
+            extensions: None,
+            exclude_extensions: None,
+            ignore_patterns: None,
+            path_regex: None,
+            exclude_path_regex: None,
+            filename_regex: None,
+            use_gitignore: true,
+            skip_lockfiles: false,
+            process_last: None,
+            only_last: false,
+        }
+    }
+}
+///
+/// This struct holds all the settings parsed and validated from the CLI,
+/// ready to be used by the core logic (discovery, processing, output).
+pub struct Config {
+    /// The original, unresolved path to the directory/file to process, or a git repository URL.
+    pub input_path: String,
+    /// Maximum file size in bytes. Files larger than this will be skipped.
+    /// Configuration for the discovery stage.
+    pub discovery: DiscoveryConfig,
+    /// Configuration for the processing stage.
+    pub processing: ProcessingConfig,
+    /// Configuration for the output stage.
+    pub output: OutputConfig,
+    /// Specifies where the final output should be written.
+    pub output_destination: OutputDestination,
     /// If `true`, perform a dry run: print the list of files that would be processed, but not their content.
     pub dry_run: bool,
     #[cfg(feature = "git")]
@@ -82,27 +135,10 @@ impl fmt::Debug for Config {
         let mut builder = f.debug_struct("Config");
         builder
             .field("input_path", &self.input_path)
-            .field("max_size", &self.max_size)
-            .field("recursive", &self.recursive)
-            .field("extensions", &self.extensions)
-            .field("exclude_extensions", &self.exclude_extensions)
-            .field("ignore_patterns", &self.ignore_patterns)
-            .field("exclude_path_regex", &self.exclude_path_regex)
-            .field("path_regex", &self.path_regex)
-            .field("filename_regex", &self.filename_regex)
-            .field("use_gitignore", &self.use_gitignore)
-            .field("include_binary", &self.include_binary)
-            .field("skip_lockfiles", &self.skip_lockfiles)
-            .field("content_filters", &self.content_filters)
-            .field("filename_only_header", &self.filename_only_header)
-            .field("line_numbers", &self.line_numbers)
-            .field("backticks", &self.backticks)
-            .field("num_ticks", &self.num_ticks)
+            .field("discovery", &self.discovery)
+            .field("processing", &self.processing)
+            .field("output", &self.output)
             .field("output_destination", &self.output_destination)
-            .field("summary", &self.summary)
-            .field("counts", &self.counts)
-            .field("process_last", &self.process_last)
-            .field("only_last", &self.only_last)
             .field("dry_run", &self.dry_run);
 
         #[cfg(feature = "git")]
@@ -125,27 +161,34 @@ impl Config {
     pub fn new_for_test() -> Self {
         Self {
             input_path: ".".to_string(),
-            max_size: None,
-            recursive: true,
-            extensions: None,
-            exclude_extensions: None,
-            ignore_patterns: None,
-            path_regex: None,
-            exclude_path_regex: None,
-            filename_regex: None,
-            use_gitignore: true,
-            include_binary: false,
-            skip_lockfiles: false,
-            content_filters: Vec::new(),
-            filename_only_header: false,
-            line_numbers: false,
-            backticks: false,
-            num_ticks: 3,
+            discovery: DiscoveryConfig {
+                max_size: None,
+                recursive: true,
+                extensions: None,
+                exclude_extensions: None,
+                ignore_patterns: None,
+                path_regex: None,
+                exclude_path_regex: None,
+                filename_regex: None,
+                use_gitignore: true,
+                skip_lockfiles: false,
+                process_last: None,
+                only_last: false,
+            },
+            processing: ProcessingConfig {
+                include_binary: false,
+                counts: false,
+                content_filters: Vec::new(),
+            },
+            output: OutputConfig {
+                filename_only_header: false,
+                line_numbers: false,
+                backticks: false,
+                num_ticks: 3,
+                summary: false,
+                counts: false,
+            },
             output_destination: OutputDestination::Stdout,
-            summary: false,
-            counts: false,
-            process_last: None,
-            only_last: false,
             dry_run: false,
             #[cfg(feature = "git")]
             git_branch: None,

@@ -3,7 +3,7 @@
 use crate::constants::DEFAULT_LINE_NUMBER_WIDTH;
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
-use crate::output::OutputOptions;
+use crate::output::OutputConfig;
 use anyhow::Result;
 use log::debug; // Import debug
 use std::io::Write;
@@ -25,11 +25,11 @@ use std::path::PathBuf;
 /// # Examples
 /// ```
 /// use dircat::output::file_block::write_file_block;
-/// use dircat::output::OutputOptions;
+/// use dircat::OutputConfig;
 /// use dircat::core_types::FileInfo;
 /// use std::path::PathBuf;
 ///
-/// let opts = OutputOptions { backticks: false, filename_only_header: false, line_numbers: true, num_ticks: 3, summary: false, counts: false };
+/// let opts = OutputConfig { backticks: false, filename_only_header: false, line_numbers: true, num_ticks: 3, summary: false, counts: false };
 ///
 /// let file_info = FileInfo {
 ///     absolute_path: PathBuf::from("/tmp/test.rs"),
@@ -54,7 +54,7 @@ use std::path::PathBuf;
 pub fn write_file_block(
     writer: &mut dyn Write,
     file_info: &FileInfo,
-    opts: &OutputOptions,
+    opts: &OutputConfig,
 ) -> Result<()> {
     let path_to_display = if opts.filename_only_header {
         file_info
@@ -123,7 +123,7 @@ pub fn write_file_block(
 }
 
 /// Calculates the required width for line numbers based on the total number of lines.
-fn calculate_line_number_width(line_count: usize, opts: &OutputOptions) -> usize {
+fn calculate_line_number_width(line_count: usize, opts: &OutputConfig) -> usize {
     if !opts.line_numbers {
         return 0; // No width needed if line numbers are off
     }
@@ -142,8 +142,13 @@ mod tests {
     use std::io::Cursor;
     use std::path::PathBuf;
 
-    fn create_test_opts(line_numbers: bool, filename_only: bool, backticks: bool) -> OutputOptions {
-        crate::output::tests::create_mock_config(backticks, filename_only, line_numbers, false)
+    fn create_test_opts(line_numbers: bool, filename_only: bool, backticks: bool) -> OutputConfig {
+        crate::output::tests::create_mock_output_config(
+            backticks,
+            filename_only,
+            line_numbers,
+            false,
+        )
     }
 
     // Helper to create dummy FileInfo

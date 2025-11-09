@@ -1,6 +1,6 @@
 // src/filtering/extension.rs
 
-use crate::discovery::DiscoveryOptions;
+use crate::config::DiscoveryConfig;
 use std::path::Path;
 
 /// Checks if a path passes the include/exclude extension filters defined in `Config`.
@@ -21,44 +21,44 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```
-/// use dircat::config::ConfigBuilder;
+/// use dircat::config::{ConfigBuilder, DiscoveryConfig};
 /// use dircat::filtering::passes_extension_filters;
 /// use std::path::Path;
 ///
 /// // --- Setup ---
-/// let config_none = ConfigBuilder::new().build().unwrap();
-/// let opts_none = dircat::discovery::DiscoveryOptions::from(&config_none);
+/// let config_none = DiscoveryConfig::default_for_test();
 /// let path_rs = Path::new("src/main.rs");
 /// let path_toml = Path::new("Cargo.toml");
 /// let path_lock = Path::new("Cargo.lock");
 /// let path_no_ext = Path::new("Makefile");
 ///
 /// // --- Case 1: No filters ---
-/// assert!(passes_extension_filters(path_rs, &opts_none));
-/// assert!(passes_extension_filters(path_no_ext, &opts_none));
+/// assert!(passes_extension_filters(path_rs, &config_none));
+/// assert!(passes_extension_filters(path_no_ext, &config_none));
 ///
 /// // --- Case 2: Include filter ---
-/// let config_include = ConfigBuilder::new().extensions(vec!["rs".to_string(), "toml".to_string()]).build().unwrap();
-/// let opts_include = dircat::discovery::DiscoveryOptions::from(&config_include);
-/// assert!(passes_extension_filters(path_rs, &opts_include));
-/// assert!(passes_extension_filters(path_toml, &opts_include));
-/// assert!(!passes_extension_filters(path_lock, &opts_include)); // Not in include list
-/// assert!(!passes_extension_filters(path_no_ext, &opts_include)); // No extension, fails include
+/// let mut config_include = DiscoveryConfig::default_for_test();
+/// config_include.extensions = Some(vec!["rs".to_string(), "toml".to_string()]);
+/// assert!(passes_extension_filters(path_rs, &config_include));
+/// assert!(passes_extension_filters(path_toml, &config_include));
+/// assert!(!passes_extension_filters(path_lock, &config_include)); // Not in include list
+/// assert!(!passes_extension_filters(path_no_ext, &config_include)); // No extension, fails include
 ///
 /// // --- Case 3: Exclude filter takes precedence ---
-/// let config_exclude = ConfigBuilder::new().extensions(vec!["rs".to_string(), "toml".to_string()]).exclude_extensions(vec!["toml".to_string()]).build().unwrap();
-/// let opts_exclude = dircat::discovery::DiscoveryOptions::from(&config_exclude);
-/// assert!(passes_extension_filters(path_rs, &opts_exclude)); // Still included
-/// assert!(!passes_extension_filters(path_toml, &opts_exclude)); // Excluded, even though it's in the include list
+/// let mut config_exclude = DiscoveryConfig::default_for_test();
+/// config_exclude.extensions = Some(vec!["rs".to_string(), "toml".to_string()]);
+/// config_exclude.exclude_extensions = Some(vec!["toml".to_string()]);
+/// assert!(passes_extension_filters(path_rs, &config_exclude)); // Still included
+/// assert!(!passes_extension_filters(path_toml, &config_exclude)); // Excluded, even though it's in the include list
 /// ```
-pub fn passes_extension_filters(path: &Path, opts: &DiscoveryOptions) -> bool {
+pub fn passes_extension_filters(path: &Path, config: &DiscoveryConfig) -> bool {
     let extension = path
         .extension()
         .and_then(|os_str| os_str.to_str())
         .map(|s| s.to_lowercase()); // Compare case-insensitively
 
     // 1. Check exclude extensions first
-    if let Some(ref exclude_exts) = opts.exclude_extensions {
+    if let Some(ref exclude_exts) = config.exclude_extensions {
         if let Some(ref ext) = extension {
             if exclude_exts.contains(ext) {
                 return false; // Excluded
@@ -67,7 +67,7 @@ pub fn passes_extension_filters(path: &Path, opts: &DiscoveryOptions) -> bool {
     }
 
     // 2. Check include extensions if specified
-    if let Some(ref include_exts) = opts.extensions {
+    if let Some(ref include_exts) = config.extensions {
         if let Some(ref ext) = extension {
             if !include_exts.contains(ext) {
                 return false; // Not in the include list
@@ -83,57 +83,53 @@ pub fn passes_extension_filters(path: &Path, opts: &DiscoveryOptions) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ConfigBuilder;
+    use crate::config::DiscoveryConfig;
     use std::path::Path;
 
     // Helper to create a minimal Config for testing filters
-    fn create_test_opts(
+    fn create_test_config(
         extensions: Option<Vec<&str>>,
         exclude_extensions: Option<Vec<&str>>,
-    ) -> DiscoveryOptions<'static> {
-        let mut builder = ConfigBuilder::new();
-        if let Some(exts) = extensions {
-            builder = builder.extensions(exts.iter().map(|s| s.to_string()).collect());
-        }
-        if let Some(exts) = exclude_extensions {
-            builder = builder.exclude_extensions(exts.iter().map(|s| s.to_string()).collect());
-        }
-        let config = Box::leak(Box::new(builder.build().unwrap()));
-        DiscoveryOptions::from(&*config)
+    ) -> DiscoveryConfig {
+        let mut config = DiscoveryConfig::default_for_test();
+        config.extensions = extensions.map(|v| v.iter().map(|s| s.to_string()).collect());
+        config.exclude_extensions =
+            exclude_extensions.map(|v| v.iter().map(|s| s.to_string()).collect());
+        config
     }
 
     #[test]
     fn test_ext_no_filters() {
-        let opts = create_test_opts(None, None);
-        assert!(passes_extension_filters(Path::new("file.txt"), &opts));
-        assert!(passes_extension_filters(Path::new("file.rs"), &opts));
-        assert!(passes_extension_filters(Path::new("file"), &opts)); // No extension
+        let config = create_test_config(None, None);
+        assert!(passes_extension_filters(Path::new("file.txt"), &config));
+        assert!(passes_extension_filters(Path::new("file.rs"), &config));
+        assert!(passes_extension_filters(Path::new("file"), &config)); // No extension
     }
 
     #[test]
     fn test_ext_include() {
-        let opts = create_test_opts(Some(vec!["txt", "md"]), None);
-        assert!(passes_extension_filters(Path::new("file.txt"), &opts));
-        assert!(passes_extension_filters(Path::new("FILE.MD"), &opts)); // Case insensitive
-        assert!(!passes_extension_filters(Path::new("file.rs"), &opts));
-        assert!(!passes_extension_filters(Path::new("file"), &opts)); // No extension fails include
+        let config = create_test_config(Some(vec!["txt", "md"]), None);
+        assert!(passes_extension_filters(Path::new("file.txt"), &config));
+        assert!(passes_extension_filters(Path::new("FILE.MD"), &config)); // Case insensitive
+        assert!(!passes_extension_filters(Path::new("file.rs"), &config));
+        assert!(!passes_extension_filters(Path::new("file"), &config)); // No extension fails include
     }
 
     #[test]
     fn test_ext_exclude() {
-        let opts = create_test_opts(None, Some(vec!["log", "tmp"]));
-        assert!(passes_extension_filters(Path::new("file.txt"), &opts));
-        assert!(!passes_extension_filters(Path::new("file.log"), &opts));
-        assert!(!passes_extension_filters(Path::new("file.TMP"), &opts)); // Case insensitive
-        assert!(passes_extension_filters(Path::new("file"), &opts)); // No extension passes exclude
+        let config = create_test_config(None, Some(vec!["log", "tmp"]));
+        assert!(passes_extension_filters(Path::new("file.txt"), &config));
+        assert!(!passes_extension_filters(Path::new("file.log"), &config));
+        assert!(!passes_extension_filters(Path::new("file.TMP"), &config)); // Case insensitive
+        assert!(passes_extension_filters(Path::new("file"), &config)); // No extension passes exclude
     }
 
     #[test]
     fn test_ext_include_and_exclude() {
-        let opts = create_test_opts(Some(vec!["txt", "md"]), Some(vec!["bak", "md"])); // Include txt/md, exclude bak/md
-        assert!(passes_extension_filters(Path::new("file.txt"), &opts)); // Included
-        assert!(!passes_extension_filters(Path::new("file.md"), &opts)); // Excluded (exclude takes precedence)
-        assert!(!passes_extension_filters(Path::new("file.bak"), &opts)); // Excluded
-        assert!(!passes_extension_filters(Path::new("file.rs"), &opts)); // Not included
+        let config = create_test_config(Some(vec!["txt", "md"]), Some(vec!["bak", "md"])); // Include txt/md, exclude bak/md
+        assert!(passes_extension_filters(Path::new("file.txt"), &config)); // Included
+        assert!(!passes_extension_filters(Path::new("file.md"), &config)); // Excluded (exclude takes precedence)
+        assert!(!passes_extension_filters(Path::new("file.bak"), &config)); // Excluded
+        assert!(!passes_extension_filters(Path::new("file.rs"), &config)); // Not included
     }
 }

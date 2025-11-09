@@ -60,7 +60,7 @@
 //! // 5. Format the output into a buffer.
 //! let formatter = dircat::output::MarkdownFormatter; // The default formatter
 //! let mut output_buffer: Vec<u8> = Vec::new();
-//! let output_opts = dircat::OutputOptions::from(&config);
+//! let output_opts = dircat::OutputConfig::from(&config);
 //! dircat_result.format_with(&formatter, &output_opts, &mut output_buffer)?;
 //!
 //! // 6. Print the result.
@@ -106,11 +106,12 @@ pub mod prelude;
 
 // Re-export key public types for easier use as a library
 pub use cancellation::CancellationToken;
-pub use config::{Config, ConfigBuilder, OutputDestination};
+pub use config::{
+    Config, ConfigBuilder, DiscoveryConfig, OutputConfig, OutputDestination, ProcessingConfig,
+};
 pub use core_types::{FileCounts, FileInfo};
-pub use discovery::{discover_with_options, DiscoveryOptions};
-pub use output::OutputOptions;
-pub use processing::{process_with_options, ProcessingOptions};
+pub use discovery::discover_files;
+pub use processing::{process_content, process_files, ProcessingOptions};
 
 /// Standalone functions for file filtering and text detection.
 pub use filtering::{
@@ -170,7 +171,7 @@ impl DircatResult {
     pub fn format_with<F: OutputFormatter>(
         &self,
         formatter: &F,
-        opts: &OutputOptions,
+        opts: &OutputConfig,
         writer: &mut dyn Write,
     ) -> Result<()> {
         Ok(formatter.format(&self.files, opts, writer)?)
@@ -185,7 +186,7 @@ impl DircatResult {
     pub fn format_dry_run_with<F: OutputFormatter>(
         &self,
         formatter: &F,
-        opts: &OutputOptions,
+        opts: &OutputConfig,
         writer: &mut dyn Write,
     ) -> Result<()> {
         Ok(formatter.format_dry_run(&self.files, opts, writer)?)
@@ -206,13 +207,11 @@ impl DircatResult {
 /// # Returns /// A `Result` containing an iterator of `FileInfo` structs, sorted in the final
 /// processing order (normal files alphabetically, then "last" files in the specified order).
 pub fn discover(
-    config: &Config,
+    config: &DiscoveryConfig,
     resolved: &config::path_resolve::ResolvedInput,
     token: &CancellationToken,
 ) -> Result<impl Iterator<Item = FileInfo>> {
-    let discovery_opts = discovery::DiscoveryOptions::from(config);
-    let (mut normal_files, last_files) =
-        discovery::discover_with_options(&discovery_opts, resolved, token)?;
+    let (mut normal_files, last_files) = discovery::discover_files(config, resolved, token)?;
 
     // Sort normal files alphabetically by relative path
     normal_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
@@ -246,11 +245,10 @@ pub fn discover(
 pub fn process<'a>(
     // The iterator from `discover` is `Send`.
     files: impl Iterator<Item = FileInfo> + Send + 'a,
-    config: &'a Config,
+    config: &'a ProcessingConfig,
     token: &'a CancellationToken,
 ) -> impl Iterator<Item = Result<FileInfo>> {
-    let processing_opts = processing::ProcessingOptions::from(config);
-    processing::process_with_options(files, processing_opts, token)
+    processing::process_files(files, config, token)
 }
 
 /// Executes the discovery and processing stages of the dircat pipeline.
@@ -291,7 +289,7 @@ pub fn execute(
         }
     };
     // Discover files based on config
-    let discovered_iter = discover(config, &resolved_input, token)?;
+    let discovered_iter = discover(&config.discovery, &resolved_input, token)?;
 
     if token.is_cancelled() {
         return Err(Error::Interrupted);
@@ -306,7 +304,7 @@ pub fn execute(
                 if token.is_cancelled() {
                     return None;
                 }
-                if config.include_binary {
+                if config.processing.include_binary {
                     return Some(fi);
                 }
                 // Check if the file is likely text. If it is, keep it.
@@ -333,7 +331,7 @@ pub fn execute(
             .collect()
     } else {
         // For a normal run, process the files.
-        let processed_iter = process(discovered_iter, config, token);
+        let processed_iter = process(discovered_iter, &config.processing, token);
         processed_iter.collect::<Result<Vec<_>>>()?
     };
 
@@ -392,15 +390,15 @@ pub fn run(
     // Set up the output writer (stdout, file, or clipboard buffer)
     let writer_setup = output::writer::setup_output_writer(config)?;
     let mut writer: Box<dyn Write + Send> = writer_setup.writer;
-    let output_opts = OutputOptions::from(config);
+    let output_config = OutputConfig::from(config);
     let formatter = MarkdownFormatter;
 
     if config.dry_run {
         // Handle Dry Run formatting
-        result.format_dry_run_with(&formatter, &output_opts, &mut writer)?;
+        result.format_dry_run_with(&formatter, &output_config, &mut writer)?;
     } else {
         // Handle Normal Run formatting
-        result.format_with(&formatter, &output_opts, &mut writer)?;
+        result.format_with(&formatter, &output_config, &mut writer)?;
     }
 
     // Finalize output (e.g., copy to clipboard)

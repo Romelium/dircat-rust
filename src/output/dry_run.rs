@@ -2,7 +2,7 @@
 
 use crate::core_types::FileInfo;
 use crate::output::formatter::format_path_for_display;
-use crate::output::OutputOptions;
+use crate::output::OutputConfig;
 use anyhow::Result;
 use log::debug;
 use std::io::Write;
@@ -12,7 +12,7 @@ use std::io::Write;
 pub fn write_dry_run_output(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning full FileInfo
-    opts: &OutputOptions,
+    opts: &OutputConfig,
 ) -> Result<()> {
     debug!("Executing dry run output...");
     writeln!(writer, "\n--- Dry Run: Files that would be processed ---")?;
@@ -39,10 +39,10 @@ mod tests {
     use std::path::PathBuf;
 
     // Helper to create a minimal Config for testing
-    fn create_test_opts(backticks: bool) -> OutputOptions {
-        OutputOptions {
+    fn create_test_opts(backticks: bool) -> OutputConfig {
+        OutputConfig {
             backticks,
-            ..crate::output::tests::create_mock_config(false, false, false, false)
+            ..crate::output::tests::create_mock_output_config(false, false, false, false)
         }
     }
 

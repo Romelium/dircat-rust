@@ -3,7 +3,7 @@
 //! Builds the `Config` struct from command-line arguments or other sources.
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
-    Config,
+    Config, DiscoveryConfig, OutputConfig, ProcessingConfig,
 };
 use crate::cli::Cli;
 use crate::errors::{Error, Result};
@@ -30,8 +30,8 @@ use super::builder_logic;
 ///     .build()
 ///     .expect("Failed to build config");
 ///
-/// assert!(config.summary);
-/// assert_eq!(config.extensions, Some(vec!["rs".to_string()]));
+/// assert!(config.output.summary);
+/// assert_eq!(config.discovery.extensions, Some(vec!["rs".to_string()]));
 /// # Ok(())
 /// # }
 /// ```
@@ -313,8 +313,7 @@ impl ConfigBuilder {
             self.paste,
         );
 
-        let config = Config {
-            input_path: self.input_path.unwrap_or_else(|| ".".to_string()),
+        let discovery_config = DiscoveryConfig {
             max_size: parse_max_size(self.max_size).map_err(Error::from)?,
             recursive: !self.no_recursive.unwrap_or(false),
             extensions: normalize_extensions(self.extensions),
@@ -326,18 +325,32 @@ impl ConfigBuilder {
             filename_regex: compile_regex_vec(self.filename_regex, "filename")
                 .map_err(Error::from)?,
             use_gitignore: !self.no_gitignore.unwrap_or(false),
-            include_binary: self.include_binary.unwrap_or(false),
             skip_lockfiles: self.no_lockfiles.unwrap_or(false),
+            process_last,
+            only_last,
+        };
+
+        let processing_config = ProcessingConfig {
+            include_binary: self.include_binary.unwrap_or(false),
+            counts: self.counts.unwrap_or(false),
             content_filters,
+        };
+
+        let output_config = OutputConfig {
             filename_only_header: self.filename_only.unwrap_or(false),
             line_numbers: self.line_numbers.unwrap_or(false),
             backticks: self.backticks.unwrap_or(false),
             num_ticks: self.ticks.unwrap_or(3),
-            output_destination,
             summary: self.summary.unwrap_or(false) || self.counts.unwrap_or(false),
             counts: self.counts.unwrap_or(false),
-            process_last,
-            only_last,
+        };
+
+        let config = Config {
+            input_path: self.input_path.unwrap_or_else(|| ".".to_string()),
+            discovery: discovery_config,
+            processing: processing_config,
+            output: output_config,
+            output_destination,
             dry_run: self.dry_run.unwrap_or(false),
             #[cfg(feature = "git")]
             git_branch: self.git_branch,
@@ -413,8 +426,8 @@ mod tests {
         let config = ConfigBuilder::new().input_path(".").build()?;
         assert_eq!(config.input_path, ".");
         assert_eq!(config.output_destination, OutputDestination::Stdout);
-        assert!(config.recursive);
-        assert!(config.use_gitignore);
+        assert!(config.discovery.recursive);
+        assert!(config.discovery.use_gitignore);
         Ok(())
     }
     #[test]
@@ -424,8 +437,8 @@ mod tests {
             .no_recursive(true)
             .include_binary(true)
             .build()?;
-        assert!(!config.recursive);
-        assert!(config.include_binary);
+        assert!(!config.discovery.recursive);
+        assert!(config.processing.include_binary);
         Ok(())
     }
 
@@ -434,10 +447,10 @@ mod tests {
         let cli = Cli::parse_from(["dircat", ".", "--only", "*.rs", "*.toml"]);
         let config = ConfigBuilder::from_cli(cli).build()?;
         assert_eq!(
-            config.process_last,
+            config.discovery.process_last,
             Some(vec!["*.rs".to_string(), "*.toml".to_string()])
         );
-        assert!(config.only_last);
+        assert!(config.discovery.only_last);
         Ok(())
     }
 
@@ -446,27 +459,36 @@ mod tests {
         // No filters
         let cli_none = Cli::parse_from(["dircat", "."]);
         let config_none = ConfigBuilder::from_cli(cli_none).build()?;
-        assert!(config_none.content_filters.is_empty());
+        assert!(config_none.processing.content_filters.is_empty());
 
         // Comments only
         let cli_c = Cli::parse_from(["dircat", ".", "-c"]);
         let config_c = ConfigBuilder::from_cli(cli_c).build()?;
-        assert_eq!(config_c.content_filters.len(), 1);
-        assert_eq!(config_c.content_filters[0].name(), "RemoveCommentsFilter");
+        assert_eq!(config_c.processing.content_filters.len(), 1);
+        assert_eq!(
+            config_c.processing.content_filters[0].name(),
+            "RemoveCommentsFilter"
+        );
 
         // Empty lines only
         let cli_l = Cli::parse_from(["dircat", ".", "-l"]);
         let config_l = ConfigBuilder::from_cli(cli_l).build()?;
-        assert_eq!(config_l.content_filters.len(), 1);
-        assert_eq!(config_l.content_filters[0].name(), "RemoveEmptyLinesFilter");
+        assert_eq!(config_l.processing.content_filters.len(), 1);
+        assert_eq!(
+            config_l.processing.content_filters[0].name(),
+            "RemoveEmptyLinesFilter"
+        );
 
         // Both filters
         let cli_cl = Cli::parse_from(["dircat", ".", "-c", "-l"]);
         let config_cl = ConfigBuilder::from_cli(cli_cl).build()?;
-        assert_eq!(config_cl.content_filters.len(), 2);
-        assert_eq!(config_cl.content_filters[0].name(), "RemoveCommentsFilter");
+        assert_eq!(config_cl.processing.content_filters.len(), 2);
         assert_eq!(
-            config_cl.content_filters[1].name(),
+            config_cl.processing.content_filters[0].name(),
+            "RemoveCommentsFilter"
+        );
+        assert_eq!(
+            config_cl.processing.content_filters[1].name(),
             "RemoveEmptyLinesFilter"
         );
 
@@ -492,8 +514,11 @@ mod tests {
             .content_filter(Box::new(UppercaseFilter))
             .build()?;
 
-        assert_eq!(config.content_filters.len(), 1);
-        assert_eq!(config.content_filters[0].name(), "UppercaseFilter");
+        assert_eq!(config.processing.content_filters.len(), 1);
+        assert_eq!(
+            config.processing.content_filters[0].name(),
+            "UppercaseFilter"
+        );
         Ok(())
     }
 
@@ -505,11 +530,20 @@ mod tests {
             .remove_empty_lines(true) // Another CLI flag
             .build()?;
 
-        assert_eq!(config.content_filters.len(), 3);
+        assert_eq!(config.processing.content_filters.len(), 3);
         // The custom filter is added first from the builder's vec, then the CLI ones are appended.
-        assert_eq!(config.content_filters[0].name(), "UppercaseFilter");
-        assert_eq!(config.content_filters[1].name(), "RemoveCommentsFilter");
-        assert_eq!(config.content_filters[2].name(), "RemoveEmptyLinesFilter");
+        assert_eq!(
+            config.processing.content_filters[0].name(),
+            "UppercaseFilter"
+        );
+        assert_eq!(
+            config.processing.content_filters[1].name(),
+            "RemoveCommentsFilter"
+        );
+        assert_eq!(
+            config.processing.content_filters[2].name(),
+            "RemoveEmptyLinesFilter"
+        );
         Ok(())
     }
 }

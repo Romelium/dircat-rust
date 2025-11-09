@@ -2,7 +2,7 @@
 
 //! Provides helper functions for formatting parts of the output.
 
-use crate::output::OutputOptions;
+use crate::output::OutputConfig;
 use std::path::Path;
 
 /// Formats a path for display in headers or summary list.
@@ -13,18 +13,18 @@ use std::path::Path;
 /// # Examples
 /// ```
 /// use dircat::output::formatter::format_path_for_display;
-/// use dircat::output::OutputOptions;
+/// use dircat::OutputConfig;
 /// use std::path::Path;
 ///
-/// let opts_no_ticks = OutputOptions { backticks: false, filename_only_header: false, line_numbers: false, num_ticks: 3, summary: false, counts: false };
-/// let opts_with_ticks = OutputOptions { backticks: true, filename_only_header: false, line_numbers: false, num_ticks: 3, summary: false, counts: false };
+/// let opts_no_ticks = OutputConfig { backticks: false, filename_only_header: false, line_numbers: false, num_ticks: 3, summary: false, counts: false };
+/// let opts_with_ticks = OutputConfig { backticks: true, filename_only_header: false, line_numbers: false, num_ticks: 3, summary: false, counts: false };
 ///
 /// let path = Path::new("src/main.rs");
 ///
 /// assert_eq!(format_path_for_display(path, &opts_no_ticks), "src/main.rs");
 /// assert_eq!(format_path_for_display(path, &opts_with_ticks), "`src/main.rs`");
 /// ```
-pub fn format_path_for_display(path: &Path, opts: &OutputOptions) -> String {
+pub fn format_path_for_display(path: &Path, opts: &OutputConfig) -> String {
     // Use '/' as separator for consistent display, even on Windows
     let path_str = path.to_string_lossy().replace('\\', "/");
     if opts.backticks {
@@ -39,8 +39,8 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn create_test_opts(backticks: bool) -> OutputOptions {
-        let mut opts = crate::output::tests::create_mock_config(false, false, false, false);
+    fn create_test_opts(backticks: bool) -> OutputConfig {
+        let mut opts = crate::output::tests::create_mock_output_config(false, false, false, false);
         opts.backticks = backticks;
         opts
     }
