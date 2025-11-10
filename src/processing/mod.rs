@@ -84,7 +84,7 @@ pub fn process_content<'a>(
     opts: ProcessingOptions<'a>,
     token: &'a CancellationToken,
 ) -> impl Iterator<Item = Result<FileInfo>> {
-    let results: Vec<Result<FileInfo>> = files_content
+    files_content
         .par_bridge()
         .filter_map(move |file_content| {
             if token.is_cancelled() {
@@ -149,8 +149,8 @@ pub fn process_content<'a>(
 
             Some(Ok(file_info))
         })
-        .collect();
-    results.into_iter()
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 /// Reads and processes the content of a batch of discovered files based on config.
@@ -353,8 +353,7 @@ pub fn process_files<'a>(
 ) -> impl Iterator<Item = Result<FileInfo>> {
     // Bridge the sequential iterator to a parallel one for processing,
     // then collect the results into a vector to return a sequential iterator.
-    let par_iter = files.par_bridge();
-    process_and_filter_files_internal(par_iter, config, token)
+    process_and_filter_files_internal(files.par_bridge(), config, token)
         .collect::<Vec<_>>()
         .into_iter()
 }

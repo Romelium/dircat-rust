@@ -1,5 +1,3 @@
-// tests/library_api.rs
-
 mod common;
 
 use dircat::config::{self, ConfigBuilder, ResolvedInput};
@@ -54,10 +52,11 @@ fn build_and_resolve(builder: ConfigBuilder) -> (Config, ResolvedInput) {
 
 /// Helper to create a basic FileInfo for test inputs.
 fn create_test_file_info(root: &Path, relative_path: &str) -> FileInfo {
-    let mut fi = FileInfo::default();
-    fi.absolute_path = root.join(relative_path);
-    fi.relative_path = relative_path.into();
-    fi
+    FileInfo {
+        absolute_path: root.join(relative_path),
+        relative_path: relative_path.into(),
+        ..Default::default()
+    }
 }
 
 // --- Tests ---
@@ -245,23 +244,20 @@ fn test_process_content_decoupled_from_io() -> anyhow::Result<()> {
     // No files are actually created on the filesystem.
 
     let files_content = vec![
-        {
-            let mut fc = FileContent::default();
-            fc.relative_path = "a.rs".into();
-            fc.content = b"// comment\nfn main() {}".to_vec();
-            fc
+        FileContent {
+            relative_path: "a.rs".into(),
+            content: b"// comment\nfn main() {}".to_vec(),
+            ..Default::default()
         },
-        {
-            let mut fc = FileContent::default();
-            fc.relative_path = "b.txt".into();
-            fc.content = b"Hello".to_vec();
-            fc
+        FileContent {
+            relative_path: "b.txt".into(),
+            content: b"Hello".to_vec(),
+            ..Default::default()
         },
-        {
-            let mut fc = FileContent::default();
-            fc.relative_path = "c.bin".into();
-            fc.content = b"binary\0data".to_vec();
-            fc
+        FileContent {
+            relative_path: "c.bin".into(),
+            content: b"binary\0data".to_vec(),
+            ..Default::default()
         },
     ];
 

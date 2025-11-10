@@ -238,16 +238,11 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn create_mock_file_info(relative_path: &str, size: u64) -> FileInfo {
-        let abs_path = PathBuf::from("/base").join(relative_path);
         FileInfo {
-            absolute_path: abs_path,
+            absolute_path: PathBuf::from("/base").join(relative_path),
             relative_path: PathBuf::from(relative_path),
             size,
-            processed_content: None, // Default to None, set by test if needed
-            counts: None,            // Default to None
-            is_process_last: false,
-            process_last_order: None,
-            is_binary: false,
+            ..Default::default()
         }
     }
 

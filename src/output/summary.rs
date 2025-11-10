@@ -84,11 +84,10 @@ mod tests {
             absolute_path: PathBuf::from("/absolute/path/to").join(relative_path),
             relative_path: PathBuf::from(relative_path),
             size: 100,
-            processed_content: Some("dummy content".to_string()), // Need some content for processing logic
+            processed_content: Some("dummy content".to_string()),
             counts,
-            is_process_last: false,
-            process_last_order: None,
-            is_binary, // Set binary flag
+            is_binary,
+            ..Default::default()
         }
     }
 

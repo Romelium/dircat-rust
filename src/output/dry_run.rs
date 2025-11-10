@@ -56,11 +56,7 @@ mod tests {
             absolute_path: PathBuf::from("/absolute/path/to").join(relative_path),
             relative_path: PathBuf::from(relative_path),
             size: 100,
-            processed_content: None,
-            counts: None,
-            is_process_last: false,
-            process_last_order: None,
-            is_binary: false,
+            ..Default::default()
         }
     }
 

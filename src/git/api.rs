@@ -122,8 +122,7 @@ fn build_reqwest_client() -> Result<Client> {
         log::debug!("Using GITHUB_TOKEN for authentication.");
     }
 
-    let client = Client::builder().default_headers(headers).build()?;
-    Ok(client)
+    Ok(Client::builder().default_headers(headers).build()?)
 }
 
 /// Fetches the default branch name for a repository.

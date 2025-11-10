@@ -154,10 +154,7 @@ mod tests {
             relative_path: PathBuf::from(relative_path),
             size: content.map_or(0, |c| c.len() as u64),
             processed_content: content.map(String::from),
-            counts: None,
-            is_process_last: false,
-            process_last_order: None,
-            is_binary: false,
+            ..Default::default()
         }
     }
 
