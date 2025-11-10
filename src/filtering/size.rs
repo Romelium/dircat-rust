@@ -4,29 +4,36 @@ use crate::config::DiscoveryConfig;
 use std::fs::Metadata;
 
 /// Checks if the file's size is within the configured limit.
-#[inline]
 ///
 /// This function compares the file's length from its `Metadata` against the
 /// `max_size` value in the `Config`. If `max_size` is `None`, it always returns `true`.
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```
 /// # use std::{fs, error::Error};
 /// # use dircat::config::DiscoveryConfig;
 /// # use dircat::filtering::passes_size_filter;
+/// # use tempfile::tempdir;
 /// # fn main() -> Result<(), Box<dyn Error>> {
-/// let metadata = fs::metadata("Cargo.toml")?; // Assuming Cargo.toml is < 1000 bytes
+/// let temp = tempdir()?;
+/// let file_path = temp.path().join("file.txt");
+/// fs::write(&file_path, "12345")?; // 5 bytes
+/// let metadata = fs::metadata(&file_path)?;
 ///
 /// let mut config_with_limit = DiscoveryConfig::default_for_test();
-/// config_with_limit.max_size = Some(1000);
+/// config_with_limit.max_size = Some(10);
 /// assert!(passes_size_filter(&metadata, &config_with_limit));
+///
+/// config_with_limit.max_size = Some(4);
+/// assert!(!passes_size_filter(&metadata, &config_with_limit));
 ///
 /// let config_no_limit = DiscoveryConfig::default_for_test();
 /// assert!(passes_size_filter(&metadata, &config_no_limit));
 /// # Ok(())
 /// # }
 /// ```
+#[inline]
 pub fn passes_size_filter(metadata: &Metadata, config: &DiscoveryConfig) -> bool {
     match config.max_size {
         // Cast metadata.len() (u64) to u128 for comparison

@@ -142,12 +142,12 @@ fn get_repo_with_base_cache(
 /// This function will clone a remote git repository into a specified local cache directory.
 /// If the repository is already cached, it will fetch updates from the remote to ensure it is up-to-date.
 ///
-/// # Arguments
+/// # Parameters
 /// * `url` - The URL of the git repository to clone.
 /// * `branch` - An optional specific git branch or tag to check out. If `None`, the remote's default branch is used.
 /// * `depth` - An optional depth for a shallow clone.
 /// * `cache_path` - The absolute path to the base directory for caching repositories. A subdirectory will be created inside this path.
-/// * `progress` - An optional progress reporter for long operations like cloning.
+/// * `progress` - An optional progress reporter for long operations like cloning and fetching.
 ///
 /// # Returns
 /// A `Result` containing the `PathBuf` to the local, up-to-date repository on success.

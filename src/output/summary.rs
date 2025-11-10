@@ -9,8 +9,11 @@ use log::debug;
 use std::io::Write;
 
 /// Writes the summary section (list of processed files, optionally with counts)
-/// to the output writer. Assumes files are pre-sorted if necessary.
-pub fn write_summary(
+/// to the output writer.
+///
+/// The list of files is sorted alphabetically by relative path before being
+/// written.
+pub(crate) fn write_summary(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning
     opts: &OutputConfig,

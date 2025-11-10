@@ -9,14 +9,21 @@ use std::fs::Metadata;
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```
 /// # use std::fs;
 /// # use dircat::filtering::is_file_type;
+/// # use tempfile::tempdir;
 /// # fn main() -> std::io::Result<()> {
-/// let file_meta = fs::metadata("Cargo.toml")?;
+/// let temp = tempdir()?;
+/// let file_path = temp.path().join("file.txt");
+/// let dir_path = temp.path().join("dir");
+/// fs::write(&file_path, "content")?;
+/// fs::create_dir(&dir_path)?;
+///
+/// let file_meta = fs::metadata(&file_path)?;
 /// assert!(is_file_type(&file_meta));
 ///
-/// let dir_meta = fs::metadata("src")?;
+/// let dir_meta = fs::metadata(&dir_path)?;
 /// assert!(!is_file_type(&dir_meta));
 /// # Ok(())
 /// # }

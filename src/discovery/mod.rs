@@ -1,3 +1,4 @@
+//! Discovers files based on configuration, applying filters in parallel.
 use crate::cancellation::CancellationToken;
 use crate::config::path_resolve::ResolvedInput;
 use crate::config::DiscoveryConfig;
@@ -14,7 +15,43 @@ use entry_processor::process_direntry;
 use walker::build_walker;
 
 /// Discovers files based on the provided configuration, applying filters.
-/// Returns a tuple of two vectors: (normal_files, last_files).
+///
+/// This function walks the filesystem according to the rules in the `DiscoveryConfig`
+/// (respecting .gitignore, filters, etc.) and returns two vectors of `FileInfo`
+/// structs: one for normally processed files and one for files matching the
+/// `--last` patterns. The content of the files is not read at this stage.
+///
+/// # Arguments
+/// * `config` - The configuration for the discovery process.
+/// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
+/// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
+///
+/// # Returns
+/// A `Result` containing a tuple of two vectors: `(normal_files, last_files)`.
+/// The `last_files` vector is sorted according to the order of the `--last` patterns
+/// and then alphabetically. The `normal_files` vector is not sorted.
+///
+/// # Errors
+/// Returns an `Error` if the operation is interrupted or if building the file walker fails.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::{ConfigBuilder, resolve_input};
+/// use dircat::cancellation::CancellationToken;
+/// use dircat::discover_files;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = ConfigBuilder::new().input_path(".").build()?;
+/// // In a real app, resolve_input would handle git clones etc.
+/// let resolved = resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let token = CancellationToken::new();
+///
+/// let (normal_files, last_files) = discover_files(&config.discovery, &resolved, &token)?;
+/// println!("Found {} normal files and {} 'last' files.", normal_files.len(), last_files.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn discover_files(
     config: &DiscoveryConfig,
     resolved: &ResolvedInput,

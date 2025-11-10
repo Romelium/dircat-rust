@@ -166,8 +166,39 @@ impl DircatResult {
     ///
     /// # Arguments
     /// * `formatter` - An instance of a type that implements `OutputFormatter`.
-    /// * `config` - The configuration for output formatting.
+    /// * `opts` - The configuration for output formatting.
     /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::{DircatResult, MarkdownFormatter, OutputConfig};
+    /// # use dircat::core_types::FileInfo;
+    /// # use std::path::PathBuf;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let file = FileInfo {
+    ///     absolute_path: PathBuf::from("/abs/a.txt"),
+    ///     relative_path: PathBuf::from("a.txt"),
+    ///     size: 4,
+    ///     processed_content: Some("test".to_string()),
+    ///     counts: None, is_process_last: false, process_last_order: None, is_binary: false,
+    /// };
+    /// let result = DircatResult { files: vec![file] };
+    /// let formatter = MarkdownFormatter;
+    /// let opts = OutputConfig {
+    ///     filename_only_header: false, line_numbers: false, backticks: false,
+    ///     num_ticks: 3, summary: false, counts: false
+    /// };
+    /// let mut buffer = Vec::new();
+    ///
+    /// result.format_with(&formatter, &opts, &mut buffer)?;
+    ///
+    /// let output = String::from_utf8(buffer)?;
+    /// assert!(output.contains("## File: a.txt"));
+    /// assert!(output.contains("test"));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn format_with<F: OutputFormatter>(
         &self,
         formatter: &F,
@@ -181,7 +212,7 @@ impl DircatResult {
     ///
     /// # Arguments
     /// * `formatter` - An instance of a type that implements `OutputFormatter`.
-    /// * `config` - The configuration for the run.
+    /// * `opts` - The configuration for output formatting.
     /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
     pub fn format_dry_run_with<F: OutputFormatter>(
         &self,
@@ -199,13 +230,32 @@ impl DircatResult {
 /// rules in the `Config` (respecting .gitignore, filters, etc.) and returns a
 /// list of `FileInfo` structs for files that match the criteria. The content of
 /// the files is not read at this stage.
+///
 /// # Arguments
 /// * `config` - The configuration for the discovery process.
 /// * `resolved` - The `ResolvedInput` struct containing the resolved, absolute path information.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 ///
-/// # Returns /// A `Result` containing an iterator of `FileInfo` structs, sorted in the final
+/// # Returns
+/// A `Result` containing an iterator of `FileInfo` structs, sorted in the final
 /// processing order (normal files alphabetically, then "last" files in the specified order).
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::{self, ConfigBuilder};
+/// use dircat::{discover, CancellationToken};
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new().input_path(".").build()?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let token = CancellationToken::new();
+///
+/// let discovered_files: Vec<_> = discover(&config.discovery, &resolved, &token)?.collect();
+/// println!("Discovered {} files.", discovered_files.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn discover(
     config: &DiscoveryConfig,
     resolved: &config::path_resolve::ResolvedInput,
@@ -222,10 +272,12 @@ pub fn discover(
 
 /// Processes a list of discovered files.
 ///
-/// This is the second stage of the pipeline. It takes a vector of `FileInfo` structs,
+/// This is the second stage of the pipeline. It takes an iterator of `FileInfo` structs,
 /// reads the content of each file in parallel, and performs several operations:
-/// - Filters out binary files (unless configured otherwise). /// - Calculates file statistics (lines, words, characters) if requested.
-/// - Applies content transformations (comment removal, empty line removal). ///
+/// - Filters out binary files (unless configured otherwise).
+/// - Calculates file statistics (lines, words, characters) if requested.
+/// - Applies content transformations (comment removal, empty line removal).
+///
 /// # Note on Ordering
 ///
 /// This function processes files in parallel for performance and **does not
@@ -242,6 +294,27 @@ pub fn discover(
 /// An iterator that yields `Result<FileInfo>` for each successfully processed
 /// file. Files identified as binary (and not explicitly included) will be
 /// filtered out. I/O errors or cancellation signals will be yielded as `Err`.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::{self, ConfigBuilder};
+/// use dircat::{discover, process, CancellationToken};
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new().input_path(".").remove_comments(true).build()?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let token = CancellationToken::new();
+///
+/// let discovered_iter = discover(&config.discovery, &resolved, &token)?;
+/// let processed_iter = process(discovered_iter, &config.processing, &token);
+///
+/// // Note: The result is not ordered. Collect and sort if needed.
+/// let processed_files: Vec<_> = processed_iter.collect::<dircat::errors::Result<_>>()?;
+/// println!("Processed {} files.", processed_files.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn process<'a>(
     // The iterator from `discover` is `Send`.
     files: impl Iterator<Item = FileInfo> + Send + 'a,
@@ -266,6 +339,22 @@ pub fn process<'a>(
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
 /// * `progress` - An optional progress reporter for long operations like cloning.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::{execute, ConfigBuilder, CancellationToken};
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new().input_path(".").build()?;
+/// let token = CancellationToken::new();
+///
+/// let result = execute(&config, &token, None)?;
+///
+/// println!("Successfully processed {} files.", result.files.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn execute(
     config: &Config,
     token: &CancellationToken,
@@ -369,11 +458,29 @@ pub fn execute(
 /// # Arguments
 /// * `config` - The configuration for the entire run.
 /// * `token` - A `CancellationToken` that can be used to gracefully interrupt the process.
+/// * `progress` - An optional progress reporter for long operations like cloning.
 ///
 /// # Returns
 /// A `Result` that is `Ok(())` on success. It returns `Err(Error::NoFilesFound)`
 /// if the discovery and processing stages yield no files to output. Other errors
 /// are propagated from the underlying stages.
+///
+/// # Examples
+///
+/// ```no_run
+/// use dircat::{run, ConfigBuilder, CancellationToken};
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new()
+///     .input_path(".")
+///     .output_file("output.md")
+///     .build()?;
+/// let token = CancellationToken::new();
+///
+/// run(&config, &token, None)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn run(
     config: &Config,
     token: &CancellationToken,

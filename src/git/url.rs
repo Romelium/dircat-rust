@@ -1,4 +1,3 @@
-// src/git/url.rs
 //! Handles parsing of git and GitHub URLs.
 
 use anyhow::{anyhow, Result};

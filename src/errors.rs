@@ -8,33 +8,57 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// A public result type for the `dircat` library.
+/// A convenient result type for the `dircat` library.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Errors related to invalid configuration settings or combinations.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ConfigError {
+    /// Error for conflicting command-line options.
     #[error("Options '{option1}' and '{option2}' cannot be used simultaneously.")]
-    Conflict { option1: String, option2: String },
+    Conflict {
+        /// The name of the first conflicting option (e.g., `"--output"`).
+        option1: String,
+        /// The name of the second conflicting option (e.g., `"--paste"`).
+        option2: String,
+    },
 
+    /// Error for an invalid value provided for an option.
     #[error("Invalid value for option '{option}': {reason}")]
-    InvalidValue { option: String, reason: String },
+    InvalidValue {
+        /// The name of the option with the invalid value.
+        option: String,
+        /// A description of why the value is invalid.
+        reason: String,
+    },
 
+    /// Error for a missing required dependency option.
     #[error("Option '{option}' requires option '{required}' to be specified.")]
-    MissingDependency { option: String, required: String },
+    MissingDependency {
+        /// The name of the option that has a missing dependency.
+        option: String,
+        /// The name of the required option.
+        required: String,
+    },
 
+    /// Error when the git cache directory cannot be determined or created.
     #[error("Failed to determine or create git cache directory: {0}")]
     CacheDir(String),
 
+    /// Error for an invalid regular expression.
     #[error("Invalid {name} regex: '{pattern}': {source}")]
     InvalidRegex {
+        /// A description of the regex's purpose (e.g., "path", "filename").
         name: String,
+        /// The invalid regex pattern string.
         pattern: String,
+        /// The underlying error from the `regex` crate.
         #[source]
         source: regex::Error,
     },
 
+    /// Error for an invalid file size format string (e.g., "1ZB").
     #[error("Invalid size format: '{0}'")]
     InvalidSizeFormat(String),
 }
@@ -44,42 +68,68 @@ pub enum ConfigError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum GitError {
+    /// Error when a git clone operation fails.
     #[error("Failed to clone repository from '{url}': {source}")]
     CloneFailed {
+        /// The URL of the repository that failed to clone.
         url: String,
+        /// The underlying `git2::Error`.
         #[source]
         source: git2::Error,
     },
 
+    /// Error when a git fetch operation fails.
     #[error("Failed to fetch from remote '{remote}': {source}")]
     FetchFailed {
+        /// The name of the remote that failed to fetch.
         remote: String,
+        /// The underlying `git2::Error`.
         #[source]
         source: git2::Error,
     },
 
+    /// Error for a generic failure during local repository update.
     #[error("Failed to update local repository: {0}")]
     UpdateFailed(String),
 
+    /// Error when a specified branch, tag, or ref is not found on the remote.
     #[error("Could not find remote branch or tag named '{name}' after fetch.")]
-    RefNotFound { name: String },
+    RefNotFound {
+        /// The name of the branch or tag that was not found.
+        name: String,
+    },
 
+    /// Error when downloading from the GitHub API fails.
     #[error("Failed to download from GitHub API for '{url}': {source}")]
     ApiDownloadFailed {
+        /// The URL that failed to download.
         url: String,
+        /// The underlying error from `reqwest` or other sources.
         #[source]
         source: anyhow::Error,
     },
 
+    /// Error when a specified subdirectory is not found in a repository.
     #[error("Subdirectory '{path}' not found in repository '{repo}'.")]
-    SubdirectoryNotFound { path: String, repo: String },
+    SubdirectoryNotFound {
+        /// The relative path to the subdirectory that was not found.
+        path: String,
+        /// The clone URL of the repository.
+        repo: String,
+    },
 
+    /// Error indicating the cached repository is corrupted.
     #[error("Cached repository at '{path}' is corrupted or invalid.")]
-    CorruptedCache { path: PathBuf },
+    CorruptedCache {
+        /// The filesystem path to the corrupted cache directory.
+        path: PathBuf,
+    },
 
+    /// Error when the remote's default branch cannot be determined.
     #[error("Could not determine remote's default branch: {0}")]
     DefaultBranchResolution(String),
 
+    /// A wrapper for any other git-related `anyhow::Error`.
     #[error(transparent)]
     Generic(#[from] anyhow::Error),
 }
@@ -89,14 +139,16 @@ pub enum GitError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ClipboardError {
+    /// Error when the clipboard context cannot be initialized.
     #[error("Failed to initialize clipboard: {0}")]
     Initialization(String),
 
+    /// Error when setting the clipboard content fails.
     #[error("Failed to set clipboard content: {0}")]
     SetContent(String),
 }
 
-/// Public-facing errors for the `dircat` library.
+/// The primary error type for the `dircat` library.
 ///
 /// This enum defines categorized errors that can occur during the execution,
 /// providing more context than a generic `anyhow::Error`.
@@ -104,7 +156,7 @@ pub enum ClipboardError {
 #[non_exhaustive]
 pub enum Error {
     // --- I/O Errors ---
-    /// Error occurring during file or directory access (read, write, metadata).
+    /// An error occurred during file or directory access (read, write, metadata).
     #[error("I/O error accessing path '{path}': {source}")]
     Io {
         /// The path that caused the I/O error.
@@ -115,31 +167,31 @@ pub enum Error {
     },
 
     // --- Configuration Errors ---
-    /// Error related to invalid configuration settings or combinations.
+    /// An error related to invalid configuration settings or combinations.
     #[error(transparent)]
     Config(#[from] ConfigError),
 
-    /// Error related to git operations (cloning, fetching, etc.).
+    /// An error related to git operations (cloning, fetching, etc.).
     #[cfg(feature = "git")]
     #[error(transparent)]
     Git(#[from] GitError),
 
     // --- Clipboard Errors ---
     #[cfg(feature = "clipboard")]
-    /// Error related to clipboard operations (copying).
+    /// An error related to clipboard operations.
     #[error(transparent)]
     Clipboard(#[from] ClipboardError),
 
     // --- Signal Handling ---
-    /// Error indicating that the operation was cancelled by the user (e.g., Ctrl+C).
+    /// The operation was cancelled by the user (e.g., via Ctrl+C).
     #[error("Operation cancelled by user (Ctrl+C)")]
     Interrupted,
 
-    /// A wrapper for any other error type, typically from internal operations.
+    /// A wrapper for any other `anyhow::Error`, typically from internal operations.
     #[error(transparent)]
     Generic(#[from] anyhow::Error),
 
-    /// Error indicating that no files were found that matched the given criteria.
+    /// No files were found that matched the specified criteria.
     #[error("No files found matching the specified criteria.")]
     NoFilesFound,
     // --- Other specific errors can be added here ---
@@ -156,6 +208,20 @@ pub enum Error {
 ///
 /// # Returns
 /// An `Error::Io` variant containing the path string and the source error.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::errors::{io_error_with_path, Error};
+/// use std::io;
+///
+/// let source_err = io::Error::new(io::ErrorKind::NotFound, "file not found");
+/// let path = "path/to/file.txt";
+/// let app_err = io_error_with_path(source_err, path);
+///
+/// assert!(matches!(app_err, Error::Io { .. }));
+/// assert!(app_err.to_string().contains("path/to/file.txt"));
+/// ```
 pub fn io_error_with_path<P: AsRef<std::path::Path>>(source: std::io::Error, path: P) -> Error {
     Error::Io {
         path: path.as_ref().display().to_string(),

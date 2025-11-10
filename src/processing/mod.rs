@@ -15,16 +15,22 @@ use rayon::prelude::*;
 use crate::core_types::FileContent;
 pub mod counter;
 pub mod filters;
-
 pub use counter::calculate_counts;
 use filters::ContentFilter;
 use std::fs;
 
-/// Options for the processing stage, borrowing from the main `Config`.
+/// A struct holding borrowed configuration relevant to the processing stage.
+///
+/// This is created from the main `Config` to pass only the necessary options
+/// to the processing functions, improving modularity.
+#[doc(hidden)] // Internal detail, not for public library use
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessingOptions<'a> {
+    /// Whether to include files detected as binary/non-text.
     pub include_binary: bool,
+    /// Whether to calculate and display line, character, and word counts in the summary.
     pub counts: bool,
+    /// A vector of content filters to be applied sequentially to each file's content.
     pub content_filters: &'a [Box<dyn ContentFilter>],
 }
 
@@ -38,22 +44,38 @@ impl<'a> From<&'a Config> for ProcessingOptions<'a> {
     }
 }
 
-/// Reads and processes the content of a batch of discovered files based on config.
+/// Processes file content that has already been read into memory.
 ///
-/// This is the core processing logic, decoupled from filesystem I/O. It takes
-/// file content that has already been read into memory and performs several operations in parallel:
+/// This function is decoupled from filesystem I/O. It takes an iterator of
+/// `FileContent` structs and performs several operations in parallel:
 /// - Detects and filters out binary files (unless `--include-binary` is used).
 /// - Calculates counts (lines, words, characters) if requested.
 /// - Applies content transformations like comment and empty line removal.
 ///
-/// # Arguments
-/// * `files_content` - An iterator of `FileContent` structs.
-/// * `opts` - The processing-specific options.
-/// * `token` - A `CancellationToken` for graceful interruption.
-///
 /// # Returns
-/// An iterator that yields `Result<FileInfo>` for each successfully processed
-/// file.
+/// An iterator that yields a `Result<FileInfo>` for each successfully processed
+/// file. Binary files are filtered out unless `opts.include_binary` is true.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::processing::{process_content, ProcessingOptions};
+/// use dircat::core_types::FileContent;
+/// use dircat::CancellationToken;
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let files_content = vec![FileContent {
+///     relative_path: "a.rs".into(),
+///     content: b"fn main() {}".to_vec(),
+///     is_process_last: false, process_last_order: None,
+/// }];
+/// let opts = ProcessingOptions { include_binary: false, counts: false, content_filters: &[] };
+/// let token = CancellationToken::new();
+/// let processed_files: Vec<_> = process_content(files_content.into_iter(), opts, &token).collect::<dircat::errors::Result<_>>()?;
+/// println!("Processed {} files from memory.", processed_files.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn process_content<'a>(
     files_content: impl Iterator<Item = FileContent> + Send + 'a,
     opts: ProcessingOptions<'a>,
@@ -148,91 +170,87 @@ pub fn process_content<'a>(
 /// # Errors
 /// Returns an error if file I/O fails for any file or if the operation is interrupted.
 pub(crate) fn process_and_filter_files_internal<'a>(
-    files: impl Iterator<Item = FileInfo> + Send + 'a,
+    files: impl ParallelIterator<Item = FileInfo> + 'a,
     config: &'a ProcessingConfig,
     token: &'a CancellationToken,
-) -> impl Iterator<Item = Result<FileInfo>> {
-    let results: Vec<Result<FileInfo>> = files
-        .par_bridge()
-        .filter_map(move |mut file_info| {
-            // The closure captures `config` and `token` which have lifetime 'a
-            // Check for cancellation signal. If cancelled, return an error for this item
-            // and subsequent calls will be filtered out by the was_cancelled flag.
-            if token.is_cancelled() {
-                return Some(Err(Error::Interrupted));
+) -> impl ParallelIterator<Item = Result<FileInfo>> + 'a {
+    files.filter_map(move |mut file_info| {
+        // The closure captures `config` and `token` which have lifetime 'a
+        // Check for cancellation signal. If cancelled, return an error for this item
+        // and subsequent calls will be filtered out by the was_cancelled flag.
+        if token.is_cancelled() {
+            return Some(Err(Error::Interrupted));
+        }
+
+        debug!("Processing file: {}", file_info.absolute_path.display());
+
+        // --- 1. Read File Content (once) ---
+        let content_bytes = match fs::read(&file_info.absolute_path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                let app_err = io_error_with_path(e, &file_info.absolute_path);
+                return Some(Err(app_err));
             }
+        };
 
-            debug!("Processing file: {}", file_info.absolute_path.display());
+        // --- 2. Perform Binary Check ---
+        let is_binary = !is_likely_text_from_buffer(&content_bytes);
+        file_info.is_binary = is_binary;
 
-            // --- 1. Read File Content (once) ---
-            let content_bytes = match fs::read(&file_info.absolute_path) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    let app_err = io_error_with_path(e, &file_info.absolute_path);
-                    return Some(Err(app_err));
-                }
-            };
+        // --- 3. Filter Based on Binary Check ---
+        if is_binary && !config.include_binary {
+            debug!(
+                "Skipping binary file: {}",
+                file_info.relative_path.display()
+            );
+            return None; // Filter out this file by returning None
+        }
 
-            // --- 2. Perform Binary Check ---
-            let is_binary = !is_likely_text_from_buffer(&content_bytes);
-            file_info.is_binary = is_binary;
+        // --- 4. Process Content ---
+        let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
 
-            // --- 3. Filter Based on Binary Check ---
-            if is_binary && !config.include_binary {
-                debug!(
-                    "Skipping binary file: {}",
-                    file_info.relative_path.display()
-                );
-                return None; // Filter out this file by returning None
-            }
-
-            // --- 4. Process Content ---
-            let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
-
-            // --- Calculate Counts ---
-            if config.counts {
-                if is_binary {
-                    file_info.counts = Some(crate::core_types::FileCounts {
-                        lines: 0,
-                        characters: content_bytes.len(),
-                        words: 0,
-                    });
-                } else {
-                    file_info.counts = Some(calculate_counts(&original_content_str));
-                }
-                debug!(
-                    "Calculated counts for {}: {:?}",
-                    file_info.relative_path.display(),
-                    file_info.counts
-                );
-            }
-
-            // --- Apply Content Filters ---
-            let mut processed_content = original_content_str;
-            if !is_binary {
-                // Apply all configured filters sequentially
-                for filter in &config.content_filters {
-                    processed_content = filter.apply(&processed_content);
-                    debug!(
-                        "Applied filter '{}' to {}",
-                        filter.name(),
-                        file_info.relative_path.display()
-                    );
-                }
+        // --- Calculate Counts ---
+        if config.counts {
+            if is_binary {
+                file_info.counts = Some(crate::core_types::FileCounts {
+                    lines: 0,
+                    characters: content_bytes.len(),
+                    words: 0,
+                });
             } else {
+                file_info.counts = Some(calculate_counts(&original_content_str));
+            }
+            debug!(
+                "Calculated counts for {}: {:?}",
+                file_info.relative_path.display(),
+                file_info.counts
+            );
+        }
+
+        // --- Apply Content Filters ---
+        let mut processed_content = original_content_str;
+        if !is_binary {
+            // Apply all configured filters sequentially
+            for filter in &config.content_filters {
+                processed_content = filter.apply(&processed_content);
                 debug!(
-                    "Skipping content filters for binary file {}",
+                    "Applied filter '{}' to {}",
+                    filter.name(),
                     file_info.relative_path.display()
                 );
             }
+        } else {
+            debug!(
+                "Skipping content filters for binary file {}",
+                file_info.relative_path.display()
+            );
+        }
 
-            // Store the final processed content
-            file_info.processed_content = Some(processed_content);
+        // Store the final processed content
+        file_info.processed_content = Some(processed_content);
 
-            Some(Ok(file_info))
-        })
-        .collect();
-    results.into_iter()
+        Some(Ok(file_info))
+    })
 }
 
 /// Processes a list of discovered files using a specific `ProcessingConfig`.
@@ -244,12 +262,36 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 /// * `files` - An iterator of `FileInfo` structs from the discovery stage.
 /// * `config` - The processing-specific configuration.
 /// * `token` - A `CancellationToken` for graceful interruption.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::{self, ConfigBuilder};
+/// use dircat::{discover, process_files, CancellationToken};
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new().input_path(".").remove_comments(true).build()?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let token = CancellationToken::new();
+///
+/// let discovered_iter = discover(&config.discovery, &resolved, &token)?;
+/// let processed_iter = process_files(discovered_iter, &config.processing, &token);
+///
+/// let processed_files: Vec<_> = processed_iter.collect::<dircat::errors::Result<_>>()?;
+/// println!("Processed {} files.", processed_files.len());
+/// # Ok(())
+/// # }
 pub fn process_files<'a>(
     files: impl Iterator<Item = FileInfo> + Send + 'a,
     config: &'a ProcessingConfig,
     token: &'a CancellationToken,
 ) -> impl Iterator<Item = Result<FileInfo>> {
-    process_and_filter_files_internal(files, config, token)
+    // Bridge the sequential iterator to a parallel one for processing,
+    // then collect the results into a vector to return a sequential iterator.
+    let par_iter = files.par_bridge();
+    process_and_filter_files_internal(par_iter, config, token)
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 #[cfg(test)]
@@ -299,7 +341,7 @@ mod tests {
             .push(Box::new(RemoveEmptyLinesFilter));
 
         let processed: Vec<_> = process_and_filter_files_internal(
-            vec![file_info].into_iter(),
+            vec![file_info].into_par_iter(),
             &config.processing,
             &token,
         )
@@ -327,7 +369,7 @@ mod tests {
         assert!(config.processing.content_filters.is_empty());
 
         let processed: Vec<_> = process_and_filter_files_internal(
-            vec![file_info].into_iter(),
+            vec![file_info].into_par_iter(),
             &config.processing,
             &token,
         )
@@ -358,7 +400,7 @@ mod tests {
             .push(Box::new(RemoveCommentsFilter));
 
         let processed: Vec<_> = process_and_filter_files_internal(
-            vec![file_info].into_iter(),
+            vec![file_info].into_par_iter(),
             &config.processing,
             &token,
         )

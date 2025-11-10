@@ -7,7 +7,24 @@ use std::{fs::File, io::Read, path::Path, str};
 const READ_BUFFER_SIZE: usize = 1024;
 
 /// Checks if a byte buffer is likely text-based.
+///
 /// This is the core logic used by both `is_likely_text` and the main processing loop.
+/// It uses `content_inspector` to perform a heuristic check and then verifies
+/// UTF-8 validity if the content type is ambiguous.
+///
+/// # Examples
+/// ```
+/// use dircat::filtering::is_likely_text_from_buffer;
+///
+/// let text_buffer = b"This is valid UTF-8 text.";
+/// assert!(is_likely_text_from_buffer(text_buffer));
+///
+/// let binary_buffer = b"This contains a null byte \0.";
+/// assert!(!is_likely_text_from_buffer(binary_buffer));
+///
+/// let invalid_utf8_buffer = &[0x48, 0x65, 0x6c, 0x6c, 0x80, 0x6f]; // "Hell\x80o"
+/// assert!(!is_likely_text_from_buffer(invalid_utf8_buffer));
+/// ```
 pub fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
     // Inspect the bytes read
     let content_type = content_inspector::inspect(buffer_slice);
@@ -25,8 +42,35 @@ pub fn is_likely_text_from_buffer(buffer_slice: &[u8]) -> bool {
 }
 
 /// Checks if the file content is likely text-based by reading its head.
-/// This function is suitable for checks where the file content is not already in memory (e.g., dry run).
-/// Returns Ok(true) if likely text, Ok(false) otherwise, Err on I/O error.
+///
+/// This function is suitable for checks where the file content is not already in memory
+/// (e.g., during a dry run). It reads the first 1024 bytes of the file to perform
+/// the heuristic check.
+///
+/// # Returns
+/// `Ok(true)` if likely text, `Ok(false)` otherwise.
+///
+/// # Errors
+/// Returns an `Err` on I/O error (e.g., file not found, permission denied).
+///
+/// # Examples
+/// ```
+/// # use std::fs;
+/// # use dircat::filtering::is_likely_text;
+/// # use tempfile::tempdir;
+/// # fn main() -> std::io::Result<()> {
+/// let temp = tempdir()?;
+/// let text_file = temp.path().join("text.txt");
+/// let binary_file = temp.path().join("binary.bin");
+///
+/// fs::write(&text_file, "Hello, world!")?;
+/// assert!(is_likely_text(&text_file)?);
+///
+/// fs::write(&binary_file, b"binary\0data")?;
+/// assert!(!is_likely_text(&binary_file)?);
+/// # Ok(())
+/// # }
+/// ```
 pub fn is_likely_text(path: &Path) -> std::io::Result<bool> {
     let mut file = File::open(path)?;
     let mut buffer = [0; READ_BUFFER_SIZE];

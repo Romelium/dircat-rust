@@ -17,7 +17,7 @@ use std::path::PathBuf;
 /// # Arguments
 /// * `writer` - The `Write` trait object to write the output to.
 /// * `file_info` - A reference to the `FileInfo` struct for the file to be written.
-/// * `config` - The application configuration, used for formatting options.
+/// * `opts` - The output configuration, used for formatting options.
 ///
 /// # Errors
 /// Returns an error if any write operation fails.

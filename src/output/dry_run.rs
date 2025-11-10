@@ -8,8 +8,12 @@ use log::debug;
 use std::io::Write;
 
 /// Writes the output for a dry run (-D).
-/// Lists the files that would be processed, sorted alphabetically.
-pub fn write_dry_run_output(
+///
+/// This function lists the relative paths of files that would be processed,
+/// sorted alphabetically, without including their content. It is used by
+/// formatters to generate a preview of the operation's scope.
+#[doc(hidden)] // This is a public helper but not intended for direct library use.
+pub(crate) fn write_dry_run_output(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning full FileInfo
     opts: &OutputConfig,

@@ -33,18 +33,20 @@ struct RepoInfo {
 /// This is much faster than a full `git clone` for large repositories. It recursively
 /// lists and downloads all files within the specified subdirectory.
 ///
-/// # Arguments
-/// * `url_parts` - A `ParsedGitUrl` struct containing the repository and path information.
-/// * `branch_override` - An optional branch name which, if provided, takes precedence over the branch specified in `url_parts`.
+/// To access private repositories or avoid API rate limits, set a `GITHUB_TOKEN`
+/// environment variable with a Personal Access Token that has `repo` scope.
 ///
-/// # Returns
+/// # Arguments
+/// * `url_parts` - A [`ParsedGitUrl`] struct containing the repository and path information.
+/// * `branch_override` - An optional branch name which, if provided, takes precedence over the branch specified in the URL.
+///
+/// # Returns a `Result`
 /// A `Result` containing the `PathBuf` to a new temporary directory where files were downloaded.
 /// **Note:** The temporary directory is intentionally leaked (not automatically deleted) and the caller
 /// is responsible for its cleanup if necessary.
 ///
 /// # Errors
 /// Returns an error if API requests fail, the directory is not found, or file I/O fails.
-/// If a `GITHUB_TOKEN` environment variable is not set, this may fail due to API rate limiting.
 pub fn download_directory_via_api(
     url_parts: &ParsedGitUrl,
     branch_override: &Option<String>,

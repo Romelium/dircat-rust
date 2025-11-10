@@ -1,4 +1,4 @@
-//! The `dircat` prelude for convenient library usage.
+//! The `dircat` prelude for convenient library use.
 //!
 //! This module re-exports the most commonly used types, traits, and functions
 //! from the `dircat` library. By importing everything from this prelude, you can

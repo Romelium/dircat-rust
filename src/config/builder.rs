@@ -128,23 +128,38 @@ impl ConfigBuilder {
     }
 
     // --- Setter Methods ---
+    /// Sets the input path (directory, file, or git URL).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// let config = ConfigBuilder::new().input_path("/path/to/dir").build().unwrap();
+    /// assert_eq!(config.input_path, "/path/to/dir");
+    /// ```
     #[must_use]
     pub fn input_path(mut self, path: impl Into<String>) -> Self {
         self.input_path = Some(path.into());
         self
     }
+
+    /// Sets the git branch, tag, or commit to check out.
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_branch(mut self, branch: impl Into<String>) -> Self {
         self.git_branch = Some(branch.into());
         self
     }
+
+    /// Sets the depth for a shallow git clone.
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_depth(mut self, depth: u32) -> Self {
         self.git_depth = Some(depth);
         self
     }
+
+    /// Sets the path for caching cloned git repositories.
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
@@ -152,133 +167,183 @@ impl ConfigBuilder {
         self
     }
 
+    /// Sets the maximum file size to include (e.g., "1M", "512k").
     #[must_use]
     pub fn max_size(mut self, size: impl Into<String>) -> Self {
         self.max_size = Some(size.into());
         self
     }
+
+    /// Disables recursive directory traversal if `true`.
     #[must_use]
     pub fn no_recursive(mut self, no_recurse: bool) -> Self {
         self.no_recursive = Some(no_recurse);
         self
     }
+
+    /// Sets the list of file extensions to include.
     #[must_use]
     pub fn extensions(mut self, exts: Vec<String>) -> Self {
         self.extensions = Some(exts);
         self
     }
+
+    /// Sets the list of file extensions to exclude.
     #[must_use]
     pub fn exclude_extensions(mut self, exts: Vec<String>) -> Self {
         self.exclude_extensions = Some(exts);
         self
     }
+
+    /// Sets the list of regular expressions for excluding file paths.
     #[must_use]
     pub fn exclude_path_regex(mut self, regexes: Vec<String>) -> Self {
         self.exclude_path_regex = Some(regexes);
         self
     }
+
+    /// Sets the list of custom glob patterns to ignore.
     #[must_use]
     pub fn ignore_patterns(mut self, patterns: Vec<String>) -> Self {
         self.ignore_patterns = Some(patterns);
         self
     }
+
+    /// Sets the list of regular expressions for including file paths.
     #[must_use]
     pub fn path_regex(mut self, regexes: Vec<String>) -> Self {
         self.path_regex = Some(regexes);
         self
     }
+
+    /// Sets the list of regular expressions for including filenames.
     #[must_use]
     pub fn filename_regex(mut self, regexes: Vec<String>) -> Self {
         self.filename_regex = Some(regexes);
         self
     }
+
+    /// Disables `.gitignore` processing if `true`.
     #[must_use]
     pub fn no_gitignore(mut self, no_gitignore: bool) -> Self {
         self.no_gitignore = Some(no_gitignore);
         self
     }
+
+    /// Includes binary files in the output if `true`.
     #[must_use]
     pub fn include_binary(mut self, include: bool) -> Self {
         self.include_binary = Some(include);
         self
     }
+
+    /// Skips common lockfiles if `true`.
     #[must_use]
     pub fn no_lockfiles(mut self, no_lockfiles: bool) -> Self {
         self.no_lockfiles = Some(no_lockfiles);
         self
     }
+
+    /// Enables removal of C-style comments if `true`.
     #[must_use]
     pub fn remove_comments(mut self, remove: bool) -> Self {
         self.remove_comments = Some(remove);
         self
     }
+
+    /// Enables removal of empty lines if `true`.
     #[must_use]
     pub fn remove_empty_lines(mut self, remove: bool) -> Self {
         self.remove_empty_lines = Some(remove);
         self
     }
+
+    /// Adds a custom content filter to the processing pipeline.
     #[must_use]
     pub fn content_filter(mut self, filter: Box<dyn ContentFilter>) -> Self {
         self.content_filters.push(filter);
         self
     }
 
+    /// Displays only the filename in headers if `true`.
     #[must_use]
     pub fn filename_only(mut self, filename_only: bool) -> Self {
         self.filename_only = Some(filename_only);
         self
     }
+
+    /// Adds line numbers to the output if `true`.
     #[must_use]
     pub fn line_numbers(mut self, line_numbers: bool) -> Self {
         self.line_numbers = Some(line_numbers);
         self
     }
+
+    /// Wraps filenames in backticks if `true`.
     #[must_use]
     pub fn backticks(mut self, backticks: bool) -> Self {
         self.backticks = Some(backticks);
         self
     }
+
+    /// Sets the number of backticks for Markdown code fences.
     #[must_use]
     pub fn ticks(mut self, count: u8) -> Self {
         self.ticks = Some(count);
         self
     }
+
+    /// Sets the output file path.
     #[must_use]
     pub fn output_file(mut self, path: impl Into<String>) -> Self {
         self.output_file = Some(path.into());
         self
     }
+
+    /// Copies the output to the clipboard if `true`.
     #[cfg(feature = "clipboard")]
     #[must_use]
     pub fn paste(mut self, paste: bool) -> Self {
         self.paste = Some(paste);
         self
     }
+
+    /// Appends a summary of processed files if `true`.
     #[must_use]
     pub fn summary(mut self, summary: bool) -> Self {
         self.summary = Some(summary);
         self
     }
+
+    /// Includes file counts in the summary if `true`.
     #[must_use]
     pub fn counts(mut self, counts: bool) -> Self {
         self.counts = Some(counts);
         self
     }
+
+    /// Sets the list of glob patterns for files to be processed last.
     #[must_use]
     pub fn process_last(mut self, patterns: Vec<String>) -> Self {
         self.process_last = Some(patterns);
         self
     }
+
+    /// Processes only the files matching `process_last` patterns if `true`.
     #[must_use]
     pub fn only_last(mut self, only_last: bool) -> Self {
         self.only_last = Some(only_last);
         self
     }
+
+    /// Sets the list of glob patterns for files to be processed, skipping all others.
     #[must_use]
     pub fn only(mut self, patterns: Vec<String>) -> Self {
         self.only = Some(patterns);
         self
     }
+
+    /// Performs a dry run if `true`, listing files without their content.
     #[must_use]
     pub fn dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = Some(dry_run);
@@ -294,7 +359,8 @@ impl ConfigBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if any validation of option combinations fails.
+    /// Returns an error if any validation of option combinations fails, or if
+    /// parsing of values like max size or regex patterns fails.
     pub fn build(self) -> Result<Config> {
         builder_logic::validate_builder_options(&self)?;
 

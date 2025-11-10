@@ -13,6 +13,27 @@ pub use empty_lines::remove_empty_lines;
 /// A trait for content transformation filters.
 ///
 /// Filters are applied sequentially to the content of each text file.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::processing::filters::ContentFilter;
+///
+/// #[derive(Clone)]
+/// struct UppercaseFilter;
+///
+/// impl ContentFilter for UppercaseFilter {
+///     fn apply(&self, content: &str) -> String {
+///         content.to_uppercase()
+///     }
+///     fn name(&self) -> &'static str { "UppercaseFilter" }
+/// }
+///
+/// let filter = UppercaseFilter;
+/// let result = filter.apply("Hello World");
+/// assert_eq!(result, "HELLO WORLD");
+/// assert_eq!(filter.name(), "UppercaseFilter");
+/// ```
 pub trait ContentFilter: DynClone + Send + Sync {
     /// Applies the filter to the given content string.
     fn apply(&self, content: &str) -> String;
@@ -31,7 +52,7 @@ impl fmt::Debug for Box<dyn ContentFilter> {
 
 // --- Filter Implementations ---
 
-/// Filter to remove C/C++ style comments.
+/// A [`ContentFilter`] that removes C/C++ style comments.
 #[derive(Debug, Clone)]
 pub struct RemoveCommentsFilter;
 
@@ -44,7 +65,7 @@ impl ContentFilter for RemoveCommentsFilter {
     }
 }
 
-/// Filter to remove lines containing only whitespace.
+/// A [`ContentFilter`] that removes lines containing only whitespace.
 #[derive(Debug, Clone)]
 pub struct RemoveEmptyLinesFilter;
 

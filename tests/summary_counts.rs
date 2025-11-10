@@ -74,9 +74,9 @@ fn test_summary_with_counts_and_binary() -> Result<(), Box<dyn std::error::Error
         .stdout(predicate::str::contains("## File: text.txt"))
         .stdout(predicate::str::contains(text_content))
         .stdout(predicate::str::contains("## File: binary.bin"))
-        // *** Fix: Convert Cow to String before passing to contains ***
+        // Check for the lossy representation of the binary content
         .stdout(predicate::str::contains(
-            String::from_utf8_lossy(binary_content).to_string(), // Use .to_string() here
+            String::from_utf8_lossy(binary_content).as_ref(),
         ))
         .stdout(predicate::str::contains("\n---\nProcessed Files: (2)\n"))
         // Check summary items (sorted alphabetically) with correct formats

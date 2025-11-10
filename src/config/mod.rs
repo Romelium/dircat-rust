@@ -18,7 +18,7 @@ pub mod path_resolve;
 /// Configuration options related to file discovery and filtering.
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
-    /// Maximum file size in bytes. Files larger than this will be skipped.
+    /// Maximum file size in bytes. Files larger than this are skipped.
     pub max_size: Option<u128>,
     /// Whether to recurse into subdirectories.
     pub recursive: bool,
@@ -26,29 +26,32 @@ pub struct DiscoveryConfig {
     pub extensions: Option<Vec<String>>,
     /// List of file extensions (lowercase) to exclude. Takes precedence over `extensions`.
     pub exclude_extensions: Option<Vec<String>>,
-    /// List of custom ignore patterns (gitignore syntax) provided via `-i`.
+    /// List of custom ignore patterns (gitignore syntax) provided via the `--ignore` flag.
     pub ignore_patterns: Option<Vec<String>>,
-    /// List of compiled regular expressions to exclude files by full path. If `Some`, any path matching one of these is skipped.
+    /// List of compiled regexes to exclude files by relative path. If `Some`, any path matching one of these is skipped.
     pub exclude_path_regex: Option<Vec<Regex>>,
-    /// List of compiled regular expressions to match against the full file path. If `Some`, the path must match at least one.
+    /// List of compiled regexes to match against the relative file path. If `Some`, the path must match at least one.
     pub path_regex: Option<Vec<Regex>>,
-    /// List of compiled regular expressions to match against the filename (basename). If `Some`, the filename must match at least one.
+    /// List of compiled regexes to match against the filename (basename). If `Some`, the filename must match at least one.
     pub filename_regex: Option<Vec<Regex>>,
     /// Whether to respect `.gitignore`, `.ignore`, and other VCS ignore files.
     pub use_gitignore: bool,
     /// Whether to skip common lockfiles (e.g., Cargo.lock, package-lock.json).
     pub skip_lockfiles: bool,
-    /// List of patterns (relative paths or filenames) for files to be processed last, in the specified order.
+    /// List of glob patterns for files to be processed last, in the specified order.
     pub process_last: Option<Vec<String>>,
     /// If `true`, only process files matching the `process_last` patterns.
     pub only_last: bool,
 }
 
 /// Configuration options related to processing file content.
+///
+/// This struct holds settings that control how the content of each discovered
+/// file is read, interpreted, and transformed.
 pub struct ProcessingConfig {
     /// Whether to include files detected as binary/non-text.
     pub include_binary: bool,
-    /// Whether to calculate and display line, character, and word counts in the summary.
+    /// Whether to calculate line, character, and word counts for the summary.
     pub counts: bool,
     /// A vector of content filters to be applied sequentially to each file's content.
     pub content_filters: Vec<Box<dyn ContentFilter>>,
@@ -68,17 +71,17 @@ impl fmt::Debug for ProcessingConfig {
 /// Configuration options related to formatting the final output.
 #[derive(Debug, Clone, Copy)]
 pub struct OutputConfig {
-    /// Whether to display only the filename (basename) in the `## File:` header instead of the relative path.
+    /// Whether to display only the filename (basename) in the `## File:` header.
     pub filename_only_header: bool,
     /// Whether to add line numbers (`N | `) to the output.
     pub line_numbers: bool,
     /// Whether to wrap filenames in backticks (`) in headers and the summary.
     pub backticks: bool,
-    /// Number of backticks for Markdown code fences.
+    /// The number of backticks to use for Markdown code fences.
     pub num_ticks: u8,
     /// Whether to print a summary list of processed files at the end. Implied by `counts`.
     pub summary: bool,
-    /// Whether to calculate and display line, character, and word counts in the summary.
+    /// Whether to display line, character, and word counts in the summary.
     pub counts: bool,
 }
 
@@ -101,31 +104,31 @@ impl DiscoveryConfig {
         }
     }
 }
+/// The main configuration struct for a `dircat` run.
 ///
-/// This struct holds all the settings parsed and validated from the CLI,
-/// ready to be used by the core logic (discovery, processing, output).
+/// This struct holds all the settings parsed and validated from the CLI or a
+/// `ConfigBuilder`, ready to be used by the core logic (discovery, processing, output).
 pub struct Config {
-    /// The original, unresolved path to the directory/file to process, or a git repository URL.
+    /// The original, unresolved path to the directory/file to process, or a git URL.
     pub input_path: String,
-    /// Maximum file size in bytes. Files larger than this will be skipped.
-    /// Configuration for the discovery stage.
+    /// Configuration for the file discovery stage.
     pub discovery: DiscoveryConfig,
-    /// Configuration for the processing stage.
+    /// Configuration for the content processing stage.
     pub processing: ProcessingConfig,
-    /// Configuration for the output stage.
+    /// Configuration for the output formatting stage.
     pub output: OutputConfig,
     /// Specifies where the final output should be written.
     pub output_destination: OutputDestination,
-    /// If `true`, perform a dry run: print the list of files that would be processed, but not their content.
+    /// If `true`, performs a dry run: prints the list of files that would be processed, but not their content.
     pub dry_run: bool,
     #[cfg(feature = "git")]
-    /// The specific git branch to clone.
+    /// For git URL inputs, the specific branch, tag, or commit to check out.
     pub git_branch: Option<String>,
     #[cfg(feature = "git")]
-    /// The depth for a shallow git clone.
+    /// For git URL inputs, the depth for a shallow clone.
     pub git_depth: Option<u32>,
     #[cfg(feature = "git")]
-    /// The original, unresolved path to the directory for caching cloned git repositories.
+    /// The path to a directory for caching cloned git repositories.
     pub git_cache_path: Option<String>,
 }
 
@@ -214,6 +217,22 @@ pub enum OutputDestination {
 }
 
 /// Re-export the public path resolution function and its related types.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::resolve_input;
+/// use std::sync::Arc;
+/// use dircat::progress::ProgressReporter;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let progress: Option<Arc<dyn ProgressReporter>> = None;
+/// // For non-git builds, the git-related arguments are ignored.
+/// let resolved = resolve_input(".", &None, None, &None, progress)?;
+/// println!("Resolved path: {}", resolved.path.display());
+/// # Ok(())
+/// # }
+/// ```
 #[cfg(feature = "git")]
 pub use path_resolve::{determine_cache_dir, resolve_input, ResolvedInput};
 #[cfg(not(feature = "git"))]

@@ -15,16 +15,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Holds the results of resolving the user's input path.
+///
+/// This struct contains the canonicalized, absolute path to the resource to be
+/// processed, along with other relevant metadata derived during resolution.
 #[derive(Debug, Clone)]
 pub struct ResolvedInput {
-    /// The resolved, absolute path to the input directory or file.
+    /// The resolved, absolute path to the directory or file to be processed.
     pub path: PathBuf,
     /// The original input path string provided by the user, for display purposes.
     pub display: String,
-    /// Flag indicating if the resolved path points to a file.
+    /// A flag indicating if the resolved path points to a single file.
     pub is_file: bool,
     #[cfg(feature = "git")]
-    /// The resolved, absolute path to the git cache directory.
+    /// The resolved, absolute path to the directory used for caching git repositories.
     pub cache_path: PathBuf,
 }
 
@@ -60,6 +63,10 @@ impl ResolvedInput {
 ///
 /// # Returns
 /// A `Result` containing a `ResolvedInput` struct on success.
+///
+/// # Errors
+/// Returns an `Error` if path resolution fails, git operations fail, or the
+/// input is a git URL but the `git` feature is disabled.
 pub fn resolve_input(
     input_path_str: &str,
     git_branch: &Option<String>,
@@ -169,6 +176,16 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
 ///
 /// This is the non-git version of the function. It will return an error if the
 /// input path appears to be a git URL.
+///
+/// # Arguments
+/// * `input_path_str` - The path string from the user.
+/// * `_git_branch`, `_git_depth`, `_git_cache_path_str`, `_progress` - Unused arguments for API compatibility.
+///
+/// # Returns
+/// A `Result` containing a `ResolvedInput` struct on success.
+///
+/// # Errors
+/// Returns an `Error` if path resolution fails or if the input appears to be a URL.
 pub fn resolve_input(
     input_path_str: &str,
     _git_branch: &Option<String>,
@@ -199,6 +216,22 @@ pub fn resolve_input(
 }
 
 /// Determines the absolute path for the git cache directory.
+///
+/// The cache directory is determined in the following order of precedence:
+/// 1. The `DIRCAT_TEST_CACHE_DIR` environment variable (for testing purposes).
+/// 2. The path provided via the `--git-cache-path` command-line argument.
+/// 3. The platform-specific default cache directory (e.g., `~/.cache/dircat/repos` on Linux).
+///
+/// If the chosen directory does not exist, it will be created.
+///
+/// # Arguments
+/// * `cli_path` - An optional path string from the command-line arguments.
+///
+/// # Returns
+/// A `Result` containing the absolute `PathBuf` to the cache directory.
+///
+/// # Errors
+/// Returns an error if the directory cannot be determined or created.
 #[cfg(feature = "git")]
 pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
     if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {

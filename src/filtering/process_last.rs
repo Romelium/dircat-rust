@@ -7,12 +7,15 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 /// Checks if a file path matches any of the `-z`/`--last` glob patterns.
-/// Returns `(matches, index_of_matching_pattern)`.
-/// Matches against the relative path.
 ///
 /// This function is used to determine if a file should be part of the "process last"
-/// group. The returned index corresponds to the order in which the glob patterns
+/// group. It matches the provided glob patterns against the file's relative path.
+/// The returned index corresponds to the order in which the glob patterns
 /// were provided on the command line, which is used for sorting these files.
+///
+/// # Returns
+/// A tuple `(bool, Option<usize>)` where the `bool` is `true` if a match was found,
+/// and the `Option<usize>` contains the index of the first matching pattern.
 ///
 /// # Examples
 ///

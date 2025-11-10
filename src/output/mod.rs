@@ -20,12 +20,71 @@ impl From<&Config> for OutputConfig {
 }
 
 /// A trait for formatting the processed file data into a specific output format.
+///
+/// This allows for custom output formats (e.g., JSON, XML) to be implemented
+/// and used with the results of a `dircat` execution.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::{output::OutputFormatter, OutputConfig};
+/// use dircat::core_types::FileInfo;
+/// use std::io::Write;
+/// use std::path::PathBuf;
+///
+/// // A mock formatter that just lists filenames.
+/// struct SimpleListFormatter;
+///
+/// impl OutputFormatter for SimpleListFormatter {
+///     fn format(&self, files: &[FileInfo], opts: &OutputConfig, writer: &mut dyn Write) -> anyhow::Result<()> {
+///         for file in files {
+///             writeln!(writer, "- {}", file.relative_path.display())?;
+///         }
+///         Ok(())
+///     }
+///     fn format_dry_run(&self, files: &[FileInfo], opts: &OutputConfig, writer: &mut dyn Write) -> anyhow::Result<()> {
+///         writeln!(writer, "Dry run:")?;
+///         self.format(files, opts, writer)
+///     }
+/// }
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let file = FileInfo {
+///     absolute_path: PathBuf::from("/abs/a.txt"),
+///     relative_path: PathBuf::from("a.txt"),
+///     size: 0, processed_content: None, counts: None,
+///     is_process_last: false, process_last_order: None, is_binary: false,
+/// };
+/// let files = vec![file];
+/// let opts = OutputConfig {
+///     filename_only_header: false, line_numbers: false, backticks: false,
+///     num_ticks: 3, summary: false, counts: false
+/// };
+/// let mut buffer = Vec::new();
+///
+/// SimpleListFormatter.format(&files, &opts, &mut buffer)?;
+///
+/// let output = String::from_utf8(buffer)?;
+/// assert_eq!(output.trim(), "- a.txt");
+/// # Ok(())
+/// # }
+/// ```
 pub trait OutputFormatter {
     /// Formats the processed files into the final output.
+    ///
+    /// # Arguments
+    /// * `files` - A slice of `FileInfo` structs, sorted in the desired output order.
+    /// * `opts` - Configuration options for formatting the output.
+    /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
     fn format(&self, files: &[FileInfo], opts: &OutputConfig, writer: &mut dyn Write)
         -> Result<()>;
 
     /// Formats the discovered files for a dry run.
+    ///
+    /// # Arguments
+    /// * `files` - A slice of `FileInfo` structs from the discovery phase.
+    /// * `opts` - Configuration options for formatting the output.
+    /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
     fn format_dry_run(
         &self,
         files: &[FileInfo],
@@ -35,6 +94,9 @@ pub trait OutputFormatter {
 }
 
 /// The default formatter that generates Markdown output.
+///
+/// This implementation concatenates files into a single document, separating
+/// each with a `## File:` header and wrapping content in fenced code blocks.
 pub struct MarkdownFormatter;
 
 impl OutputFormatter for MarkdownFormatter {

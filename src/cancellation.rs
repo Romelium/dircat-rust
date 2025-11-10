@@ -65,6 +65,16 @@ impl CancellationToken {
     }
 }
 
+/// Creates a new `CancellationToken` in a non-cancelled state.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::cancellation::CancellationToken;
+///
+/// let token: CancellationToken = Default::default();
+/// assert!(!token.is_cancelled());
+/// ```
 impl Default for CancellationToken {
     fn default() -> Self {
         Self::new()

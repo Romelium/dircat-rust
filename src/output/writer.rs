@@ -16,6 +16,10 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc, Mutex};
 
+/// Holds the configured output writer and an optional buffer for clipboard operations.
+///
+/// This struct is returned by [`setup_output_writer`] and provides the necessary
+/// components for writing output and finalizing it (e.g., copying to clipboard).
 /// Represents the setup output writer, potentially including a buffer for clipboard.
 pub struct OutputWriterSetup {
     /// A boxed `Write` trait object that can be written to.
@@ -25,17 +29,11 @@ pub struct OutputWriterSetup {
     pub clipboard_buffer: Option<Arc<Mutex<Vec<u8>>>>,
 }
 
-/// Sets up the output writer based on the configuration.
+/// Creates the appropriate output writer based on the `OutputDestination` in the config.
 ///
 /// This function determines whether to write to stdout, a file, or an in-memory
 /// buffer (for clipboard operations) and returns a struct containing the appropriate
 /// writer and any necessary context.
-///
-/// # Arguments
-/// * `config` - The application configuration specifying the output destination.
-///
-/// # Returns
-/// An `OutputWriterSetup` struct containing the writer and an optional clipboard buffer.
 ///
 /// # Errors
 /// Returns an error if a file cannot be created for writing.
@@ -63,20 +61,14 @@ pub fn setup_output_writer(config: &Config) -> Result<OutputWriterSetup> {
     })
 }
 
-/// Finalizes output, specifically handling the clipboard case.
+/// Finalizes the output stream, handling special cases like copying to the clipboard.
 ///
 /// If the destination was `OutputDestination::Clipboard`, this function copies the
 /// content from the provided buffer to the system clipboard. For other destinations,
-/// it ensures the writer is flushed.
-///
-/// # Arguments
-/// * `writer` - The writer to be flushed and dropped.
-/// * `clipboard_buffer` - The buffer containing the output, if the destination was clipboard.
-/// * `config` - The application configuration.
+/// it ensures the writer is flushed before being dropped.
 ///
 /// # Errors
-/// Returns an error if locking the clipboard buffer fails or if the clipboard
-/// operation itself fails.
+/// Returns an error if the clipboard operation fails.
 #[cfg_attr(not(feature = "clipboard"), allow(unused_variables))]
 pub fn finalize_output(
     mut writer: Box<dyn Write + Send>, // Take ownership to ensure drop/flush

@@ -6,7 +6,6 @@ use assert_cmd::prelude::*;
 use common::dircat_cmd;
 use std::fs;
 use tempfile::tempdir;
-// use dircat::core_types::{FileInfo, FileCounts}; // Import FileInfo and FileCounts
 
 #[test]
 fn test_output_to_file() -> Result<(), Box<dyn std::error::Error>> {
