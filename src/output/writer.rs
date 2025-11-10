@@ -276,11 +276,12 @@ mod tests {
         // In a test environment without a clipboard service, arboard might return an error.
         // We accept Ok or a specific ClipboardError here.
         if let Err(e) = result {
-            use crate::errors::{ClipboardError, Error}; // Need Error for matching
-            assert!(e.downcast_ref::<Error>().is_some_and(|ae| matches!(
-                ae,
-                Error::Clipboard(ClipboardError::Initialization(_))
-            )));
+            // The error `e` is an `anyhow::Error`. We need to downcast to the underlying
+            // `ClipboardError` that was wrapped by `anyhow`, not the top-level `dircat::Error`.
+            use crate::errors::ClipboardError;
+            assert!(e.downcast_ref::<ClipboardError>().is_some_and(|ce| {
+                matches!(ce, ClipboardError::Initialization(_))
+            }));
         }
     }
 
