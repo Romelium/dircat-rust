@@ -279,9 +279,9 @@ mod tests {
             // The error `e` is an `anyhow::Error`. We need to downcast to the underlying
             // `ClipboardError` that was wrapped by `anyhow`, not the top-level `dircat::Error`.
             use crate::errors::ClipboardError;
-            assert!(e.downcast_ref::<ClipboardError>().is_some_and(|ce| {
-                matches!(ce, ClipboardError::Initialization(_))
-            }));
+            assert!(e
+                .downcast_ref::<ClipboardError>()
+                .is_some_and(|ce| { matches!(ce, ClipboardError::Initialization(_)) }));
         }
     }
 
