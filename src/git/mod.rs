@@ -44,6 +44,7 @@ pub use api::download_directory_via_api;
 /// # Ok(())
 /// # }
 /// ```
-pub use clone::get_repo;
+pub use clone::{get_repo, get_repo_cache_path};
 /// Functions and types for parsing git and GitHub URLs.
+pub use ops::update_repo;
 pub use url::{is_git_url, parse_clone_url, parse_github_folder_url, ParsedGitUrl};

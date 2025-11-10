@@ -166,7 +166,7 @@ pub(super) fn find_remote_commit<'a>(
 }
 /// Ensures the local repository is up-to-date with the remote.
 /// Fetches from the remote and performs a hard reset to the remote branch head.
-pub(super) fn update_repo(
+pub fn update_repo(
     repo: &Repository,
     branch: &Option<String>,
     depth: Option<u32>,

@@ -17,7 +17,7 @@ use super::ops::{create_fetch_options, find_remote_commit, update_repo};
 
 /// Gets the specific cache directory path for a given repository URL within a base directory.
 /// The final path is `<base_cache_dir>/<sha256_of_url>`.
-fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
+pub fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
     // Create a unique, filesystem-safe directory name from the URL
     let mut hasher = Sha256::new();
     hasher.update(url.as_bytes());

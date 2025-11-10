@@ -36,7 +36,7 @@ pub fn is_git_url(path_str: &str) -> bool {
 
 /// Regex for GitHub folder URLs: `.../tree/branch/path`
 static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?$").unwrap()
+    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/([^/]+)(?:/(.*))?$").unwrap()
 });
 
 /// Parses a GitHub folder URL into its constituent parts.
@@ -227,9 +227,14 @@ mod tests {
 
     #[test]
     fn test_parse_github_url_rejects_reserved_paths() {
+        // A /blob/ URL should be parsed correctly, not rejected.
         assert_eq!(
             parse_github_folder_url("https://github.com/user/repo/blob/master/file.txt"),
-            None
+            Some(ParsedGitUrl {
+                clone_url: "https://github.com/user/repo.git".to_string(),
+                branch: "master".to_string(),
+                subdirectory: "file.txt".to_string(),
+            })
         );
         assert_eq!(
             parse_github_folder_url("https://github.com/user/repo/issues/1"),

@@ -7,6 +7,8 @@ use crate::errors::Error;
 use crate::filtering::{
     check_process_last, is_file_type, is_lockfile, passes_extension_filters, passes_size_filter,
 };
+#[cfg(feature = "git")]
+use crate::git;
 use anyhow::Result;
 use ignore::DirEntry;
 use log::{debug, trace, warn};
@@ -41,16 +43,31 @@ pub(crate) fn process_direntry(
 
     // --- 2. Calculate Relative Path ---
     let relative_path = if resolved.is_file {
-        absolute_path
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                warn!(
-                    "Could not get filename for file input: {}",
-                    absolute_path.display()
-                );
-                absolute_path.clone()
-            })
+        let path_from_git_url = {
+            #[cfg(feature = "git")]
+            {
+                git::parse_github_folder_url(&resolved.display)
+                    .map(|parsed_url| PathBuf::from(parsed_url.subdirectory))
+            }
+            #[cfg(not(feature = "git"))]
+            {
+                None
+            }
+        };
+
+        path_from_git_url.unwrap_or_else(|| {
+            // Fallback for local files or if git feature is off
+            absolute_path
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    warn!(
+                        "Could not get filename for file input: {}",
+                        absolute_path.display()
+                    );
+                    absolute_path.clone()
+                })
+        })
     } else {
         absolute_path
             .strip_prefix(&resolved.path)

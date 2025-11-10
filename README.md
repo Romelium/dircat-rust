@@ -101,6 +101,7 @@ Are you tired of:
 ### Intelligent File Discovery & Remote Repository Support
 
 - **GitHub Folder API Integration (Fastest):** For any `github.com` URL pointing to a specific folder (e.g., `.../tree/main/src`), `dircat` uses the GitHub API to download only that folder's contents on-the-fly. This is extremely fast and avoids cloning large repositories.
+- **GitHub Folder/File API Integration (Fastest):** For any `github.com` URL pointing to a specific folder or file (e.g., `.../tree/main/src` or `.../blob/main/src/main.rs`), `dircat` uses the GitHub API to download only that content on-the-fly. This is extremely fast and avoids cloning large repositories.
   - To access private repositories or avoid API rate limits, set a `GITHUB_TOKEN` environment variable with a [Personal Access Token](https://github.com/settings/tokens) that has `repo` scope.
   - **Automatic Fallback:** If the GitHub API returns a rate limit error (HTTP 403), `dircat` will automatically fall back to performing a full `git clone` of the repository and then process the specified folder. A warning will be displayed when this occurs.
 - **Git Clone for Repositories:** For any git URL pointing to a repository root (e.g., `github.com/user/repo.git`, `gitlab.com/...`), `dircat` clones the repository.
@@ -294,6 +295,9 @@ dircat https://github.com/romelium/dircat-rust.git
 
 # Process only the 'src' directory from a remote git repository
 dircat https://github.com/romelium/dircat-rust/tree/main/src
+
+# Process only a single file from a remote git repository
+dircat https://github.com/romelium/dircat-rust/blob/main/src/main.rs
 
 # Process a specific branch of a remote repository
 dircat https://github.com/some/repo.git --git-branch develop
@@ -721,6 +725,13 @@ You can provide a URL that points directly to a folder on GitHub. `dircat` will 
 # This will process only the contents of the 'src/config' directory
 # from the 'main' branch of the dircat-rust repository.
 dircat https://github.com/romelium/dircat-rust/tree/main/src/config
+```
+
+#### Goal: Concatenate a single file from a remote repository
+
+```bash
+# This will download and process only the 'src/main.rs' file.
+dircat https://github.com/romelium/dircat-rust/blob/main/src/main.rs
 ```
 
 ## Tips & Considerations

@@ -10,6 +10,8 @@ use crate::git;
 use crate::progress::ProgressReporter;
 use anyhow::{Context, Result as AnyhowResult};
 #[cfg(feature = "git")]
+use git2::Repository;
+#[cfg(feature = "git")]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -103,6 +105,29 @@ fn handle_github_folder_url(
     cache_path: &Path,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf> {
+    let repo_cache_path = git::get_repo_cache_path(cache_path, &parsed_url.clone_url);
+
+    // Optimization: If a full clone of the repository already exists in the cache,
+    // update and use it directly instead of hitting the GitHub API.
+    if let Ok(repo) = Repository::open(&repo_cache_path) {
+        log::info!(
+            "Found cached repository at '{}'. Updating and using it instead of GitHub API.",
+            repo_cache_path.display()
+        );
+        // Update the repo to the desired branch/ref.
+        git::update_repo(&repo, cli_branch, None, progress)?;
+
+        let path = repo_cache_path.join(&parsed_url.subdirectory);
+        if !path.exists() {
+            return Err(Error::Git(GitError::SubdirectoryNotFound {
+                path: parsed_url.subdirectory,
+                repo: parsed_url.clone_url,
+            }));
+        }
+        return Ok(path);
+    }
+
+    // If no valid cache entry, proceed with API download and its own fallback logic.
     match git::download_directory_via_api(&parsed_url, cli_branch) {
         Ok(temp_dir_root) => {
             log::debug!("Successfully downloaded from GitHub API.");
