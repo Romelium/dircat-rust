@@ -18,7 +18,7 @@ use log::debug;
 ///     let y = 2;
 /// "#;
 ///
-/// let expected = "let x = 1;\n\n    let y = 2;";
+/// let expected = "    let x = 1;\n\n    let y = 2;";
 ///
 /// assert_eq!(remove_comments(code), expected);
 /// ```
@@ -141,7 +141,7 @@ pub fn remove_comments(content: &str) -> String {
         .map(|line| line.trim_end()) // Trim trailing whitespace from each line
         .collect::<Vec<&str>>()
         .join("\n") // Join back with newline separators
-        .trim() // Trim leading/trailing whitespace (including newlines) from the final string
+        .trim_matches(|c: char| c == '\r' || c == '\n') // Trim leading/trailing newlines only, preserving indentation.
         .to_string(); // Convert back to String
 
     debug!(

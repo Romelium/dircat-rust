@@ -397,7 +397,7 @@ let c4 = '\''; // comment 4
         // Expected: Code preserved, comments removed, trailing spaces removed.
         // Leading/trailing empty lines handled by final trim.
         // Lines that contained only comments become empty lines after trim_end(), resulting in \n\n.
-        let expected = "int main() {\n\n            printf(\"Hello // World\\n\");\n\n            return 1;\n        }";
+        let expected = "        int main() {\n\n            printf(\"Hello // World\\n\");\n\n            return 1;\n        }";
         assert_eq!(remove_comments(input), expected);
     }
 

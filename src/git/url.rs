@@ -11,8 +11,6 @@ use regex::Regex;
 /// It breaks down a URL like `https://github.com/user/repo/tree/main/src/app`
 /// into a cloneable URL, the branch name, and the subdirectory path.
 ///
-/// An instance of this struct is typically created by `parse_github_folder_url`.
-///
 /// # Examples
 ///
 /// ```

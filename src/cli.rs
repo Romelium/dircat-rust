@@ -55,6 +55,8 @@ pub struct Cli {
     pub exclude_path_regex: Option<Vec<String>>,
 
     /// Ignore files/directories matching these glob patterns (relative to input path, repeatable).
+    /// This filter is applied after all other ignore logic (including .gitignore and --last overrides)
+    /// and will exclude a file even if it is matched by --last or --only.
     #[arg(short = 'i', long = "ignore", value_name = "GLOB", num_args = 1..)]
     pub ignore_patterns: Option<Vec<String>>,
 
@@ -124,7 +126,8 @@ pub struct Cli {
 
     // --- Processing Order ---
     /// Process files matching these glob patterns last, in the order specified.
-    /// This can override .gitignore rules for the matched files.
+    /// This can override .gitignore rules for the matched files, but will not override
+    /// rules from --ignore (-i).
     #[arg(short = 'z', long = "last", value_name = "GLOB", num_args = 1..)]
     pub process_last: Option<Vec<String>>,
 
@@ -133,7 +136,8 @@ pub struct Cli {
     pub only_last: bool,
 
     /// Shorthand for '--last <GLOB>... --only-last'. Process only files matching these glob patterns.
-    /// This can override .gitignore rules for the matched files.
+    /// This can override .gitignore rules for the matched files, but will not override
+    /// rules from --ignore (-i).
     #[arg(short = 'O', long = "only", value_name = "GLOB", num_args = 1.., conflicts_with_all = &["process_last", "only_last"])]
     pub only: Option<Vec<String>>,
 
