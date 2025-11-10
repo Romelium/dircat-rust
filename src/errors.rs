@@ -11,8 +11,33 @@ use thiserror::Error;
 /// A convenient result type for the `dircat` library.
 pub type Result<T> = std::result::Result<T, Error>;
 
+///
 /// Errors related to invalid configuration settings or combinations.
 #[derive(Error, Debug)]
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::ConfigBuilder;
+/// use dircat::errors::{Error, ConfigError};
+///
+/// // Attempt to build a config with conflicting options.
+/// #[cfg(feature = "clipboard")]
+/// {
+///     let result = ConfigBuilder::new()
+///         .output_file("out.md")
+///         .paste(true)
+///         .build();
+///
+///     match result {
+///         Err(Error::Config(ConfigError::Conflict { option1, option2 })) => {
+///             assert_eq!(option1, "--output");
+///             assert_eq!(option2, "--paste");
+///         }
+///         _ => panic!("Expected a Conflict error"),
+///     }
+/// }
+/// ```
 #[non_exhaustive]
 pub enum ConfigError {
     /// Error for conflicting command-line options.
@@ -66,6 +91,25 @@ pub enum ConfigError {
 /// Errors related to git operations (cloning, fetching, API interaction, etc.).
 #[cfg(feature = "git")]
 #[derive(Error, Debug)]
+///
+/// # Examples
+///
+/// ```no_run
+/// use dircat::prelude::*;
+/// use dircat::errors::GitError;
+///
+/// # fn main() {
+/// let invalid_url = "https://github.com/user/this-repo-does-not-exist.git";
+/// let config = ConfigBuilder::new().input_path(invalid_url).build().unwrap();
+/// let token = CancellationToken::new();
+///
+/// let result = dircat::run(&config, &token, None);
+///
+/// if let Err(Error::Git(GitError::CloneFailed { url, .. })) = result {
+///     eprintln!("Failed to clone the repository from {}", url);
+/// }
+/// # }
+/// ```
 #[non_exhaustive]
 pub enum GitError {
     /// Error when a git clone operation fails.
@@ -135,14 +179,34 @@ pub enum GitError {
 }
 
 /// Errors related to clipboard operations.
+///
+/// These errors can occur when initializing the clipboard provider or when
+/// attempting to write content to it.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::errors::{Error, ClipboardError};
+///
+/// fn handle_error(e: Error) {
+///     match e {
+///         Error::Clipboard(ClipboardError::Initialization(reason)) => {
+///             eprintln!("Failed to connect to clipboard service: {}", reason);
+///         },
+///         Error::Clipboard(ClipboardError::SetContent(reason)) => {
+///             eprintln!("Failed to copy content to clipboard: {}", reason);
+///         },
+///         _ => eprintln!("An error occurred: {}", e),
+///     }
+/// }
+/// ```
 #[cfg(feature = "clipboard")]
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ClipboardError {
-    /// Error when the clipboard context cannot be initialized.
+    /// Error when the clipboard provider cannot be initialized.
     #[error("Failed to initialize clipboard: {0}")]
     Initialization(String),
-
     /// Error when setting the clipboard content fails.
     #[error("Failed to set clipboard content: {0}")]
     SetContent(String),
@@ -151,7 +215,44 @@ pub enum ClipboardError {
 /// The primary error type for the `dircat` library.
 ///
 /// This enum defines categorized errors that can occur during the execution,
-/// providing more context than a generic `anyhow::Error`.
+/// providing more context than a generic `anyhow::Error`.///
+/// # Examples
+///
+/// ```
+/// use dircat::prelude::*;
+/// use std::path::Path;
+///
+/// fn process_directory(path: &Path) -> Result<()> {
+///     let config = ConfigBuilder::new()
+///         .input_path(path.to_str().unwrap())
+///         .build()?;
+///     let token = CancellationToken::new();
+///     // In a real app, you might use run() or execute() here.
+///     // For this example, we'll just return Ok.
+///     // run(&config, &token, None)?;
+///     Ok(())
+/// }
+///
+/// // In your main function or error handling logic:
+/// let result = process_directory(Path::new("./non_existent_dir"));
+/// use dircat::errors::ConfigError;
+///
+/// match result {
+///     Ok(()) => println!("Success!"),
+///     Err(Error::NoFilesFound) => {
+///         println!("Operation succeeded, but no files matched the criteria.");
+///     }
+///     Err(Error::Config(ConfigError::InvalidValue { option, reason })) => {
+///         eprintln!("Configuration error in '{}': {}", option, reason);
+///     }
+///     Err(Error::Io { path, source }) => {
+///         eprintln!("I/O error accessing '{}': {}", path, source);
+///     }
+///     Err(e) => {
+///         eprintln!("An unexpected error occurred: {}", e);
+///     }
+/// }
+/// ```
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -177,8 +278,8 @@ pub enum Error {
     Git(#[from] GitError),
 
     // --- Clipboard Errors ---
-    #[cfg(feature = "clipboard")]
     /// An error related to clipboard operations.
+    #[cfg(feature = "clipboard")]
     #[error(transparent)]
     Clipboard(#[from] ClipboardError),
 

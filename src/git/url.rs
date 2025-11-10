@@ -6,6 +6,26 @@ use regex::Regex;
 
 /// Represents the components of a parsed GitHub folder URL.
 #[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// An instance of this struct is typically created by `parse_github_folder_url`.
+/// It breaks down a URL like `https://github.com/user/repo/tree/main/src/app`
+/// into a cloneable URL, the branch name, and the subdirectory path.
+///
+/// An instance of this struct is typically created by `parse_github_folder_url`.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::git::ParsedGitUrl;
+///
+/// let parsed = ParsedGitUrl {
+///     clone_url: "https://github.com/user/repo.git".to_string(),
+///     branch: "main".to_string(),
+///     subdirectory: "src/app".to_string(),
+/// };
+///
+/// assert_eq!(parsed.branch, "main");
+/// ```
 pub struct ParsedGitUrl {
     /// The full URL to be used for cloning (e.g., `https://github.com/user/repo.git`).
     pub clone_url: String,
@@ -17,7 +37,11 @@ pub struct ParsedGitUrl {
 
 /// Checks if a given string is a likely git repository URL.
 ///
-/// This is a simple heuristic check and does not validate the URL's format.
+/// This is a simple heuristic check that looks for common URL schemes (`https://`,
+/// `http://`, `file://`) or the `git@` prefix for SSH URLs. It does not
+/// perform any validation to confirm that the URL is well-formed or points to a
+/// real repository. Its primary purpose is to distinguish potential URLs from
+/// local file paths.
 ///
 /// # Examples
 /// ```

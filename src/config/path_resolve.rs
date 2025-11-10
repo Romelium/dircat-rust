@@ -20,6 +20,23 @@ use std::sync::Arc;
 ///
 /// This struct contains the canonicalized, absolute path to the resource to be
 /// processed, along with other relevant metadata derived during resolution.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::ResolvedInput;
+/// use std::path::PathBuf;
+///
+/// let resolved = ResolvedInput {
+///     path: PathBuf::from("/tmp/dircat-test-cache/abcdef123..."),
+///     display: "https://github.com/user/repo.git".to_string(),
+///     is_file: false,
+///     #[cfg(feature = "git")]
+///     cache_path: PathBuf::from("/tmp/dircat-test-cache"),
+/// };
+///
+/// assert_eq!(resolved.display, "https://github.com/user/repo.git");
+/// ```
 #[derive(Debug, Clone)]
 pub struct ResolvedInput {
     /// The resolved, absolute path to the directory or file to be processed.
@@ -69,6 +86,65 @@ impl ResolvedInput {
 /// # Errors
 /// Returns an `Error` if path resolution fails, git operations fail, or the
 /// input is a git URL but the `git` feature is disabled.
+///
+/// # Examples
+///
+/// **Conceptual Example:**
+///
+/// ```no_run
+/// use dircat::config::resolve_input;
+/// # use dircat::errors::Result;
+/// # fn main() -> Result<()> {
+/// // Resolve a local path string into a structured, absolute path.
+/// let resolved = resolve_input("./src", &None, None, &None, None)?;
+///
+/// assert!(resolved.path.is_absolute());
+/// assert_eq!(resolved.display, "./src");
+///
+/// // Resolve a git URL (this would perform a clone/update).
+/// let resolved_git = resolve_input("https://github.com/user/repo.git", &None, None, &None, None)?;
+/// assert!(resolved_git.path.to_str().unwrap().contains("dircat/repos"));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// **Filesystem Example:**
+///
+/// ```
+/// use dircat::config::resolve_input;
+/// use dircat::progress::ProgressReporter;
+/// use std::sync::Arc;
+/// use std::fs;
+/// use tempfile::tempdir;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Create a temporary directory and file for the example.
+/// let temp = tempdir()?;
+/// let file_path = temp.path().join("test.txt");
+/// fs::write(&file_path, "content")?;
+///
+/// // The progress reporter is optional and can be None.
+/// let progress: Option<Arc<dyn ProgressReporter>> = None;
+///
+/// // --- Example 1: Resolve a local file path ---
+/// // The git-related arguments are None for local paths.
+/// let resolved_file = resolve_input(
+///     file_path.to_str().unwrap(),
+///     &None, // git_branch
+///     None,  // git_depth
+///     &None, // git_cache_path
+///     progress.clone(),
+/// )?;
+///
+/// assert!(resolved_file.path.is_absolute());
+/// assert!(resolved_file.is_file);
+///
+/// // --- Example 2: Resolve a local directory path ---
+/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, progress)?;
+/// assert!(!resolved_dir.is_file);
+/// # Ok(())
+/// # }
+/// ```
 pub fn resolve_input(
     input_path_str: &str,
     git_branch: &Option<String>,
@@ -211,6 +287,44 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
 ///
 /// # Errors
 /// Returns an `Error` if path resolution fails or if the input appears to be a URL.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::resolve_input;
+/// use dircat::progress::ProgressReporter;
+/// use std::sync::Arc;
+/// use std::fs;
+/// use tempfile::tempdir;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Create a temporary directory and file for the example.
+/// let temp = tempdir()?;
+/// let file_path = temp.path().join("test.txt");
+/// fs::write(&file_path, "content")?;
+///
+/// // The progress reporter is optional and can be None.
+/// let progress: Option<Arc<dyn ProgressReporter>> = None;
+///
+/// // --- Example 1: Resolve a local file path ---
+/// // The git-related arguments are ignored in non-git builds.
+/// let resolved_file = resolve_input(
+///     file_path.to_str().unwrap(),
+///     &None, // git_branch
+///     None,  // git_depth
+///     &None, // git_cache_path
+///     progress.clone(),
+/// )?;
+///
+/// assert!(resolved_file.path.is_absolute());
+/// assert!(resolved_file.is_file);
+///
+/// // --- Example 2: Resolve a local directory path ---
+/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, progress)?;
+/// assert!(!resolved_dir.is_file);
+/// # Ok(())
+/// # }
+/// ```
 pub fn resolve_input(
     input_path_str: &str,
     _git_branch: &Option<String>,
@@ -258,6 +372,33 @@ pub fn resolve_input(
 /// # Errors
 /// Returns an error if the directory cannot be determined or created.
 #[cfg(feature = "git")]
+/// # Examples
+///
+/// ```
+/// use dircat::config::determine_cache_dir;
+/// use tempfile::tempdir;
+/// # use std::env;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// // --- Case 1: Using a CLI path ---
+/// let temp = tempdir()?;
+/// let cli_path_str = temp.path().to_str().unwrap();
+/// let cache_path = determine_cache_dir(Some(cli_path_str))?;
+/// assert_eq!(cache_path, temp.path().canonicalize()?);
+///
+/// // --- Case 2: Using the default path (cannot be easily tested for exact path) ---
+/// // let default_path = determine_cache_dir(None)?;
+/// // assert!(default_path.ends_with("dircat/repos"));
+///
+/// // --- Case 3: Using an environment variable for testing ---
+/// let test_cache_dir = tempdir()?;
+/// env::set_var("DIRCAT_TEST_CACHE_DIR", test_cache_dir.path());
+/// let env_cache_path = determine_cache_dir(None)?;
+/// assert_eq!(env_cache_path, test_cache_dir.path());
+/// env::remove_var("DIRCAT_TEST_CACHE_DIR");
+/// # Ok(())
+/// # }
+/// ```
 pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
     if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
         let path = PathBuf::from(cache_override);

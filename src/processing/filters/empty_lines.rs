@@ -1,4 +1,8 @@
-/// Removes lines containing only whitespace.
+/// Removes lines containing only whitespace from a string slice.
+///
+/// This function splits the content into lines, filters out any line that is
+/// empty after trimming whitespace, and then joins the remaining lines back
+/// together with newline (`\n`) characters.
 ///
 /// # Examples
 /// ```

@@ -36,17 +36,35 @@ struct RepoInfo {
 /// To access private repositories or avoid API rate limits, set a `GITHUB_TOKEN`
 /// environment variable with a Personal Access Token that has `repo` scope.
 ///
-/// # Arguments
+/// # Parameters
 /// * `url_parts` - A [`ParsedGitUrl`] struct containing the repository and path information.
 /// * `branch_override` - An optional branch name which, if provided, takes precedence over the branch specified in the URL.
 ///
-/// # Returns a `Result`
+/// # Returns
 /// A `Result` containing the `PathBuf` to a new temporary directory where files were downloaded.
 /// **Note:** The temporary directory is intentionally leaked (not automatically deleted) and the caller
 /// is responsible for its cleanup if necessary.
 ///
 /// # Errors
 /// Returns an error if API requests fail, the directory is not found, or file I/O fails.
+///
+/// # Examples
+/// ```no_run
+/// use dircat::git::{parse_github_folder_url, download_directory_via_api};
+/// # use anyhow::Result;
+///
+/// # fn main() -> Result<()> {
+/// let url = "https://github.com/rust-lang/cargo/tree/master/src/cargo";
+/// if let Some(parsed_url) = parse_github_folder_url(url) {
+///     // Download the 'src/cargo' directory from the 'master' branch.
+///     let temp_dir_path = download_directory_via_api(&parsed_url, &None)?;
+///     println!("Downloaded to: {}", temp_dir_path.display());
+///     // Remember to clean up the temp directory if needed.
+///     // std::fs::remove_dir_all(temp_dir_path)?;
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub fn download_directory_via_api(
     url_parts: &ParsedGitUrl,
     branch_override: &Option<String>,

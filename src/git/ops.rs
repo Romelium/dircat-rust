@@ -164,8 +164,51 @@ pub(super) fn find_remote_commit<'a>(
     .context("Failed to find commit for default branch reference")
     .map_err(GitError::Generic)
 }
-/// Ensures the local repository is up-to-date with the remote.
-/// Fetches from the remote and performs a hard reset to the remote branch head.
+/// Ensures a local repository is up-to-date with its 'origin' remote.
+///
+/// This function performs the following actions:
+/// 1.  Fetches the latest changes, tags, and branches from the 'origin' remote.
+/// 2.  Prunes any remote-tracking branches that no longer exist on the remote.
+/// 3.  Determines the target commit on the remote (either a specific branch/tag or the remote's default branch).
+/// 4.  Performs a hard reset of the local repository to match the target commit, discarding any local changes.
+///
+/// This is primarily used to update a cached repository to the desired state.
+///
+/// # Arguments
+/// * `repo` - The `git2::Repository` instance to update.
+/// * `branch` - An optional specific branch or tag name to check out. If `None`, the remote's default branch is used.
+/// * `depth` - An optional depth for a shallow fetch.
+/// * `progress` - An optional progress reporter for the fetch operation.
+///
+/// # Errors
+/// Returns a `GitError` if the remote cannot be found, the fetch fails, or the specified ref cannot be resolved.
+///
+/// # Examples
+///
+/// ```no_run
+/// use dircat::git::update_repo;
+/// use git2::Repository;
+/// use std::path::Path;
+/// # use anyhow::Result;
+///
+/// # fn main() -> Result<()> {
+/// // Assume `repo_path` points to a local clone of a git repository.
+/// let repo_path = Path::new("/tmp/dircat-cache/some-repo-hash");
+///
+/// // In a real application, you would open an existing repository.
+/// if repo_path.exists() {
+///     let repo = Repository::open(repo_path)?;
+///
+///     // Update the repo to the latest commit on the remote's default branch.
+///     update_repo(&repo, &None, None, None)?;
+///
+///     // Update the repo to a specific tag named "v1.2.0".
+///     update_repo(&repo, &Some("v1.2.0".to_string()), None, None)?;
+/// }
+///
+/// # Ok(())
+/// # }
+/// ```
 pub fn update_repo(
     repo: &Repository,
     branch: &Option<String>,

@@ -3,27 +3,24 @@ use log::debug;
 /// Removes C/C++ style comments (// and /* ... */) using a state machine.
 ///
 /// This function correctly handles comments within string and character literals,
-/// as well as escaped characters. After removing comments, it trims trailing
-/// whitespace from each line and then trims leading/trailing whitespace from the
-/// entire resulting string.
+/// as well as escaped characters. After removing comments, it performs two cleanup steps:
+/// 1. Trims trailing whitespace from each resulting line.
+/// 2. Trims leading and trailing whitespace (including newlines) from the entire final string.
+///
+/// This ensures the output is clean and free of artifacts from removed comments.
 ///
 /// # Examples
 /// ```
 /// use dircat::processing::filters::remove_comments;
-///
 /// let code = r#"
-///     let url = "https://example.com"; // A URL
-///     /* Block comment */
-///     let value = 10;
+///     let x = 1; // A comment
+///     /* Another comment */
+///     let y = 2;
 /// "#;
-/// // The line with the block comment becomes an empty line, and indentation is preserved.
-/// // The final .trim() in remove_comments removes the leading/trailing newlines from the
-/// // original string literal.
-/// let expected = r#"let url = "https://example.com";
 ///
-///     let value = 10;"#;
+/// let expected = "let x = 1;\n\n    let y = 2;";
 ///
-/// assert_eq!(remove_comments(code).trim(), expected);
+/// assert_eq!(remove_comments(code), expected);
 /// ```
 pub fn remove_comments(content: &str) -> String {
     enum State {

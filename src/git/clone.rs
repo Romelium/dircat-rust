@@ -15,8 +15,27 @@ use std::{
 
 use super::ops::{create_fetch_options, find_remote_commit, update_repo};
 
-/// Gets the specific cache directory path for a given repository URL within a base directory.
-/// The final path is `<base_cache_dir>/<sha256_of_url>`.
+/// Gets the specific cache directory path for a given repository URL.
+///
+/// This function generates a deterministic, filesystem-safe path for a repository
+/// within a base cache directory. The final path is constructed as
+/// `<base_cache_dir>/<sha256_of_url>`, ensuring that each unique repository URL
+/// maps to a unique cache folder.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::git::get_repo_cache_path;
+/// use std::path::Path;
+///
+/// let base_path = Path::new("/tmp/dircat-cache");
+/// let url = "https://github.com/user/repo.git";
+/// let cache_path = get_repo_cache_path(base_path, url);
+///
+/// // The hash is deterministic for a given URL.
+/// let expected_hash = "cb1fdf79c83e1634f3ce487b7813541d2d7fc345ba3be71cc1d85fc3b6f41474";
+/// assert_eq!(cache_path, base_path.join(expected_hash));
+/// ```
 pub fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
     // Create a unique, filesystem-safe directory name from the URL
     let mut hasher = Sha256::new();
@@ -137,10 +156,10 @@ fn get_repo_with_base_cache(
     Ok(repo_path)
 }
 
-/// Clones or updates a git repository into a local cache directory.
+/// Clones or updates a git repository into a local cache.
 ///
-/// This function will clone a remote git repository into a specified local cache directory.
-/// If the repository is already cached, it will fetch updates from the remote to ensure it is up-to-date.
+/// This function clones a remote git repository into a local cache. If the repository
+/// is already cached, it fetches updates from the remote to ensure it is up-to-date.
 ///
 /// # Parameters
 /// * `url` - The URL of the git repository to clone.
@@ -154,6 +173,23 @@ fn get_repo_with_base_cache(
 ///
 /// # Errors
 /// Returns a `GitError` if cloning or updating the repository fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use dircat::git::get_repo;
+/// # use std::path::Path;
+/// # use anyhow::Result;
+/// # fn main() -> Result<()> {
+/// let url = "https://github.com/rust-lang/cargo.git";
+/// let cache_path = Path::new("/tmp/dircat-cache");
+///
+/// // Clone the default branch into the cache.
+/// let repo_path = get_repo(url, &None, None, cache_path, None)?;
+/// println!("Repository is at: {}", repo_path.display());
+/// # Ok(())
+/// # }
+/// ```
 pub fn get_repo(
     url: &str,
     branch: &Option<String>,

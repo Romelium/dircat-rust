@@ -21,7 +21,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```
-/// use dircat::config::{ConfigBuilder, DiscoveryConfig};
+/// use dircat::config::DiscoveryConfig;
 /// use dircat::filtering::passes_extension_filters;
 /// use std::path::Path;
 ///

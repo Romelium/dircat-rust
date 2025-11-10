@@ -2,13 +2,15 @@
 
 use crate::core_types::FileCounts;
 
-/// Calculates line, character (byte), and word counts for the given content.
-/// Assumes the input is text. For binary files, only character count is reliable.
-/// Words are split by whitespace.
+/// Calculates line, character, and word counts for a string slice.
 ///
-/// - **Lines**: The number of `\n` characters, as determined by `str::lines().count()`.
-/// - **Characters**: The total number of bytes in the string (`str::len()`).
-/// - **Words**: The number of segments separated by one or more whitespace characters.
+/// This function assumes the input is text. For binary content that has been lossily
+/// converted to a string, only the `characters` (byte) count is reliable.
+/// The calculation rules are as follows:
+///
+/// - **Lines**: The number of lines, calculated by counting newline (`\n`) characters.
+/// - **Characters**: The total number of bytes in the string.
+/// - **Words**: The number of words, calculated by splitting the content by whitespace.
 ///
 /// # Examples
 ///

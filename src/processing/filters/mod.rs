@@ -16,6 +16,8 @@ pub use empty_lines::remove_empty_lines;
 ///
 /// # Examples
 ///
+/// **Implementing a Custom Filter:**
+///
 /// ```
 /// use dircat::processing::filters::ContentFilter;
 ///
@@ -33,6 +35,29 @@ pub use empty_lines::remove_empty_lines;
 /// let result = filter.apply("Hello World");
 /// assert_eq!(result, "HELLO WORLD");
 /// assert_eq!(filter.name(), "UppercaseFilter");
+/// ```
+///
+/// **Using a Custom Filter with `ConfigBuilder`:**
+///
+/// ```
+/// # use dircat::processing::filters::ContentFilter;
+/// # #[derive(Clone)]
+/// # struct UppercaseFilter;
+/// # impl ContentFilter for UppercaseFilter {
+/// #     fn apply(&self, content: &str) -> String { content.to_uppercase() }
+/// #     fn name(&self) -> &'static str { "UppercaseFilter" }
+/// # }
+/// use dircat::config::ConfigBuilder;
+///
+/// let config = ConfigBuilder::new()
+///     .content_filter(Box::new(UppercaseFilter))
+///     .build()
+///     .unwrap();
+///
+/// assert_eq!(
+///     config.processing.content_filters[0].name(),
+///     "UppercaseFilter"
+/// );
 /// ```
 pub trait ContentFilter: DynClone + Send + Sync {
     /// Applies the filter to the given content string.
@@ -53,6 +78,17 @@ impl fmt::Debug for Box<dyn ContentFilter> {
 // --- Filter Implementations ---
 
 /// A [`ContentFilter`] that removes C/C++ style comments.
+///
+/// This filter uses a state machine to correctly handle comments inside
+/// string literals and other edge cases.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::processing::filters::{ContentFilter, RemoveCommentsFilter};
+/// let filter = RemoveCommentsFilter;
+/// assert_eq!(filter.apply("code // comment"), "code");
+/// ```
 #[derive(Debug, Clone)]
 pub struct RemoveCommentsFilter;
 
@@ -66,6 +102,19 @@ impl ContentFilter for RemoveCommentsFilter {
 }
 
 /// A [`ContentFilter`] that removes lines containing only whitespace.
+///
+/// This filter works by splitting the content into lines, filtering out any
+/// line that becomes empty after trimming whitespace, and then rejoining the
+/// remaining lines.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::processing::filters::{ContentFilter, RemoveEmptyLinesFilter};
+/// let filter = RemoveEmptyLinesFilter;
+/// let input = "line 1\n  \nline 3";
+/// assert_eq!(filter.apply(input), "line 1\nline 3");
+/// ```
 #[derive(Debug, Clone)]
 pub struct RemoveEmptyLinesFilter;
 

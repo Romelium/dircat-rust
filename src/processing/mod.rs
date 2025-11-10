@@ -46,11 +46,13 @@ impl<'a> From<&'a Config> for ProcessingOptions<'a> {
 
 /// Processes file content that has already been read into memory.
 ///
-/// This function is decoupled from filesystem I/O. It takes an iterator of
-/// `FileContent` structs and performs several operations in parallel:
-/// - Detects and filters out binary files (unless `--include-binary` is used).
-/// - Calculates counts (lines, words, characters) if requested.
-/// - Applies content transformations like comment and empty line removal.
+/// This function is a specialized, low-level part of the processing pipeline that is
+/// completely decoupled from filesystem I/O. It is ideal for scenarios where file
+/// content is sourced from memory, a database, or a network stream, rather than
+/// being read from local disk. It takes an iterator of `FileContent` structs and
+/// performs the same content transformation and filtering logic as a normal run.
+///
+/// For most use cases, it is simpler to use the main `dircat::execute` function.
 ///
 /// # Returns
 /// An iterator that yields a `Result<FileInfo>` for each successfully processed
@@ -63,16 +65,17 @@ impl<'a> From<&'a Config> for ProcessingOptions<'a> {
 /// use dircat::core_types::FileContent;
 /// use dircat::CancellationToken;
 ///
-/// # fn main() -> dircat::errors::Result<()> {
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let files_content = vec![FileContent {
 ///     relative_path: "a.rs".into(),
 ///     content: b"fn main() {}".to_vec(),
-///     is_process_last: false, process_last_order: None,
+///     ..Default::default()
 /// }];
 /// let opts = ProcessingOptions { include_binary: false, counts: false, content_filters: &[] };
 /// let token = CancellationToken::new();
-/// let processed_files: Vec<_> = process_content(files_content.into_iter(), opts, &token).collect::<dircat::errors::Result<_>>()?;
-/// println!("Processed {} files from memory.", processed_files.len());
+/// let processed_files: Vec<_> = process_content(files_content.into_iter(), opts, &token).collect::<Result<Vec<_>, _>>()?;
+///
+/// assert_eq!(processed_files.len(), 1);
 /// # Ok(())
 /// # }
 /// ```
@@ -253,6 +256,58 @@ pub(crate) fn process_and_filter_files_internal<'a>(
     })
 }
 
+/// Processes a list of discovered files.
+///
+/// This is the second stage of the pipeline. It takes an iterator of `FileInfo` structs,
+/// reads the content of each file in parallel, and performs several operations:
+/// - Filters out binary files (unless configured otherwise).
+/// - Calculates file statistics (lines, words, characters) if requested.
+/// - Applies content transformations (comment removal, empty line removal).
+///
+/// # Note on Ordering
+///
+/// This function processes files in parallel for performance and **does not
+/// preserve the order** of the input iterator. The order of `FileInfo` structs
+/// in the output iterator is non-deterministic.
+///
+/// If a deterministic order is required, you must collect the results and sort
+/// them yourself. The top-level [`execute()`] function handles this automatically
+/// and is the recommended approach for most library use cases.
+///
+/// ```
+/// # use dircat::prelude::*;
+/// # use dircat::{config, discover, process_files};
+/// # use std::fs;
+/// # use tempfile::tempdir;
+/// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// # let temp = tempdir()?;
+/// # fs::write(temp.path().join("a.rs"), "A")?;
+/// # fs::write(temp.path().join("c.txt"), "C")?;
+/// # let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
+/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// # let token = CancellationToken::new();
+/// let discovered_iter = discover(&config.discovery, &resolved, &token)?;
+/// let processed_iter = process_files(discovered_iter, &config.processing, &token);
+///
+/// // The order is not guaranteed, so we must collect and sort.
+/// let mut processed_files: Vec<_> = processed_iter.collect::<Result<Vec<_>>>()?;
+/// processed_files.sort_by_key(|fi| fi.relative_path.clone());
+///
+/// assert_eq!(processed_files[0].relative_path.to_str(), Some("a.rs"));
+/// assert_eq!(processed_files[1].relative_path.to_str(), Some("c.txt"));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Arguments
+/// * `files` - An iterator of `FileInfo` structs from the `discover` stage.
+/// * `config` - The configuration for the processing stage.
+/// * `token` - A `CancellationToken` for graceful interruption.
+///
+/// # Returns
+/// An iterator that yields `Result<FileInfo>` for each successfully processed
+/// file. Files identified as binary (and not explicitly included) will be
+/// filtered out. I/O errors or cancellation signals will be yielded as `Err`.
 /// Processes a list of discovered files using a specific `ProcessingConfig`.
 ///
 /// This is the primary, granular entry point for the processing stage. It allows for
@@ -268,9 +323,17 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 /// ```
 /// use dircat::config::{self, ConfigBuilder};
 /// use dircat::{discover, process_files, CancellationToken};
+/// use tempfile::tempdir;
+/// use std::fs;
 ///
-/// # fn main() -> dircat::errors::Result<()> {
-/// let config = ConfigBuilder::new().input_path(".").remove_comments(true).build()?;
+/// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// let temp = tempdir()?;
+/// fs::write(temp.path().join("a.rs"), "// comment\nfn main(){}")?;
+/// let config = ConfigBuilder::new()
+///     .input_path(temp.path().to_str().unwrap())
+///     .remove_comments(true)
+///     .build()?;
+///
 /// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
 /// let token = CancellationToken::new();
 ///
@@ -278,9 +341,11 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 /// let processed_iter = process_files(discovered_iter, &config.processing, &token);
 ///
 /// let processed_files: Vec<_> = processed_iter.collect::<dircat::errors::Result<_>>()?;
-/// println!("Processed {} files.", processed_files.len());
+/// assert_eq!(processed_files.len(), 1);
+/// assert_eq!(processed_files[0].processed_content.as_deref(), Some("fn main(){}"));
 /// # Ok(())
 /// # }
+/// ```
 pub fn process_files<'a>(
     files: impl Iterator<Item = FileInfo> + Send + 'a,
     config: &'a ProcessingConfig,

@@ -51,6 +51,14 @@ pub trait ProgressReporter: Send + Sync {
 ///
 /// This is used as a default or in non-interactive environments where a progress
 /// bar is not desired.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::progress::{NoOpProgress, ProgressReporter};
+/// let reporter = NoOpProgress;
+/// reporter.set_message("This message will be ignored.".to_string());
+/// ```
 pub struct NoOpProgress;
 
 impl ProgressReporter for NoOpProgress {
@@ -62,6 +70,17 @@ impl ProgressReporter for NoOpProgress {
 }
 
 /// An implementation of `ProgressReporter` using the `indicatif` crate.
+///
+/// This struct wraps an `indicatif::ProgressBar` and provides a styled,
+/// terminal-based progress bar for long-running operations.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "progress")]
+/// use dircat::progress::IndicatifProgress;
+/// let reporter = IndicatifProgress::new();
+/// ```
 #[cfg(feature = "progress")]
 #[derive(Clone)]
 pub struct IndicatifProgress {

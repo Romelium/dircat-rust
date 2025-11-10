@@ -85,8 +85,7 @@ pub(crate) fn process_direntry(
     trace!("Calculated relative path: {}", relative_path.display());
 
     // --- 2a. Check "process last" status early, as it affects other filters ---
-    let (is_last, last_order) =
-        check_process_last(&relative_path, absolute_path.file_name(), config);
+    let (is_last, last_order) = check_process_last(&relative_path, config);
 
     // Manual gitignore override logic is not needed here. When --last or --only is used,
     // the walker is configured with a high-precedence temporary ignore file containing

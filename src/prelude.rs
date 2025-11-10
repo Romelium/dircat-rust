@@ -4,7 +4,7 @@
 //! from the `dircat` library. By importing everything from this prelude, you can
 //! easily get started with using `dircat` programmatically.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use dircat::prelude::*;

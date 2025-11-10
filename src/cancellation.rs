@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// # Examples
 ///
 /// ```
-/// use dircat::cancellation::CancellationToken;
+/// use dircat::CancellationToken;
 /// use std::thread;
 /// use std::time::Duration;
 ///
@@ -67,10 +67,12 @@ impl CancellationToken {
 
 /// Creates a new `CancellationToken` in a non-cancelled state.
 ///
+/// This is equivalent to calling `CancellationToken::new()`.
+///
 /// # Examples
 ///
 /// ```
-/// use dircat::cancellation::CancellationToken;
+/// use dircat::CancellationToken;
 ///
 /// let token: CancellationToken = Default::default();
 /// assert!(!token.is_cancelled());

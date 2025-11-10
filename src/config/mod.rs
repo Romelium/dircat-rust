@@ -16,6 +16,30 @@ mod parsing;
 pub mod path_resolve;
 
 /// Configuration options related to file discovery and filtering.
+///
+/// This struct holds all settings that control how `dircat` walks the filesystem,
+/// which files it considers, and which ones it ignores based on various criteria
+/// like size, extension, path, and `.gitignore` rules.
+///
+/// An instance of this struct is typically created as part of a `Config` object
+/// via a `ConfigBuilder` rather than being constructed manually.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::ConfigBuilder;
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new()
+///     .extensions(vec!["rs".to_string(), "toml".to_string()])
+///     .build()?;
+///
+/// // You can inspect the discovery settings after building the main config.
+/// assert_eq!(config.discovery.extensions, Some(vec!["rs".to_string(), "toml".to_string()]));
+/// assert_eq!(config.discovery.recursive, true); // Default value
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
     /// Maximum file size in bytes. Files larger than this are skipped.
@@ -48,6 +72,27 @@ pub struct DiscoveryConfig {
 ///
 /// This struct holds settings that control how the content of each discovered
 /// file is read, interpreted, and transformed.
+///
+/// An instance of this struct is typically created as part of a `Config` object
+/// via a `ConfigBuilder` rather than being constructed manually.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::ConfigBuilder;
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new()
+///     .include_binary(true)
+///     .remove_comments(true)
+///     .build()?;
+///
+/// // You can inspect the processing settings after building the main config.
+/// assert!(config.processing.include_binary);
+/// assert!(config.processing.content_filters.iter().any(|f| f.name() == "RemoveCommentsFilter"));
+/// # Ok(())
+/// # }
+/// ```
 pub struct ProcessingConfig {
     /// Whether to include files detected as binary/non-text.
     pub include_binary: bool,
@@ -69,6 +114,30 @@ impl fmt::Debug for ProcessingConfig {
 }
 
 /// Configuration options related to formatting the final output.
+///
+/// This struct holds settings that control the appearance of the final
+/// concatenated output, such as headers, line numbers, and summaries.
+///
+/// An instance of this struct is typically created as part of a `Config` object
+/// via a `ConfigBuilder` rather than being constructed manually.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::ConfigBuilder;
+///
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new()
+///     .line_numbers(true)
+///     .summary(true)
+///     .build()?;
+///
+/// // You can inspect the output settings after building the main config.
+/// assert!(config.output.line_numbers);
+/// assert!(config.output.summary);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct OutputConfig {
     /// Whether to display only the filename (basename) in the `## File:` header.
@@ -104,10 +173,70 @@ impl DiscoveryConfig {
         }
     }
 }
+
+/// Represents the destination for the generated output.
+///
+/// This enum is used within the main `Config` struct to direct the final output.
+/// It is typically determined by the `ConfigBuilder` based on whether `--output`,
+/// `--paste`, or neither is specified.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::config::{ConfigBuilder, OutputDestination};
+/// use std::path::PathBuf;
+/// # use dircat::errors::Result;
+///
+/// # fn main() -> Result<()> {
+/// // Build a config that specifies an output file.
+/// let config = ConfigBuilder::new().output_file("output.md").build()?;
+///
+/// // You can match on the destination to handle different output strategies.
+/// match config.output_destination {
+///     OutputDestination::Stdout => println!("Writing to stdout."),
+///     OutputDestination::File(ref path) => println!("Writing to file: {}", path.display()),
+///     #[cfg(feature = "clipboard")]
+///     OutputDestination::Clipboard => println!("Copying to clipboard."),
+/// }
+///
+/// assert_eq!(config.output_destination, OutputDestination::File(PathBuf::from("output.md")));
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutputDestination {
+    /// Write output to standard output.
+    Stdout,
+    /// Write output to the specified file.
+    File(PathBuf),
+    #[cfg(feature = "clipboard")]
+    /// Copy output to the system clipboard.
+    Clipboard,
+}
+
 /// The main configuration struct for a `dircat` run.
 ///
 /// This struct holds all the settings parsed and validated from the CLI or a
 /// `ConfigBuilder`, ready to be used by the core logic (discovery, processing, output).
+///
+/// # Examples
+///
+/// ```
+/// # use dircat::config::{ConfigBuilder, OutputDestination};
+/// # use std::path::PathBuf;
+/// # fn main() -> dircat::errors::Result<()> {
+/// let config = ConfigBuilder::new()
+///     .input_path("./src")
+///     .no_recursive(true)
+///     .output_file("output.md")
+///     .build()?;
+///
+/// assert_eq!(config.input_path, "./src");
+/// assert_eq!(config.discovery.recursive, false);
+/// assert_eq!(config.output_destination, OutputDestination::File(PathBuf::from("output.md")));
+/// # Ok(())
+/// # }
+/// ```
 pub struct Config {
     /// The original, unresolved path to the directory/file to process, or a git URL.
     pub input_path: String,
@@ -203,36 +332,7 @@ impl Config {
     }
 }
 
-/// Represents the destination for the generated output.
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[non_exhaustive]
-pub enum OutputDestination {
-    /// Write to standard output.
-    Stdout,
-    /// Write to the specified file path.
-    File(PathBuf),
-    #[cfg(feature = "clipboard")]
-    /// Copy the output to the system clipboard (requires the `clipboard` feature).
-    Clipboard,
-}
-
-/// Re-export the public path resolution function and its related types.
-///
-/// # Examples
-///
-/// ```
-/// use dircat::config::resolve_input;
-/// use std::sync::Arc;
-/// use dircat::progress::ProgressReporter;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let progress: Option<Arc<dyn ProgressReporter>> = None;
-/// // For non-git builds, the git-related arguments are ignored.
-/// let resolved = resolve_input(".", &None, None, &None, progress)?;
-/// println!("Resolved path: {}", resolved.path.display());
-/// # Ok(())
-/// # }
-/// ```
+/// Re-export public path resolution functions and related types.
 #[cfg(feature = "git")]
 pub use path_resolve::{determine_cache_dir, resolve_input, ResolvedInput};
 #[cfg(not(feature = "git"))]

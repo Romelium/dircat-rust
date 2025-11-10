@@ -1,5 +1,3 @@
-// src/config/builder.rs
-
 //! Builds the `Config` struct from command-line arguments or other sources.
 use super::{
     parsing::{compile_regex_vec, normalize_extensions, parse_max_size},
@@ -16,22 +14,25 @@ use super::builder_logic;
 /// This builder handles argument validation and construction of the final `Config` struct
 /// after the input path has been resolved.
 ///
-/// # Examples
+/// # Example
 ///
 /// ```
-/// // Programmatic construction
-/// use dircat::config::ConfigBuilder;
+/// use dircat::ConfigBuilder;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
+/// // Programmatically build a configuration by chaining setter methods.
 /// let config = ConfigBuilder::new()
-///     .input_path(".")
-///     .extensions(vec!["rs".to_string()])
+///     .input_path("./src")
+///     .extensions(vec!["rs".to_string(), "toml".to_string()])
+///     .exclude_path_regex(vec!["/tests/".to_string()])
+///     .remove_comments(true)
 ///     .summary(true)
-///     .build()
-///     .expect("Failed to build config");
+///     .build()?;
 ///
+/// assert_eq!(config.input_path, "./src");
 /// assert!(config.output.summary);
-/// assert_eq!(config.discovery.extensions, Some(vec!["rs".to_string()]));
+/// assert!(config.processing.content_filters.iter().any(|f| f.name() == "RemoveCommentsFilter"));
+/// assert_eq!(config.discovery.extensions, Some(vec!["rs".to_string(), "toml".to_string()]));
 /// # Ok(())
 /// # }
 /// ```
@@ -134,8 +135,12 @@ impl ConfigBuilder {
     ///
     /// ```
     /// # use dircat::config::ConfigBuilder;
-    /// let config = ConfigBuilder::new().input_path("/path/to/dir").build().unwrap();
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().input_path("/path/to/dir").build()?;
     /// assert_eq!(config.input_path, "/path/to/dir");
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn input_path(mut self, path: impl Into<String>) -> Self {
@@ -144,6 +149,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the git branch, tag, or commit to check out.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().git_branch("develop").build()?;
+    /// assert_eq!(config.git_branch, Some("develop".to_string()));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_branch(mut self, branch: impl Into<String>) -> Self {
@@ -152,6 +170,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the depth for a shallow git clone.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().git_depth(1).build()?;
+    /// assert_eq!(config.git_depth, Some(1));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_depth(mut self, depth: u32) -> Self {
@@ -160,6 +191,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the path for caching cloned git repositories.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().git_cache_path("/tmp/dircat-cache").build()?;
+    /// assert_eq!(config.git_cache_path, Some("/tmp/dircat-cache".to_string()));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[cfg(feature = "git")]
     #[must_use]
     pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
@@ -168,6 +212,18 @@ impl ConfigBuilder {
     }
 
     /// Sets the maximum file size to include (e.g., "1M", "512k").
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().max_size("10k").build()?;
+    /// assert_eq!(config.discovery.max_size, Some(10_000));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn max_size(mut self, size: impl Into<String>) -> Self {
         self.max_size = Some(size.into());
@@ -175,6 +231,18 @@ impl ConfigBuilder {
     }
 
     /// Disables recursive directory traversal if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().no_recursive(true).build()?;
+    /// assert!(!config.discovery.recursive);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn no_recursive(mut self, no_recurse: bool) -> Self {
         self.no_recursive = Some(no_recurse);
@@ -182,6 +250,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of file extensions to include.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let exts = vec!["rs".to_string(), "toml".to_string()];
+    /// let config = ConfigBuilder::new().extensions(exts.clone()).build()?;
+    /// assert_eq!(config.discovery.extensions, Some(exts));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn extensions(mut self, exts: Vec<String>) -> Self {
         self.extensions = Some(exts);
@@ -189,6 +270,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of file extensions to exclude.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let exts = vec!["log".to_string(), "tmp".to_string()];
+    /// let config = ConfigBuilder::new().exclude_extensions(exts.clone()).build()?;
+    /// assert_eq!(config.discovery.exclude_extensions, Some(exts));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn exclude_extensions(mut self, exts: Vec<String>) -> Self {
         self.exclude_extensions = Some(exts);
@@ -196,6 +290,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of regular expressions for excluding file paths.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let regexes = vec!["/tests/".to_string()];
+    /// let config = ConfigBuilder::new().exclude_path_regex(regexes).build()?;
+    /// assert!(config.discovery.exclude_path_regex.is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn exclude_path_regex(mut self, regexes: Vec<String>) -> Self {
         self.exclude_path_regex = Some(regexes);
@@ -203,6 +310,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of custom glob patterns to ignore.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let patterns = vec!["target/*".to_string()];
+    /// let config = ConfigBuilder::new().ignore_patterns(patterns.clone()).build()?;
+    /// assert_eq!(config.discovery.ignore_patterns, Some(patterns));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn ignore_patterns(mut self, patterns: Vec<String>) -> Self {
         self.ignore_patterns = Some(patterns);
@@ -210,6 +330,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of regular expressions for including file paths.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let regexes = vec!["^src/".to_string()];
+    /// let config = ConfigBuilder::new().path_regex(regexes).build()?;
+    /// assert!(config.discovery.path_regex.is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn path_regex(mut self, regexes: Vec<String>) -> Self {
         self.path_regex = Some(regexes);
@@ -217,6 +350,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of regular expressions for including filenames.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let regexes = vec![r"\.toml$".to_string()];
+    /// let config = ConfigBuilder::new().filename_regex(regexes).build()?;
+    /// assert!(config.discovery.filename_regex.is_some());
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn filename_regex(mut self, regexes: Vec<String>) -> Self {
         self.filename_regex = Some(regexes);
@@ -224,6 +370,18 @@ impl ConfigBuilder {
     }
 
     /// Disables `.gitignore` processing if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().no_gitignore(true).build()?;
+    /// assert!(!config.discovery.use_gitignore);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn no_gitignore(mut self, no_gitignore: bool) -> Self {
         self.no_gitignore = Some(no_gitignore);
@@ -231,6 +389,18 @@ impl ConfigBuilder {
     }
 
     /// Includes binary files in the output if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().include_binary(true).build()?;
+    /// assert!(config.processing.include_binary);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn include_binary(mut self, include: bool) -> Self {
         self.include_binary = Some(include);
@@ -238,6 +408,18 @@ impl ConfigBuilder {
     }
 
     /// Skips common lockfiles if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().no_lockfiles(true).build()?;
+    /// assert!(config.discovery.skip_lockfiles);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn no_lockfiles(mut self, no_lockfiles: bool) -> Self {
         self.no_lockfiles = Some(no_lockfiles);
@@ -245,6 +427,18 @@ impl ConfigBuilder {
     }
 
     /// Enables removal of C-style comments if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().remove_comments(true).build()?;
+    /// assert!(config.processing.content_filters.iter().any(|f| f.name() == "RemoveCommentsFilter"));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn remove_comments(mut self, remove: bool) -> Self {
         self.remove_comments = Some(remove);
@@ -252,6 +446,18 @@ impl ConfigBuilder {
     }
 
     /// Enables removal of empty lines if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().remove_empty_lines(true).build()?;
+    /// assert!(config.processing.content_filters.iter().any(|f| f.name() == "RemoveEmptyLinesFilter"));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn remove_empty_lines(mut self, remove: bool) -> Self {
         self.remove_empty_lines = Some(remove);
@@ -259,6 +465,28 @@ impl ConfigBuilder {
     }
 
     /// Adds a custom content filter to the processing pipeline.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::processing::filters::ContentFilter;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// #[derive(Clone)]
+    /// struct UppercaseFilter;
+    /// impl ContentFilter for UppercaseFilter {
+    ///     fn apply(&self, content: &str) -> String { content.to_uppercase() }
+    ///     fn name(&self) -> &'static str { "UppercaseFilter" }
+    /// }
+    ///
+    /// let config = ConfigBuilder::new()
+    ///     .content_filter(Box::new(UppercaseFilter))
+    ///     .build()?;
+    /// assert_eq!(config.processing.content_filters[0].name(), "UppercaseFilter");
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn content_filter(mut self, filter: Box<dyn ContentFilter>) -> Self {
         self.content_filters.push(filter);
@@ -266,6 +494,18 @@ impl ConfigBuilder {
     }
 
     /// Displays only the filename in headers if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().filename_only(true).build()?;
+    /// assert!(config.output.filename_only_header);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn filename_only(mut self, filename_only: bool) -> Self {
         self.filename_only = Some(filename_only);
@@ -273,6 +513,18 @@ impl ConfigBuilder {
     }
 
     /// Adds line numbers to the output if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().line_numbers(true).build()?;
+    /// assert!(config.output.line_numbers);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn line_numbers(mut self, line_numbers: bool) -> Self {
         self.line_numbers = Some(line_numbers);
@@ -280,6 +532,18 @@ impl ConfigBuilder {
     }
 
     /// Wraps filenames in backticks if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().backticks(true).build()?;
+    /// assert!(config.output.backticks);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn backticks(mut self, backticks: bool) -> Self {
         self.backticks = Some(backticks);
@@ -287,6 +551,18 @@ impl ConfigBuilder {
     }
 
     /// Sets the number of backticks for Markdown code fences.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().ticks(4).build()?;
+    /// assert_eq!(config.output.num_ticks, 4);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn ticks(mut self, count: u8) -> Self {
         self.ticks = Some(count);
@@ -294,6 +570,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the output file path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::{ConfigBuilder, OutputDestination};
+    /// # use dircat::errors::Result;
+    /// # use std::path::PathBuf;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().output_file("output.md").build()?;
+    /// assert_eq!(config.output_destination, OutputDestination::File(PathBuf::from("output.md")));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn output_file(mut self, path: impl Into<String>) -> Self {
         self.output_file = Some(path.into());
@@ -301,6 +590,19 @@ impl ConfigBuilder {
     }
 
     /// Copies the output to the clipboard if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::{ConfigBuilder, OutputDestination};
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "clipboard")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().paste(true).build()?;
+    /// assert_eq!(config.output_destination, OutputDestination::Clipboard);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[cfg(feature = "clipboard")]
     #[must_use]
     pub fn paste(mut self, paste: bool) -> Self {
@@ -309,6 +611,18 @@ impl ConfigBuilder {
     }
 
     /// Appends a summary of processed files if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().summary(true).build()?;
+    /// assert!(config.output.summary);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn summary(mut self, summary: bool) -> Self {
         self.summary = Some(summary);
@@ -316,6 +630,19 @@ impl ConfigBuilder {
     }
 
     /// Includes file counts in the summary if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().counts(true).build()?;
+    /// assert!(config.output.counts);
+    /// assert!(config.output.summary); // Implies summary
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn counts(mut self, counts: bool) -> Self {
         self.counts = Some(counts);
@@ -323,6 +650,19 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of glob patterns for files to be processed last.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let patterns = vec!["README.md".to_string()];
+    /// let config = ConfigBuilder::new().process_last(patterns.clone()).build()?;
+    /// assert_eq!(config.discovery.process_last, Some(patterns));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn process_last(mut self, patterns: Vec<String>) -> Self {
         self.process_last = Some(patterns);
@@ -330,6 +670,18 @@ impl ConfigBuilder {
     }
 
     /// Processes only the files matching `process_last` patterns if `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().process_last(vec!["*.rs".to_string()]).only_last(true).build()?;
+    /// assert!(config.discovery.only_last);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn only_last(mut self, only_last: bool) -> Self {
         self.only_last = Some(only_last);
@@ -337,6 +689,21 @@ impl ConfigBuilder {
     }
 
     /// Sets the list of glob patterns for files to be processed, skipping all others.
+    /// This is a shorthand for `process_last` and `only_last`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let patterns = vec!["*.rs".to_string()];
+    /// let config = ConfigBuilder::new().only(patterns.clone()).build()?;
+    /// assert_eq!(config.discovery.process_last, Some(patterns));
+    /// assert!(config.discovery.only_last);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn only(mut self, patterns: Vec<String>) -> Self {
         self.only = Some(patterns);
@@ -344,6 +711,18 @@ impl ConfigBuilder {
     }
 
     /// Performs a dry run if `true`, listing files without their content.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().dry_run(true).build()?;
+    /// assert!(config.dry_run);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = Some(dry_run);
@@ -361,6 +740,23 @@ impl ConfigBuilder {
     ///
     /// Returns an error if any validation of option combinations fails, or if
     /// parsing of values like max size or regex patterns fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new()
+    ///     .input_path("./src")
+    ///     .extensions(vec!["rs".to_string()])
+    ///     .build()?;
+    ///
+    /// assert_eq!(config.input_path, "./src");
+    /// assert_eq!(config.discovery.extensions, Some(vec!["rs".to_string()]));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn build(self) -> Result<Config> {
         builder_logic::validate_builder_options(&self)?;
 

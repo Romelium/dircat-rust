@@ -119,7 +119,7 @@ pub use filtering::{
     passes_extension_filters, passes_size_filter,
 };
 pub use output::MarkdownFormatter;
-
+pub use output::OutputFormatter;
 /// Standalone functions and traits for content processing.
 pub use processing::{
     calculate_counts,
@@ -137,7 +137,6 @@ pub use git::{
 };
 
 use crate::errors::{Error, Result};
-use crate::output::OutputFormatter;
 use rayon::prelude::*;
 pub mod filtering;
 use std::io::Write;
@@ -145,9 +144,32 @@ use std::sync::Arc; // Import Write trait
 
 /// Represents the successful result of a dircat execution.
 ///
-/// This struct contains the list of files that were discovered and processed,
-/// allowing the library user to access the data directly for custom formatting
-/// or analysis.
+/// This struct contains the final list of files that were discovered and processed,
+/// sorted in a deterministic order. It allows the library user to access the
+/// processed data directly for custom formatting or analysis before writing to an output.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::{execute, ConfigBuilder, CancellationToken};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use std::{fs, error::Error};
+/// # use tempfile::tempdir;
+/// # let temp = tempdir()?;
+/// # fs::write(temp.path().join("a.txt"), "content")?;
+/// let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
+/// let token = CancellationToken::new();
+///
+/// let result = execute(&config, &token, None)?;
+///
+/// println!("Processed {} files.", result.files.len());
+/// for file_info in result.files {
+///     println!("- {}: {} bytes", file_info.relative_path.display(), file_info.size);
+///     // You can also access file_info.processed_content, file_info.counts, etc.
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone)]
 pub struct DircatResult {
     /// A vector of `FileInfo` structs, processed according to the `Config` and
@@ -172,10 +194,11 @@ impl DircatResult {
     /// # Examples
     ///
     /// ```
-    /// # use dircat::{DircatResult, MarkdownFormatter, OutputConfig};
+    /// # use dircat::{DircatResult, MarkdownFormatter, OutputConfig, execute, ConfigBuilder, CancellationToken};
     /// # use dircat::core_types::FileInfo;
     /// # use std::path::PathBuf;
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // 1. Assume you have a DircatResult from a call to `execute()`.
     /// let file = FileInfo {
     ///     absolute_path: PathBuf::from("/abs/a.txt"),
     ///     relative_path: PathBuf::from("a.txt"),
@@ -184,13 +207,16 @@ impl DircatResult {
     ///     counts: None, is_process_last: false, process_last_order: None, is_binary: false,
     /// };
     /// let result = DircatResult { files: vec![file] };
+    ///
+    /// // 2. Choose a formatter and configure output options.
     /// let formatter = MarkdownFormatter;
     /// let opts = OutputConfig {
     ///     filename_only_header: false, line_numbers: false, backticks: false,
     ///     num_ticks: 3, summary: false, counts: false
     /// };
-    /// let mut buffer = Vec::new();
     ///
+    /// // 3. Format the result into a buffer.
+    /// let mut buffer = Vec::new();
     /// result.format_with(&formatter, &opts, &mut buffer)?;
     ///
     /// let output = String::from_utf8(buffer)?;
@@ -210,10 +236,51 @@ impl DircatResult {
 
     /// Formats the result for a dry run using a custom output formatter.
     ///
+    /// This method is intended for use when `Config::dry_run` is `true`. It allows
+    /// a custom formatter to generate a preview of the files that would be processed.
+    ///
+    /// This method is intended for use when `Config::dry_run` is `true`. The `FileInfo`
+    /// structs in the `DircatResult` will have their `processed_content` and `counts`
+    /// fields set to `None`, as file content is not read during a dry run.
+    ///
     /// # Arguments
     /// * `formatter` - An instance of a type that implements `OutputFormatter`.
     /// * `opts` - The configuration for output formatting.
     /// * `writer` - A mutable reference to a type that implements `std::io::Write`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::{DircatResult, MarkdownFormatter, OutputConfig, execute, ConfigBuilder, CancellationToken};
+    /// # use dircat::core_types::FileInfo;
+    /// # use std::path::PathBuf;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // 1. Assume you have a DircatResult from a dry run call to `execute()`.
+    /// // In a dry run, `processed_content` would be None.
+    /// let file = FileInfo {
+    ///     absolute_path: PathBuf::from("/abs/a.txt"),
+    ///     relative_path: PathBuf::from("a.txt"),
+    ///     size: 4, processed_content: None, counts: None,
+    ///     is_process_last: false, process_last_order: None, is_binary: false,
+    /// };
+    /// let result = DircatResult { files: vec![file] };
+    ///
+    /// // 2. Choose a formatter and configure output options.
+    /// let formatter = MarkdownFormatter;
+    /// let opts = OutputConfig {
+    ///     filename_only_header: false, line_numbers: false, backticks: false,
+    ///     num_ticks: 3, summary: false, counts: false
+    /// };
+    /// // 3. Format the dry run result into a buffer.
+    /// let mut buffer = Vec::new();
+    /// result.format_dry_run_with(&formatter, &opts, &mut buffer)?;
+    ///
+    /// let output = String::from_utf8(buffer)?;
+    /// assert!(output.contains("--- Dry Run: Files that would be processed ---"));
+    /// assert!(output.contains("- a.txt"));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn format_dry_run_with<F: OutputFormatter>(
         &self,
         formatter: &F,
@@ -245,14 +312,21 @@ impl DircatResult {
 /// ```
 /// use dircat::config::{self, ConfigBuilder};
 /// use dircat::{discover, CancellationToken};
+/// use tempfile::tempdir;
+/// use std::fs;
 ///
-/// # fn main() -> dircat::errors::Result<()> {
-/// let config = ConfigBuilder::new().input_path(".").build()?;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let temp = tempdir()?;
+/// fs::write(temp.path().join("a.txt"), "A")?;
+/// let config = ConfigBuilder::new()
+///     .input_path(temp.path().to_str().unwrap())
+///     .build()?;
+///
 /// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
 /// let token = CancellationToken::new();
 ///
 /// let discovered_files: Vec<_> = discover(&config.discovery, &resolved, &token)?.collect();
-/// println!("Discovered {} files.", discovered_files.len());
+/// assert_eq!(discovered_files.len(), 1);
 /// # Ok(())
 /// # }
 /// ```
@@ -281,9 +355,38 @@ pub fn discover(
 /// # Note on Ordering
 ///
 /// This function processes files in parallel for performance and **does not
-/// preserve the order** of the input iterator. If a deterministic order is
-/// required, the results must be collected and sorted afterwards. The top-level
-/// [`execute()`] function handles this automatically.
+/// preserve the order** of the input iterator. The order of `FileInfo` structs
+/// in the output iterator is non-deterministic.
+///
+/// If a deterministic order is required, you must collect the results and sort
+/// them yourself. The top-level [`execute()`] function handles this automatically
+/// and is the recommended approach for most library use cases.
+///
+/// ```
+/// # use dircat::prelude::*;
+/// # use dircat::config;
+/// # use std::fs;
+/// # use dircat::{discover, process_files};
+/// # use tempfile::tempdir;
+/// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// # let temp = tempdir()?;
+/// # fs::write(temp.path().join("c.txt"), "C")?;
+/// # fs::write(temp.path().join("a.rs"), "A")?;
+/// # let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
+/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// # let token = CancellationToken::new();
+/// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
+/// let processed_iter = process_files(discovered_iter, &config.processing, &token);
+///
+/// // The order is not guaranteed, so we must collect and sort.
+/// let mut processed_files: Vec<_> = processed_iter.collect::<dircat::errors::Result<Vec<_>>>()?;
+/// processed_files.sort_by_key(|fi| fi.relative_path.clone());
+///
+/// assert_eq!(processed_files[0].relative_path.to_str(), Some("a.rs"));
+/// assert_eq!(processed_files[1].relative_path.to_str(), Some("c.txt"));
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// # Arguments
 /// * `files` - An iterator of `FileInfo` structs from the `discover` stage.
@@ -299,19 +402,27 @@ pub fn discover(
 ///
 /// ```
 /// use dircat::config::{self, ConfigBuilder};
-/// use dircat::{discover, process, CancellationToken};
+/// use dircat::{discover, process, CancellationToken, errors::Result};
+/// use tempfile::tempdir;
+/// use std::fs;
 ///
-/// # fn main() -> dircat::errors::Result<()> {
-/// let config = ConfigBuilder::new().input_path(".").remove_comments(true).build()?;
+/// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// let temp = tempdir()?;
+/// fs::write(temp.path().join("a.rs"), "// comment\nfn main(){}")?;
+/// let config = ConfigBuilder::new()
+///     .input_path(temp.path().to_str().unwrap())
+///     .remove_comments(true)
+///     .build()?;
+///
 /// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
 /// let token = CancellationToken::new();
 ///
-/// let discovered_iter = discover(&config.discovery, &resolved, &token)?;
+/// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
 /// let processed_iter = process(discovered_iter, &config.processing, &token);
 ///
-/// // Note: The result is not ordered. Collect and sort if needed.
 /// let processed_files: Vec<_> = processed_iter.collect::<dircat::errors::Result<_>>()?;
-/// println!("Processed {} files.", processed_files.len());
+/// assert_eq!(processed_files.len(), 1);
+/// assert_eq!(processed_files[0].processed_content.as_deref(), Some("fn main(){}"));
 /// # Ok(())
 /// # }
 /// ```
@@ -344,14 +455,19 @@ pub fn process<'a>(
 ///
 /// ```
 /// use dircat::{execute, ConfigBuilder, CancellationToken};
+/// use tempfile::tempdir;
+/// use std::fs;
 ///
-/// # fn main() -> dircat::errors::Result<()> {
-/// let config = ConfigBuilder::new().input_path(".").build()?;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let temp = tempdir()?;
+/// fs::write(temp.path().join("a.txt"), "A")?;
+/// let config = ConfigBuilder::new()
+///     .input_path(temp.path().to_str().unwrap())
+///     .build()?;
 /// let token = CancellationToken::new();
 ///
 /// let result = execute(&config, &token, None)?;
-///
-/// println!("Successfully processed {} files.", result.files.len());
+/// assert_eq!(result.files.len(), 1);
 /// # Ok(())
 /// # }
 /// ```

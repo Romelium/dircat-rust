@@ -54,16 +54,10 @@ fn build_and_resolve(builder: ConfigBuilder) -> (Config, ResolvedInput) {
 
 /// Helper to create a basic FileInfo for test inputs.
 fn create_test_file_info(root: &Path, relative_path: &str) -> FileInfo {
-    FileInfo {
-        absolute_path: root.join(relative_path),
-        relative_path: relative_path.into(),
-        size: 0,
-        processed_content: None,
-        counts: None,
-        is_process_last: false,
-        process_last_order: None,
-        is_binary: false,
-    }
+    let mut fi = FileInfo::default();
+    fi.absolute_path = root.join(relative_path);
+    fi.relative_path = relative_path.into();
+    fi
 }
 
 // --- Tests ---
@@ -251,23 +245,23 @@ fn test_process_content_decoupled_from_io() -> anyhow::Result<()> {
     // No files are actually created on the filesystem.
 
     let files_content = vec![
-        FileContent {
-            relative_path: "a.rs".into(),
-            content: b"// comment\nfn main() {}".to_vec(),
-            is_process_last: false,
-            process_last_order: None,
+        {
+            let mut fc = FileContent::default();
+            fc.relative_path = "a.rs".into();
+            fc.content = b"// comment\nfn main() {}".to_vec();
+            fc
         },
-        FileContent {
-            relative_path: "b.txt".into(),
-            content: b"Hello".to_vec(),
-            is_process_last: false,
-            process_last_order: None,
+        {
+            let mut fc = FileContent::default();
+            fc.relative_path = "b.txt".into();
+            fc.content = b"Hello".to_vec();
+            fc
         },
-        FileContent {
-            relative_path: "c.bin".into(),
-            content: b"binary\0data".to_vec(),
-            is_process_last: false,
-            process_last_order: None,
+        {
+            let mut fc = FileContent::default();
+            fc.relative_path = "c.bin".into();
+            fc.content = b"binary\0data".to_vec();
+            fc
         },
     ];
 

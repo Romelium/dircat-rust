@@ -9,7 +9,24 @@ use std::path::PathBuf;
 ///
 /// This struct is used as input for the `process_content` function, allowing
 /// the processing logic to be decoupled from filesystem I/O.
-#[derive(Debug, Clone)]
+///
+/// # Examples
+///
+/// ```
+/// use dircat::core_types::FileContent;
+/// use std::path::PathBuf;
+///
+/// let file_content = FileContent {
+///     relative_path: PathBuf::from("src/main.rs"),
+///     content: b"fn main() {}".to_vec(),
+///     is_process_last: false,
+///     process_last_order: None,
+///     ..Default::default()
+/// };
+///
+/// assert_eq!(file_content.relative_path.to_str(), Some("src/main.rs"));
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct FileContent {
     /// The path relative to the initial input directory.
     /// This is used for display purposes and for determining the language hint.
@@ -28,7 +45,29 @@ pub struct FileContent {
 ///
 /// This struct holds information about each file that passes the initial filtering criteria.
 /// It is updated during the processing phase with content and counts.
-#[derive(Debug, Clone)]
+///
+/// # Examples
+///
+/// ```
+/// use dircat::core_types::{FileInfo, FileCounts};
+/// use std::path::PathBuf;
+///
+/// let file_info = FileInfo {
+///     absolute_path: PathBuf::from("/path/to/project/src/main.rs"),
+///     relative_path: PathBuf::from("src/main.rs"),
+///     size: 123,
+///     processed_content: Some("fn main() {}".to_string()),
+///     counts: Some(FileCounts { lines: 1, characters: 12, words: 2 }),
+///     is_process_last: false,
+///     process_last_order: None,
+///     is_binary: false,
+///     ..Default::default()
+/// };
+///
+/// assert_eq!(file_info.size, 123);
+/// assert!(file_info.processed_content.is_some());
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct FileInfo {
     /// The absolute, canonicalized path to the file on the filesystem.
     pub absolute_path: PathBuf,
@@ -61,6 +100,10 @@ pub struct FileInfo {
 
 /// Holds line, character (byte), and word counts for a single file.
 ///
+/// This struct is populated during the processing stage if the `--counts` flag is used.
+/// For text files, all fields are calculated. For binary files, only the `characters`
+/// (byte count) field is meaningful.
+///
 /// # Examples
 ///
 /// ```
@@ -73,10 +116,10 @@ pub struct FileInfo {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FileCounts {
-    /// The number of lines (newlines `\n`). This is calculated only for text files.
+    /// The number of lines, calculated by counting newline (`\n`) characters.
     pub lines: usize,
-    /// The number of bytes.
+    /// The number of bytes in the file's original content.
     pub characters: usize,
-    /// The number of words (separated by whitespace). This is calculated only for text files.
+    /// The number of words, calculated by splitting the content by whitespace.
     pub words: usize,
 }

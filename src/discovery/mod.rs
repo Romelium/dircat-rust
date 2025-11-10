@@ -29,7 +29,8 @@ use walker::build_walker;
 /// # Returns
 /// A `Result` containing a tuple of two vectors: `(normal_files, last_files)`.
 /// The `last_files` vector is sorted according to the order of the `--last` patterns
-/// and then alphabetically. The `normal_files` vector is not sorted.
+/// and then alphabetically. The `normal_files` vector is explicitly **not sorted**
+/// and its order is non-deterministic due to parallel processing.
 ///
 /// # Errors
 /// Returns an `Error` if the operation is interrupted or if building the file walker fails.
@@ -37,18 +38,31 @@ use walker::build_walker;
 /// # Examples
 ///
 /// ```
-/// use dircat::config::{ConfigBuilder, resolve_input};
-/// use dircat::cancellation::CancellationToken;
-/// use dircat::discover_files;
+/// use dircat::config::{self, ConfigBuilder};
+/// use dircat::{discover_files, CancellationToken};
+/// use tempfile::tempdir;
+/// use std::fs;
 ///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let config = ConfigBuilder::new().input_path(".").build()?;
-/// // In a real app, resolve_input would handle git clones etc.
-/// let resolved = resolve_input(&config.input_path, &None, None, &None, None)?;
+/// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+/// // 1. Set up a temporary directory with some files.
+/// let temp = tempdir()?;
+/// fs::write(temp.path().join("a.txt"), "A")?;
+/// fs::write(temp.path().join("b.md"), "B")?;
+///
+/// // 2. Build a configuration to find the files.
+/// let config = ConfigBuilder::new()
+///     .input_path(temp.path().to_str().unwrap())
+///     .process_last(vec!["*.md".to_string()])
+///     .build()?;
+///
+/// // 3. Resolve the input path and create a cancellation token.
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
 /// let token = CancellationToken::new();
 ///
+/// // 4. Discover the files.
 /// let (normal_files, last_files) = discover_files(&config.discovery, &resolved, &token)?;
-/// println!("Found {} normal files and {} 'last' files.", normal_files.len(), last_files.len());
+/// assert_eq!(normal_files.len(), 1);
+/// assert_eq!(last_files.len(), 1);
 /// # Ok(())
 /// # }
 /// ```

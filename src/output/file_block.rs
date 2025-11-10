@@ -34,12 +34,8 @@ use std::path::PathBuf;
 /// let file_info = FileInfo {
 ///     absolute_path: PathBuf::from("/tmp/test.rs"),
 ///     relative_path: PathBuf::from("src/test.rs"),
-///     size: 12,
 ///     processed_content: Some("fn main() {\n}".to_string()),
-///     counts: None,
-///     is_process_last: false,
-///     process_last_order: None,
-///     is_binary: false,
+///     ..Default::default()
 /// };
 ///
 /// let mut buffer = Vec::new();

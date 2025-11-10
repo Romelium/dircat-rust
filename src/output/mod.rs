@@ -1,4 +1,8 @@
-// src/output/mod.rs
+//! Handles the formatting and writing of the final output.
+//!
+//! This module provides the `OutputFormatter` trait for defining custom output formats,
+//! a default `MarkdownFormatter` implementation, and helpers for writing to
+//! different destinations like stdout, files, or the clipboard.
 
 use crate::config::{Config, OutputConfig};
 use crate::core_types::FileInfo;
@@ -13,6 +17,26 @@ pub mod header;
 pub mod summary;
 pub mod writer;
 
+/// Creates an `OutputConfig` from a reference to the main `Config`.
+///
+/// This allows for easily passing just the relevant output options to a formatter.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::{ConfigBuilder, OutputConfig};
+/// # use dircat::errors::Result;
+/// # fn main() -> Result<()> {
+/// let config = ConfigBuilder::new().line_numbers(true).summary(true).build()?;
+///
+/// // Easily extract the output-specific configuration.
+/// let output_opts = OutputConfig::from(&config);
+///
+/// assert!(output_opts.line_numbers);
+/// assert!(output_opts.summary);
+/// # Ok(())
+/// # }
+/// ```
 impl From<&Config> for OutputConfig {
     fn from(config: &Config) -> Self {
         config.output
@@ -30,10 +54,10 @@ impl From<&Config> for OutputConfig {
 /// use dircat::{output::OutputFormatter, OutputConfig};
 /// use dircat::core_types::FileInfo;
 /// use std::io::Write;
-/// use std::path::PathBuf;
+/// # use std::path::PathBuf;
 ///
 /// // A mock formatter that just lists filenames.
-/// struct SimpleListFormatter;
+/// pub struct SimpleListFormatter;
 ///
 /// impl OutputFormatter for SimpleListFormatter {
 ///     fn format(&self, files: &[FileInfo], opts: &OutputConfig, writer: &mut dyn Write) -> anyhow::Result<()> {
@@ -52,8 +76,7 @@ impl From<&Config> for OutputConfig {
 /// let file = FileInfo {
 ///     absolute_path: PathBuf::from("/abs/a.txt"),
 ///     relative_path: PathBuf::from("a.txt"),
-///     size: 0, processed_content: None, counts: None,
-///     is_process_last: false, process_last_order: None, is_binary: false,
+///     ..Default::default()
 /// };
 /// let files = vec![file];
 /// let opts = OutputConfig {
@@ -69,7 +92,7 @@ impl From<&Config> for OutputConfig {
 /// # Ok(())
 /// # }
 /// ```
-pub trait OutputFormatter {
+pub trait OutputFormatter: Send + Sync {
     /// Formats the processed files into the final output.
     ///
     /// # Arguments
@@ -97,6 +120,44 @@ pub trait OutputFormatter {
 ///
 /// This implementation concatenates files into a single document, separating
 /// each with a `## File:` header and wrapping content in fenced code blocks.
+/// It is the standard formatter used by `dircat`'s `run` and `execute` functions.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::{DircatResult, MarkdownFormatter, OutputConfig};
+/// use dircat::core_types::FileInfo;
+/// use std::path::PathBuf;
+/// # fn main() -> anyhow::Result<()> {
+///
+/// // 1. Assume you have a DircatResult from a call to dircat::execute().
+/// let file = FileInfo {
+///     absolute_path: PathBuf::from("/abs/a.txt"),
+///     relative_path: PathBuf::from("a.txt"),
+///     size: 4,
+///     processed_content: Some("test".to_string()),
+///     ..Default::default()
+/// };
+/// let result = DircatResult { files: vec![file] };
+///
+/// // 2. Instantiate the formatter and configure output options.
+/// use dircat::OutputFormatter; // Import the trait to use its methods
+/// let formatter = MarkdownFormatter;
+/// let opts = OutputConfig {
+///     filename_only_header: false, line_numbers: false, backticks: false,
+///     num_ticks: 3, summary: false, counts: false
+/// };
+///
+/// // 3. Format the result into a buffer.
+/// let mut buffer = Vec::new();
+/// formatter.format(&result.files, &opts, &mut buffer)?;
+///
+/// let output = String::from_utf8(buffer)?;
+/// assert!(output.contains("## File: a.txt"));
+/// assert!(output.contains("test"));
+/// # Ok(())
+/// # }
+/// ```
 pub struct MarkdownFormatter;
 
 impl OutputFormatter for MarkdownFormatter {

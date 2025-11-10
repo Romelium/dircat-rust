@@ -100,7 +100,6 @@ Are you tired of:
 
 ### Intelligent File Discovery & Remote Repository Support
 
-- **GitHub Folder API Integration (Fastest):** For any `github.com` URL pointing to a specific folder (e.g., `.../tree/main/src`), `dircat` uses the GitHub API to download only that folder's contents on-the-fly. This is extremely fast and avoids cloning large repositories.
 - **GitHub Folder/File API Integration (Fastest):** For any `github.com` URL pointing to a specific folder or file (e.g., `.../tree/main/src` or `.../blob/main/src/main.rs`), `dircat` uses the GitHub API to download only that content on-the-fly. This is extremely fast and avoids cloning large repositories.
   - To access private repositories or avoid API rate limits, set a `GITHUB_TOKEN` environment variable with a [Personal Access Token](https://github.com/settings/tokens) that has `repo` scope.
   - **Automatic Fallback:** If the GitHub API returns a rate limit error (HTTP 403), `dircat` will automatically fall back to performing a full `git clone` of the repository and then process the specified folder. A warning will be displayed when this occurs.
@@ -273,7 +272,7 @@ dircat . > output.md
 ## Usage
 
 ```text
-dircat [OPTIONS] [PATH | GIT_URL]
+dircat [OPTIONS] [INPUT]
 ```
 
 - `INPUT`: The directory, specific file, or git repository URL to process. Defaults to the current directory (`.`).
@@ -641,7 +640,7 @@ dircat . -z README.md LICENSE > project_with_readme_last.md
 dircat . -O config/*.toml .env.example > config_files.md
 ```
 
-*Output Snippet:* (Only files matching the `-z` patterns are included)
+*Output Snippet:* (Only files matching the `-O` patterns are included)
 
 ````markdown
     ## File: config/database.toml

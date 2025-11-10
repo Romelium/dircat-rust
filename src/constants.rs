@@ -1,4 +1,4 @@
-// src/constants.rs
+//! Defines global constants used throughout the application.
 
 /// A global header prepended to the start of the generated output.
 pub const OUTPUT_FILE_HEADER: &str = "";
