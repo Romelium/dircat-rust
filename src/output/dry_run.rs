@@ -76,9 +76,9 @@ mod tests {
         let fi1 = create_file_info("z_file.txt");
         let fi2 = create_file_info("a_file.rs");
         let fi3 = create_file_info("sub/b_file.md");
-        
+
         // Pass files in a specific non-alphabetical order
-        let files = vec![&fi1, &fi2, &fi3]; 
+        let files = vec![&fi1, &fi2, &fi3];
         let mut writer = Cursor::new(Vec::new());
         write_dry_run_output(&mut writer, &files, &opts)?;
 

@@ -57,9 +57,8 @@ pub fn is_git_url(path_str: &str) -> bool {
 }
 
 /// Regex for GitHub folder URLs: `.../tree/branch/path`
-static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/(.+)").unwrap()
-});
+static GITHUB_TREE_URL_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/(.+)").unwrap());
 
 /// Parses a GitHub folder URL into its constituent parts.
 ///
@@ -138,7 +137,10 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
 /// assert_eq!(parsed.branch, "feature/new-ui");
 /// assert_eq!(parsed.subdirectory, "src/components");
 /// ```
-pub fn parse_github_folder_url_with_hint(url: &str, branch_hint: Option<&str>) -> Option<ParsedGitUrl> {
+pub fn parse_github_folder_url_with_hint(
+    url: &str,
+    branch_hint: Option<&str>,
+) -> Option<ParsedGitUrl> {
     // 1. Try the official, correct format first.
     if let Some(caps) = GITHUB_TREE_URL_RE.captures(url) {
         let user = caps.get(1).unwrap().as_str();
@@ -339,7 +341,10 @@ mod tests {
             branch: "main".to_string(),
             subdirectory: "src".to_string(),
         });
-        assert_eq!(parse_github_folder_url_with_hint(url, Some("main")), expected);
+        assert_eq!(
+            parse_github_folder_url_with_hint(url, Some("main")),
+            expected
+        );
     }
 
     #[test]
@@ -396,7 +401,10 @@ mod tests {
             subdirectory: "src".to_string(),
         });
         // Even if we hint "feature", it shouldn't incorrectly chop "feature-new"
-        assert_eq!(parse_github_folder_url_with_hint(url, Some("feature")), expected);
+        assert_eq!(
+            parse_github_folder_url_with_hint(url, Some("feature")),
+            expected
+        );
     }
 
     #[test]

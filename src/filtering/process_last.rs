@@ -162,7 +162,11 @@ mod tests {
         // with simple globs like "*.rs", mimicking gitignore.
         let config = create_test_config(Some(vec!["*.rs"]));
         let rel_path = Path::new("src/main.rs");
-        
-        assert_eq!(check_process_last(rel_path, &config), (true, Some(0)), "Glob *.rs should match src/main.rs recursively");
+
+        assert_eq!(
+            check_process_last(rel_path, &config),
+            (true, Some(0)),
+            "Glob *.rs should match src/main.rs recursively"
+        );
     }
 }

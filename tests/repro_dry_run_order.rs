@@ -14,10 +14,10 @@ fn test_dry_run_respects_last_order() -> Result<(), Box<dyn std::error::Error>> 
     fs::write(temp.path().join("z.txt"), "Z")?;
 
     // We request 'a.txt' to be processed LAST.
-    // Expected Order: 
+    // Expected Order:
     // 1. z.txt (normal file)
     // 2. a.txt (last file)
-    
+
     dircat_cmd()
         .arg("-D") // Dry run
         .arg("--last")
@@ -28,7 +28,7 @@ fn test_dry_run_respects_last_order() -> Result<(), Box<dyn std::error::Error>> 
         .stdout(predicate::function(|output: &str| {
             let pos_a = output.find("- a.txt").unwrap_or(usize::MAX);
             let pos_z = output.find("- z.txt").unwrap_or(usize::MAX);
-            
+
             if pos_a == usize::MAX || pos_z == usize::MAX {
                 return false;
             }

@@ -44,6 +44,6 @@ pub use crate::{execute, run, DircatResult};
 // Also re-export key git utility functions if the feature is enabled.
 #[cfg(feature = "git")]
 pub use crate::git::{
-    download_directory_via_api, get_repo, is_git_url, parse_clone_url, parse_github_folder_url, parse_github_folder_url_with_hint,
-    ParsedGitUrl,
+    download_directory_via_api, get_repo, is_git_url, parse_clone_url, parse_github_folder_url,
+    parse_github_folder_url_with_hint, ParsedGitUrl,
 };

@@ -154,7 +154,9 @@ pub fn resolve_input(
 ) -> Result<ResolvedInput> {
     let cache_path = determine_cache_dir(git_cache_path_str.as_deref()).map_err(Error::from)?;
 
-    let absolute_path = if let Some(parsed_url) = git::parse_github_folder_url_with_hint(input_path_str, git_branch.as_deref()) {
+    let absolute_path = if let Some(parsed_url) =
+        git::parse_github_folder_url_with_hint(input_path_str, git_branch.as_deref())
+    {
         log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
         handle_github_folder_url(parsed_url, git_branch, &cache_path, progress)?
     } else if git::is_git_url(input_path_str) {
