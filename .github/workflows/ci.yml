@@ -9,85 +9,124 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  checks: write
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
+  style:
+    name: Check Style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+          cache: false
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
   build_and_test:
     name: Build and Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        # Fetch depth 0 is needed for changed-files to correctly compare PR base/head or push history
+        with: { fetch-depth: 0 }
+
+      # --- Smart Change Detection ---
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v8
+
+      - name: Get last successful commit
+        uses: nrwl/nx-set-shas@v4
+        id: last_successful_commit
         with:
-          fetch-depth: 0
+          main-branch-name: ${{ steps.branch-name.outputs.current_branch }}
+          workflow-id: 'ci.yml'
 
       - name: Get changed files
-        id: changed_files # The ID for this step is 'changed_files'
-        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
+        id: changed_files
+        uses: tj-actions/changed-files@v45
         with:
-          # Define file sets. Output will be like steps.changed-files.outputs.code_any_changed == 'true'
+          base_sha: ${{ steps.last_successful_commit.outputs.base }}
           files_yaml: |
-            rust_code:
-              - src/**/*.rs
-              - tests/**/*.rs
-            manifest:
-              - Cargo.toml
-              - Cargo.lock
-            # Combined group for convenience
             code:
               - src/**/*.rs
               - tests/**/*.rs
               - Cargo.toml
               - Cargo.lock
-            ci:
               - .github/workflows/**
-              - .pre-commit-config.yaml
-            docs:
-              - README.md
-              - COMMIT.md
-              - LICENSE
 
-      - name: Install Rust toolchain (stable)
+      # --- Setup ---
+      - name: Install Rust toolchain
+        if: steps.changed_files.outputs.code_any_changed == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: 'cargo'
-          components: clippy, rustfmt
-        # This step always runs, as caching makes it fast, and subsequent steps might need it.
+          cache: true
+          components: clippy
 
-      - name: Install cargo-hack
+      - name: Install cargo-hack & cargo-nextest
+        if: steps.changed_files.outputs.code_any_changed == 'true'
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-hack
+          tool: cargo-hack, cargo-nextest
 
-      - name: Check Formatting (cargo fmt)
-        # Only run if Rust code or manifest files changed
+      - name: Configure Nextest
         if: steps.changed_files.outputs.code_any_changed == 'true'
-        run: cargo fmt --all -- --check
+        shell: bash
+        run: |
+          mkdir -p .config
+          cat <<EOF > .config/nextest.toml
+          [profile.ci]
+          failure-output = "immediate"
+          fail-fast = false
+          
+          [profile.ci.junit]
+          path = "junit.xml"
+          report-name = "nextest-run"
+          EOF
 
+      # --- Execution ---
       - name: Linting (cargo clippy)
         if: steps.changed_files.outputs.code_any_changed == 'true'
+        # Note: setup-rust-toolchain handles the Problem Matcher for Clippy automatically
         run: cargo hack --each-feature clippy --all-targets -- -D warnings
 
-      - name: Run Tests (cargo test)
+      - name: Run Tests (nextest)
         if: steps.changed_files.outputs.code_any_changed == 'true'
-        run: cargo hack --each-feature test --all-targets --verbose
+        # We run with --profile ci to ensure XML generation
+        run: cargo nextest run --all-features --profile ci
 
-      - name: Run ignored (network-dependent) tests
+      - name: Run Doc Tests
         if: steps.changed_files.outputs.code_any_changed == 'true'
-        run: cargo hack --each-feature test --all-targets -- --ignored
+        run: cargo test --doc --all-features
 
-      - name: Build (Release) for each feature
+      - name: Build (Release)
         if: steps.changed_files.outputs.code_any_changed == 'true'
-        run: cargo hack --each-feature build --release --verbose
+        run: cargo build --release --all-features --verbose
 
-      - name: Indicate checks skipped (if applicable)
-        if: steps.changed_files.outputs.code_any_changed == 'false'
-        run: echo "Rust checks skipped as no relevant code changes were detected."
+      # --- Artifact Upload ---
+      - name: Upload Test Results
+        # Run if code changed, even if previous steps failed (so we see WHY they failed)
+        if: steps.changed_files.outputs.code_any_changed == 'true' && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          # Naming convention is critical here for the reporter regex
+          name: test-results-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore

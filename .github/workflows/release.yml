@@ -13,6 +13,9 @@ env:
   # Prevent Cargo from stripping binaries automatically.
   # We need unstripped binaries for the "Full" artifacts (debug symbols/PDBs).
   CARGO_PROFILE_RELEASE_STRIP: false
+  # Map secret existence to env vars to avoid context issues in 'if' conditions
+  HAS_GPG_SECRET: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+  HAS_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY != '' }}
 
 jobs:
   # ===========================================================================
@@ -104,7 +107,7 @@ jobs:
 
       # Only import GPG if the secret is actually set.
       - name: Import GPG Key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_SECRET == 'true'
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -177,8 +180,16 @@ jobs:
           STD_ARCHIVE="${DIR_NAME}.${ARCHIVE_EXT}"
 
           if [[ "$ARCHIVE_EXT" == "zip" ]]; then
-            zip -r "$FULL_ARCHIVE" "$FULL_DIR_NAME"
-            zip -r "$STD_ARCHIVE" "$DIR_NAME"
+            if command -v zip &> /dev/null; then
+              zip -r "$FULL_ARCHIVE" "$FULL_DIR_NAME"
+              zip -r "$STD_ARCHIVE" "$DIR_NAME"
+            elif command -v 7z &> /dev/null; then
+              7z a "$FULL_ARCHIVE" "$FULL_DIR_NAME"
+              7z a "$STD_ARCHIVE" "$DIR_NAME"
+            else
+              echo "Error: Neither 'zip' nor '7z' found."
+              exit 1
+            fi
           else
             tar -czf "$FULL_ARCHIVE" "$FULL_DIR_NAME"
             tar -czf "$STD_ARCHIVE" "$DIR_NAME"
@@ -246,8 +257,8 @@ jobs:
         shell: bash
         run: |
           # Extract the "Full" (unstripped) zips to get the raw binaries.
-          unzip -o artifacts-x86/*x86_64-apple-darwin*.full.zip -d x86_extract
-          unzip -o artifacts-arm/*aarch64-apple-darwin*.full.zip -d arm_extract
+          unzip -o artifacts-x86/*x86_64-apple-darwin*-full.zip -d x86_extract
+          unzip -o artifacts-arm/*aarch64-apple-darwin*-full.zip -d arm_extract
           
           # Find the binary files (ignoring folder structure).
           BIN_X86=$(find x86_extract -type f -name "${BINARY_NAME}" | head -n 1)
@@ -263,7 +274,7 @@ jobs:
           lipo -create -output output/${BINARY_NAME} "$BIN_X86" "$BIN_ARM"
 
       - name: Import GPG Key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_SECRET == 'true'
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -341,7 +352,7 @@ jobs:
 
       - name: Include Public Key
         # Only run if the variable is set in GitHub Settings
-        if: ${{ vars.GPG_PUBLIC_KEY != '' }}
+        if: env.HAS_PUBLIC_KEY == 'true'
         run: |
           # Write the variable content to a file in the assets folder
           echo "${{ vars.GPG_PUBLIC_KEY }}" > release-assets/public.key
@@ -353,6 +364,7 @@ jobs:
       - name: Extract Release Notes
         id: extract_notes
         uses: theory/changelog-version-notes-action@v0
+        continue-on-error: true
         with:
           version: ${{ steps.get_version.outputs.version }}
           changelog: CHANGELOG.md
@@ -361,8 +373,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          body_path: ${{ steps.extract_notes.outputs.file }}
-          generate_release_notes: true
+          body_path: ${{ steps.extract_notes.outcome == 'success' && steps.extract_notes.outputs.file || '' }}
+          generate_release_notes: ${{ steps.extract_notes.outcome != 'success' }}
           files: release-assets/*
           draft: true
           prerelease: false
