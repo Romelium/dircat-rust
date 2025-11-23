@@ -1,6 +1,6 @@
 [package]
 name = "dircat"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 description = "High-performance Rust utility that concatenates and displays directory contents, similar to the C++ DirCat."
 authors = ["Romelium author@romelium.com>"]
