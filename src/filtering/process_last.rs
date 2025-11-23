@@ -38,11 +38,26 @@ use std::path::Path;
 pub fn check_process_last(relative_path: &Path, config: &DiscoveryConfig) -> (bool, Option<usize>) {
     if let Some(ref last_patterns) = config.process_last {
         for (index, pattern_str) in last_patterns.iter().enumerate() {
+            // Check if the pattern should be treated as recursive (mimicking gitignore behavior).
+            // If a pattern has no path separators (e.g. "*.rs"), gitignore applies it recursively.
+            // Standard glob does not, so we manually check `**/pattern` as well in that case.
+            let is_recursive_candidate = !pattern_str.contains('/') && !pattern_str.contains('\\');
+
             match Pattern::new(pattern_str) {
                 Ok(pattern) => {
-                    // Match the glob pattern against the relative path
+                    // 1. Try matching the pattern as-is (matches root files or explicit paths)
                     if pattern.matches_path(relative_path) {
                         return (true, Some(index));
+                    }
+
+                    // 2. If it's a recursive candidate, try matching with `**/` prefix
+                    if is_recursive_candidate {
+                        let recursive_pattern_str = format!("**/{}", pattern_str);
+                        if let Ok(recursive_pattern) = Pattern::new(&recursive_pattern_str) {
+                            if recursive_pattern.matches_path(relative_path) {
+                                return (true, Some(index));
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -81,8 +96,8 @@ mod tests {
     fn test_match_exact_filename_glob() {
         let config = create_test_config(Some(vec!["other.txt", "main.rs"]));
         let rel_path = Path::new("src/main.rs"); // Relative path includes directory
-                                                 // "main.rs" glob does NOT match "src/main.rs"
-        assert_eq!(check_process_last(rel_path, &config), (false, None));
+                                                 // "main.rs" glob matches recursively now
+        assert_eq!(check_process_last(rel_path, &config), (true, Some(1)));
 
         let rel_path_root = Path::new("main.rs"); // Relative path is just filename
                                                   // "main.rs" glob DOES match "main.rs"
@@ -93,11 +108,11 @@ mod tests {
     fn test_match_wildcard_filename_glob() {
         let config = create_test_config(Some(vec!["*.txt", "*.rs"]));
         let rel_path = Path::new("src/main.rs");
-        // "*.rs" glob DOES match "src/main.rs"
+        // "*.rs" glob matches recursively
         assert_eq!(check_process_last(rel_path, &config), (true, Some(1)));
 
         let rel_path_txt = Path::new("docs/README.txt");
-        // "*.txt" glob DOES match "docs/README.txt"
+        // "*.txt" glob matches recursively
         assert_eq!(check_process_last(rel_path_txt, &config), (true, Some(0)));
     }
 
@@ -139,5 +154,15 @@ mod tests {
         // Should not match anything
         assert_eq!(check_process_last(rel_path_other, &config), (false, None));
         // Check logs manually or using a test logger if needed to confirm warning
+    }
+
+    #[test]
+    fn test_recursive_glob_matching_bug() {
+        // This test confirms that the implementation now matches recursively
+        // with simple globs like "*.rs", mimicking gitignore.
+        let config = create_test_config(Some(vec!["*.rs"]));
+        let rel_path = Path::new("src/main.rs");
+        
+        assert_eq!(check_process_last(rel_path, &config), (true, Some(0)), "Glob *.rs should match src/main.rs recursively");
     }
 }
