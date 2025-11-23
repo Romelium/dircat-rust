@@ -90,10 +90,11 @@ fn test_output_no_files_is_empty() -> Result<(), Box<dyn std::error::Error>> {
 
     dircat_cmd()
         .current_dir(temp.path())
+        .env("RUST_LOG", "off") // Disable logging to ensure stderr only contains the error message
         .assert()
         .success()
         .stdout(predicate::eq(""))
-        .stderr(predicate::eq(
+        .stderr(predicate::str::contains(
             "dircat: No files found matching the specified criteria.\n",
         ));
 

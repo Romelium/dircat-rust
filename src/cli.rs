@@ -1,6 +1,6 @@
 // src/cli.rs
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// A high-performance Rust utility that concatenates and displays directory contents.
 ///
@@ -145,4 +145,19 @@ pub struct Cli {
     /// Perform a dry run. Print files that would be processed but not their content.
     #[arg(short = 'D', long, action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Start the Web UI server
+    #[cfg(feature = "web")]
+    Serve {
+        /// Port to listen on
+        #[arg(short, long, default_value_t = 3000)]
+        port: u16,
+
+        /// Do not open the browser automatically
+        #[arg(long)]
+        no_open: bool,
+    },
 }

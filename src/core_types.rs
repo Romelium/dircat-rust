@@ -68,6 +68,7 @@ pub struct FileContent {
 /// assert!(file_info.processed_content.is_some());
 /// ```
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileInfo {
     /// The absolute, canonicalized path to the file on the filesystem.
     pub absolute_path: PathBuf,
@@ -81,6 +82,7 @@ pub struct FileInfo {
     /// This is `None` initially and is populated during the processing phase after
     /// applying filters. It remains `None` for a dry run. For binary files, this
     /// will be a lossy UTF-8 representation.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub processed_content: Option<String>,
     /// Character, word, and line counts calculated from the file's original content.
     ///
@@ -115,6 +117,7 @@ pub struct FileInfo {
 /// assert_eq!(counts.words, 0);
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileCounts {
     /// The number of lines, calculated by counting newline (`\n`) characters.
     pub lines: usize,

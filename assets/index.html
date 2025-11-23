@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dircat Studio</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-dark: #0d1117; --bg-panel: #161b22; --border: #30363d; --text: #c9d1d9;
+            --accent: #58a6ff; --accent-hover: #1f6feb; --success: #238636;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-dark); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Header */
+        header { height: 45px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; background: var(--bg-panel); justify-content: space-between; user-select: none; }
+        .brand { font-weight: bold; font-size: 1.1rem; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .brand i { color: var(--accent); }
+
+        /* Progress Bar */
+        #progress-container { position: absolute; top: 44px; left: 0; width: 100%; height: 2px; background: transparent; z-index: 100; }
+        #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s; display: none; }
+        #status-text { font-size: 0.8rem; color: var(--accent); margin-left: 10px; }
+
+        /* Layout */
+        .workspace { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        /* Sidebar */
+        .sidebar { width: 320px; min-width: 250px; display: flex; flex-direction: column; background: var(--bg-panel); }
+        .sidebar-scroll { flex: 1; overflow-y: auto; padding: 15px; }
+        
+        /* Resizer */
+        .resizer { width: 5px; background: var(--bg-dark); cursor: col-resize; border-left: 1px solid var(--border); border-right: 1px solid var(--border); transition: background 0.2s; }
+        .resizer:hover, .resizer.dragging { background: var(--accent); }
+
+        /* Form Elements */
+        .section-title { font-size: 0.7rem; text-transform: uppercase; color: #8b949e; margin: 15px 0 8px; font-weight: bold; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+        .input-group { margin-bottom: 8px; }
+        input[type="text"], select { width: 100%; background: var(--bg-dark); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; }
+        input[type="text"]:focus, select:focus { border-color: var(--accent); outline: none; }
+        
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 0.85rem; }
+        .toggle-row label { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        
+        /* Buttons */
+        .btn { width: 100%; padding: 6px; border-radius: 4px; border: 1px solid rgba(240,246,252,0.1); font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .btn-primary { background: var(--success); color: white; border: none; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-accent { background: var(--accent); color: white; border: none; }
+        .btn-accent:hover { background: var(--accent-hover); }
+        .btn-secondary { background: var(--bg-panel); color: var(--text); border-color: var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+        .btn-xs { padding: 2px 6px; font-size: 0.75rem; width: auto; }
+
+        /* File Tree */
+        .file-tree { margin-top: 5px; font-size: 0.85rem; }
+        .tree-item { display: flex; align-items: center; padding: 2px 0; cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tree-item:hover { color: var(--accent); }
+        .tree-item i { width: 18px; text-align: center; margin-right: 4px; color: #8b949e; font-size: 0.8rem; }
+        .tree-indent { margin-left: 16px; border-left: 1px solid #30363d; }
+        .tree-checkbox { margin-right: 6px; accent-color: var(--accent); }
+        .hidden-node { display: none !important; }
+
+        /* Preview Pane */
+        .preview-pane { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark); min-width: 0; }
+        .preview-header { height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; justify-content: space-between; background: var(--bg-panel); }
+        .stats-badge { background: #30363d; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; color: #8b949e; display: flex; align-items: center; gap: 5px; }
+        
+        #code-output { flex: 1; overflow: auto; padding: 20px; margin: 0; font-family: 'ui-monospace', 'SFMono-Regular', monospace; font-size: 0.85rem; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="brand"><i class="fa-solid fa-bolt"></i> Dircat Studio <span id="status-text"></span></div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <select id="promptTemplate" style="width: 200px;" onchange="applyTemplate()">
+            <option value="none">No Template (Raw)</option>
+            <option value="explain">Explain this code</option>
+            <option value="bugs">Find bugs & security issues</option>
+            <option value="refactor">Refactor for performance</option>
+            <option value="tests">Write unit tests</option>
+        </select>
+        <a href="https://github.com/romelium/dircat-rust" target="_blank" style="color: var(--text);"><i class="fa-brands fa-github"></i></a>
+    </div>
+</header>
+<div id="progress-container"><div id="progress-bar"></div></div>
+
+<div class="workspace" id="workspace">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-scroll">
+            <div class="section-title">Source</div>
+            <div class="input-group"><input type="text" id="inputPath" value="." placeholder="Path or Git URL"></div>
+            <div class="input-group" style="display: flex; gap: 5px;">
+                <input type="text" id="gitBranch" placeholder="Branch (optional)">
+                <input type="number" id="gitDepth" placeholder="Depth" style="width: 60px;" min="1" title="Git Clone Depth">
+                <button class="btn btn-accent" style="width: auto;" onclick="scanDirectory()" title="Scan"><i class="fa-solid fa-magnifying-glass"></i></button>
+            </div>
+
+            <div class="section-title">Filters</div>
+            <div class="input-group"><input type="text" id="extensions" placeholder="Include Ext (e.g. rs toml)"></div>
+            <div class="input-group"><input type="text" id="pathRegex" placeholder="Path Regex (e.g. ^src/)"></div>
+            <div class="input-group"><input type="text" id="filenameRegex" placeholder="Filename Regex (e.g. test_.*)"></div>
+            <div class="input-group"><input type="text" id="excludeRegex" placeholder="Exclude Regex"></div>
+            <div class="input-group"><input type="text" id="ignorePatterns" placeholder="Ignore Glob (e.g. *.log)"></div>
+            <div class="toggle-row"><label><input type="checkbox" id="noLockfiles" checked> Skip Lockfiles</label></div>
+            <div class="toggle-row"><label><input type="checkbox" id="noGitignore"> Ignore .gitignore</label></div>
+
+            <div class="section-title">
+                <span>File Tree <span id="fileCount" style="font-weight: normal; color: #8b949e;"></span></span>
+                <div>
+                    <button class="btn btn-secondary btn-xs" onclick="selectAll(true)">All</button>
+                    <button class="btn btn-secondary btn-xs" onclick="selectAll(false)">None</button>
+                </div>
+            </div>
+            <div class="input-group"><input type="text" id="treeSearch" placeholder="Filter tree..." onkeyup="filterTree()"></div>
+            <div id="fileTree" class="file-tree"><div style="color: #8b949e; font-style: italic; padding: 10px 0;">Click scan to load files...</div></div>
+
+            <div class="section-title">Processing</div>
+            <div class="toggle-row"><label><input type="checkbox" id="removeComments"> Remove Comments</label></div>
+            <div class="toggle-row"><label><input type="checkbox" id="removeEmptyLines"> Remove Empty Lines</label></div>
+
+            <div class="section-title">Ordering</div>
+            <div class="input-group"><input type="text" id="processLast" placeholder="Process Last (Glob, e.g. *.md)"></div>
+            <div style="font-size: 0.7rem; color: #8b949e; margin-bottom: 8px;">Note: Ignored if specific files are selected above.</div>
+
+            <div class="section-title">Formatting</div>
+            <div class="toggle-row"><label><input type="checkbox" id="lineNumbers"> Line Numbers</label></div>
+            <div class="toggle-row"><label><input type="checkbox" id="backticks"> Backtick Filenames</label></div>
+            <div class="toggle-row"><label><input type="checkbox" id="summary"> Summary List</label></div>
+            <div class="toggle-row"><label><input type="checkbox" id="counts"> Include Counts</label></div>
+            <div class="input-group" style="display: flex; align-items: center; gap: 8px; margin-top: 5px;">
+                <label style="font-size: 0.85rem; color: var(--text);">Ticks:</label>
+                <input type="number" id="ticks" value="3" min="3" style="width: 60px;">
+            </div>
+
+            <div class="section-title">Output</div>
+            <div class="input-group"><input type="text" id="outputFile" placeholder="Server-side Output Path (Optional)"></div>
+        </div>
+        <div style="padding: 15px; border-top: 1px solid var(--border);">
+            <button class="btn btn-primary" onclick="generateOutput()"><i class="fa-solid fa-file-code"></i> Generate</button>
+        </div>
+    </aside>
+
+    <div class="resizer" id="resizer"></div>
+
+    <main class="preview-pane">
+        <div class="preview-header">
+            <div style="display: flex; gap: 10px;">
+                <div class="stats-badge"><i class="fa-solid fa-file-lines"></i> <span id="statLines">0</span></div>
+                <div class="stats-badge" title="Approx Tokens"><i class="fa-solid fa-coins"></i> ~<span id="statTokens">0</span></div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button id="btnMagicCopy" class="btn btn-secondary" style="width: auto; padding: 4px 12px;" onclick="copyOutput(true)" title="Copy to OS Clipboard (Server)">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Magic Copy
+                </button>
+                <button class="btn btn-secondary" style="width: auto; padding: 4px 12px;" onclick="copyOutput(false)" title="Copy to Browser Clipboard">
+                    <i class="fa-regular fa-copy"></i>
+                </button>
+                <button class="btn btn-secondary" style="width: auto; padding: 4px 12px;" onclick="downloadOutput()">
+                    <i class="fa-solid fa-download"></i>
+                </button>
+            </div>
+        </div>
+        <pre id="code-output"><code class="language-markdown" id="code-content">// Ready.</code></pre>
+    </main>
+</div>
+
+<script>
+    let allFiles = [];
+    let selectedPaths = new Set();
+    let rawOutput = ""; // Store raw output before template application
+    // Generate a unique ID for this session/tab to isolate SSE events
+    const requestId = crypto.randomUUID();
+
+    // --- SSE Setup ---
+    const evtSource = new EventSource(`/api/events?request_id=${requestId}`);
+    evtSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'progress') {
+            document.getElementById('status-text').innerText = "- " + data.msg;
+            document.getElementById('progress-bar').style.display = 'block';
+            document.getElementById('progress-bar').style.width = '50%'; // Indeterminate state visual
+        } else if (data.type === 'done') {
+            document.getElementById('status-text').innerText = "";
+            document.getElementById('progress-bar').style.width = '100%';
+            setTimeout(() => { document.getElementById('progress-bar').style.display = 'none'; document.getElementById('progress-bar').style.width = '0%'; }, 500);
+        }
+    };
+
+    // --- Resizer Logic ---
+    const resizer = document.getElementById('resizer');
+    const sidebar = document.getElementById('sidebar');
+    let isResizing = false;
+    resizer.addEventListener('mousedown', () => { isResizing = true; resizer.classList.add('dragging'); document.body.style.cursor = 'col-resize'; });
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        sidebar.style.width = `${e.clientX}px`;
+    });
+    document.addEventListener('mouseup', () => { isResizing = false; resizer.classList.remove('dragging'); document.body.style.cursor = 'default'; });
+
+    // --- Feature Detection ---
+    async function loadFeatures() {
+        try {
+            const res = await fetch('/api/features');
+            if (!res.ok) return;
+            const features = await res.json();
+
+            if (!features.git) {
+                document.getElementById('gitBranch').style.display = 'none';
+                document.getElementById('gitDepth').style.display = 'none';
+            }
+            if (!features.clipboard) {
+                document.getElementById('btnMagicCopy').style.display = 'none';
+            }
+        } catch (e) { console.error("Failed to load server features:", e); }
+    }
+    loadFeatures();
+
+    // --- Core Logic ---
+    async function scanDirectory() {
+        const payload = {
+            input_path: document.getElementById('inputPath').value || '.',
+            extensions: document.getElementById('extensions').value,
+            no_gitignore: document.getElementById('noGitignore').checked,
+            no_lockfiles: document.getElementById('noLockfiles').checked,
+            git_branch: document.getElementById('gitBranch').value || null,
+            git_depth: document.getElementById('gitDepth').value ? parseInt(document.getElementById('gitDepth').value) : null,
+            path_regex: document.getElementById('pathRegex').value || null,
+            filename_regex: document.getElementById('filenameRegex').value || null,
+            exclude_path_regex: document.getElementById('excludeRegex').value || null,
+            ignore_patterns: document.getElementById('ignorePatterns').value || null,
+            max_size: null,
+            request_id: requestId
+        };
+        try {
+            const res = await fetch('/api/scan', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            if (!res.ok) throw new Error(await res.text());
+            allFiles = await res.json();
+            selectedPaths = new Set(allFiles.map(f => f.relative_path));
+            renderFileTree(allFiles);
+            document.getElementById('fileCount').innerText = `(${allFiles.length})`;
+        } catch (e) { alert("Scan failed: " + e.message); }
+    }
+
+    async function generateOutput() {
+        const payload = {
+            input_path: document.getElementById('inputPath').value || '.',
+            selected_files: Array.from(selectedPaths),
+            remove_comments: document.getElementById('removeComments').checked,
+            remove_empty_lines: document.getElementById('removeEmptyLines').checked,
+            line_numbers: document.getElementById('lineNumbers').checked,
+            backticks: document.getElementById('backticks').checked,
+            summary: document.getElementById('summary').checked,
+            counts: document.getElementById('counts').checked,
+            ticks: parseInt(document.getElementById('ticks').value) || 3,
+            process_last: document.getElementById('processLast').value || null,
+            output_file: document.getElementById('outputFile').value || null,
+            git_branch: document.getElementById('gitBranch').value || null,
+            include_binary: false, filename_only: false,
+            request_id: requestId
+        };
+        try {
+            const res = await fetch('/api/generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            if (!res.ok) throw new Error(await res.text());
+            rawOutput = await res.text();
+            applyTemplate(); // Apply template to raw output
+        } catch (e) { document.getElementById('code-content').textContent = "Error: " + e.message; }
+    }
+
+    function applyTemplate() {
+        const template = document.getElementById('promptTemplate').value;
+        let final = rawOutput;
+        if (template === 'explain') final = "Please explain the following code architecture and logic:\n\n" + rawOutput;
+        else if (template === 'bugs') final = "Analyze the following code for potential bugs, security vulnerabilities, and logic errors:\n\n" + rawOutput;
+        else if (template === 'refactor') final = "Refactor the following code to improve performance and readability:\n\n" + rawOutput;
+        else if (template === 'tests') final = "Write comprehensive unit tests for the following code:\n\n" + rawOutput;
+        
+        const codeBlock = document.getElementById('code-content');
+        codeBlock.textContent = final;
+        hljs.highlightElement(codeBlock);
+        updateStats(final);
+    }
+
+    async function copyOutput(serverSide) {
+        const text = document.getElementById('code-content').textContent;
+        if (serverSide) {
+            try {
+                const res = await fetch('/api/copy', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ content: text }) });
+                if (res.ok) alert("Copied to OS Clipboard via Server!");
+                else alert("Server copy failed: " + await res.text());
+            } catch (e) { alert("Network error: " + e.message); }
+        } else {
+            let copied = false;
+            // 1. Try Modern API (HTTPS/Localhost)
+            if (navigator.clipboard && window.isSecureContext) {
+                try { await navigator.clipboard.writeText(text); copied = true; } catch (e) {}
+            }
+            // 2. Try Legacy API (HTTP)
+            if (!copied) {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed"; textArea.style.left = "-9999px";
+                document.body.appendChild(textArea);
+                textArea.focus(); textArea.select();
+                try { copied = document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(textArea);
+            }
+            // 3. Result / Fallback to Selection
+            if (copied) {
+                alert("Copied to Browser Clipboard!");
+            } else {
+                const codeBlock = document.getElementById('code-content');
+                const range = document.createRange();
+                range.selectNodeContents(codeBlock);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                alert("Copy failed. Text selected - please press Ctrl+C.");
+            }
+        }
+    }
+
+    function downloadOutput() {
+        const text = document.getElementById('code-content').textContent;
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'dircat_output.md'; a.click();
+    }
+
+    function updateStats(text) {
+        document.getElementById('statLines').innerText = text.split('\n').length.toLocaleString();
+        document.getElementById('statTokens').innerText = Math.ceil(text.length / 4).toLocaleString();
+    }
+
+    // --- Tree Logic ---
+    function filterTree() {
+        const term = document.getElementById('treeSearch').value.toLowerCase();
+        const items = document.querySelectorAll('.tree-item');
+        items.forEach(item => {
+            const name = item.querySelector('span').innerText.toLowerCase();
+            const parent = item.parentElement.parentElement; // tree-indent -> wrapper
+            if (name.includes(term)) {
+                item.classList.remove('hidden-node');
+                // Logic to unhide parents could go here for deep trees
+            } else {
+                item.classList.add('hidden-node');
+            }
+        });
+    }
+
+    function selectAll(select) {
+        const checkboxes = document.querySelectorAll('.tree-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = select;
+            cb.dispatchEvent(new Event('change'));
+        });
+    }
+
+    function renderFileTree(files) {
+        const container = document.getElementById('fileTree'); container.innerHTML = '';
+        const root = {};
+        files.forEach(file => {
+            const parts = file.relative_path.split(/[/\\]/);
+            let current = root;
+            parts.forEach((part, i) => {
+                if (!current[part]) current[part] = (i === parts.length - 1) ? { _file: file } : {};
+                current = current[part];
+            });
+        });
+
+        function createNode(name, item, pathSoFar) {
+            const isFile = item._file !== undefined;
+            const fullPath = item._file ? item._file.relative_path : pathSoFar;
+            const div = document.createElement('div'); div.className = 'tree-item';
+            const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'tree-checkbox';
+            
+            if (isFile) {
+                checkbox.checked = selectedPaths.has(fullPath);
+                checkbox.onchange = (e) => e.target.checked ? selectedPaths.add(fullPath) : selectedPaths.delete(fullPath);
+            } else {
+                checkbox.checked = true;
+                checkbox.onchange = (e) => toggleFolder(item, e.target.checked);
+            }
+            div.appendChild(checkbox);
+            
+            const icon = document.createElement('i');
+            // Simple icon logic
+            if (!isFile) icon.className = 'fa-regular fa-folder';
+            else if (name.endsWith('.rs')) icon.className = 'fa-brands fa-rust';
+            else if (name.endsWith('.js')) icon.className = 'fa-brands fa-js';
+            else if (name.endsWith('.py')) icon.className = 'fa-brands fa-python';
+            else if (name.endsWith('.md')) icon.className = 'fa-brands fa-markdown';
+            else icon.className = 'fa-regular fa-file';
+            
+            div.appendChild(icon);
+            const span = document.createElement('span'); span.innerText = name; div.appendChild(span);
+            
+            const wrapper = document.createElement('div'); wrapper.appendChild(div);
+            if (!isFile) {
+                const childrenDiv = document.createElement('div'); childrenDiv.className = 'tree-indent';
+                Object.keys(item).sort().forEach(key => {
+                    if (key !== '_file') childrenDiv.appendChild(createNode(key, item[key], pathSoFar ? pathSoFar + '/' + key : key));
+                });
+                wrapper.appendChild(childrenDiv);
+            }
+            return wrapper;
+        }
+
+        function toggleFolder(folderObj, isChecked) {
+            function traverse(obj) {
+                if (obj._file) isChecked ? selectedPaths.add(obj._file.relative_path) : selectedPaths.delete(obj._file.relative_path);
+                Object.keys(obj).forEach(key => { if (key !== '_file') traverse(obj[key]); });
+            }
+            traverse(folderObj);
+            renderFileTree(allFiles); // Re-render to update UI
+        }
+
+        Object.keys(root).sort().forEach(key => container.appendChild(createNode(key, root[key], key)));
+    }
+</script>
+</body>
+</html>

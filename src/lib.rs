@@ -100,6 +100,8 @@ pub mod output;
 pub mod processing;
 pub mod progress;
 pub mod signal;
+#[cfg(feature = "web")]
+pub mod web;
 
 /// A prelude for conveniently importing the most common types.
 pub mod prelude;
