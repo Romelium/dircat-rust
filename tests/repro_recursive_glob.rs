@@ -12,11 +12,6 @@ fn test_only_flag_should_match_recursively() -> Result<(), Box<dyn std::error::E
     let src = temp.path().join("src");
     fs::create_dir(&src)?;
     fs::write(src.join("main.rs"), "fn main() {}")?;
-
-    // The user expects "*.rs" to match "src/main.rs" recursively, similar to how
-    // gitignore works. In dircat, discovery uses gitignore semantics (recursive), 
-    // but filtering uses glob (non-recursive).
-    // This mismatch causes the file to be found by the walker but rejected by the filter.
     
     dircat_cmd()
         .arg("--only")
@@ -24,7 +19,6 @@ fn test_only_flag_should_match_recursively() -> Result<(), Box<dyn std::error::E
         .current_dir(temp.path())
         .assert()
         .success()
-        // This assertion fails currently because of the bug
         .stdout(predicate::str::contains("## File: src/main.rs"));
 
     temp.close()?;

@@ -58,7 +58,7 @@ pub fn is_git_url(path_str: &str) -> bool {
 
 /// Regex for GitHub folder URLs: `.../tree/branch/path`
 static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/([^/]+)(?:/(.*))?$").unwrap()
+    Regex::new(r"https://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/(.+)").unwrap()
 });
 
 /// Parses a GitHub folder URL into its constituent parts.
@@ -96,19 +96,71 @@ static GITHUB_TREE_URL_RE: Lazy<Regex> = Lazy::new(|| {
 /// assert!(parse_github_folder_url("https://github.com/rust-lang/cargo").is_none());
 /// ```
 pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
+    parse_github_folder_url_with_hint(url, None)
+}
+
+/// Parses a GitHub folder URL into its constituent parts, optionally using a branch hint.
+///
+/// This function is an extended version of [`parse_github_folder_url`] that accepts an
+/// optional `branch_hint`. This is crucial for correctly parsing URLs where the branch
+/// name contains slashes (e.g., `feature/new-ui`), which creates ambiguity in the
+/// `.../tree/<branch>/<path>` structure.
+///
+/// # Arguments
+///
+/// * `url` - The GitHub URL to parse.
+/// * `branch_hint` - An optional branch name. If provided, the parser will attempt to
+///   match this string against the segment immediately following `/tree/` or `/blob/`.
+///
+/// # Returns
+///
+/// `Some(ParsedGitUrl)` if the URL is valid, otherwise `None`.
+///
+/// # Examples
+///
+/// ```
+/// use dircat::git::{parse_github_folder_url_with_hint, ParsedGitUrl};
+///
+/// // Case 1: Standard branch (no hint needed)
+/// let url = "https://github.com/user/repo/tree/main/src";
+/// let parsed = parse_github_folder_url_with_hint(url, None).unwrap();
+/// assert_eq!(parsed.branch, "main");
+/// assert_eq!(parsed.subdirectory, "src");
+///
+/// // Case 2: Branch with slashes (hint required for correct parsing)
+/// let url = "https://github.com/user/repo/tree/feature/new-ui/src/components";
+///
+/// // Without a hint, the parser defaults to splitting at the first slash:
+/// // Branch: "feature", Path: "new-ui/src/components" (Incorrect)
+///
+/// // With the hint:
+/// let parsed = parse_github_folder_url_with_hint(url, Some("feature/new-ui")).unwrap();
+/// assert_eq!(parsed.branch, "feature/new-ui");
+/// assert_eq!(parsed.subdirectory, "src/components");
+/// ```
+pub fn parse_github_folder_url_with_hint(url: &str, branch_hint: Option<&str>) -> Option<ParsedGitUrl> {
     // 1. Try the official, correct format first.
     if let Some(caps) = GITHUB_TREE_URL_RE.captures(url) {
         let user = caps.get(1).unwrap().as_str();
         let repo = caps.get(2).unwrap().as_str();
-        let branch = caps.get(3).unwrap().as_str();
-        // Get the subdirectory path, or an empty string if it's not present.
-        // Trim any trailing slash for consistency.
-        let subdirectory = caps.get(4).map_or("", |m| m.as_str()).trim_end_matches('/');
+        let rest = caps.get(3).unwrap().as_str().trim_end_matches('/');
+
+        let (branch, subdirectory) = if let Some(hint) = branch_hint {
+            if rest == hint {
+                (hint.to_string(), String::new())
+            } else if rest.starts_with(hint) && rest.as_bytes().get(hint.len()) == Some(&b'/') {
+                (hint.to_string(), rest[hint.len() + 1..].to_string())
+            } else {
+                split_at_first_slash(rest)
+            }
+        } else {
+            split_at_first_slash(rest)
+        };
 
         return Some(ParsedGitUrl {
             clone_url: format!("https://github.com/{}/{}.git", user, repo),
-            branch: branch.to_string(),
-            subdirectory: subdirectory.to_string(),
+            branch,
+            subdirectory,
         });
     }
 
@@ -150,6 +202,13 @@ pub fn parse_github_folder_url(url: &str) -> Option<ParsedGitUrl> {
         branch: branch.to_string(),
         subdirectory,
     })
+}
+
+fn split_at_first_slash(s: &str) -> (String, String) {
+    match s.split_once('/') {
+        Some((b, p)) => (b.to_string(), p.to_string()),
+        None => (s.to_string(), String::new()),
+    }
 }
 
 /// Parses the owner and repository name from a GitHub clone URL.
@@ -269,6 +328,89 @@ mod tests {
         assert_eq!(
             parse_github_folder_url("https://gitlab.com/user/repo/tree/master"),
             None
+        );
+    }
+
+    #[test]
+    fn test_parse_with_hint_simple_branch() {
+        let url = "https://github.com/user/repo/tree/main/src";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "main".to_string(),
+            subdirectory: "src".to_string(),
+        });
+        assert_eq!(parse_github_folder_url_with_hint(url, Some("main")), expected);
+    }
+
+    #[test]
+    fn test_parse_with_hint_branch_with_slashes() {
+        let url = "https://github.com/user/repo/tree/feature/new-ui/src/components";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "feature/new-ui".to_string(),
+            subdirectory: "src/components".to_string(),
+        });
+        assert_eq!(
+            parse_github_folder_url_with_hint(url, Some("feature/new-ui")),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_parse_without_hint_defaults_to_first_slash() {
+        // Without a hint, "feature/new-ui" is ambiguous.
+        // The parser should default to splitting at the first slash: branch="feature", path="new-ui/..."
+        let url = "https://github.com/user/repo/tree/feature/new-ui/src";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "feature".to_string(),
+            subdirectory: "new-ui/src".to_string(),
+        });
+        assert_eq!(parse_github_folder_url_with_hint(url, None), expected);
+    }
+
+    #[test]
+    fn test_parse_with_hint_exact_match_no_path() {
+        // URL points exactly to the branch root
+        let url = "https://github.com/user/repo/tree/release/v1.0";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "release/v1.0".to_string(),
+            subdirectory: "".to_string(),
+        });
+        assert_eq!(
+            parse_github_folder_url_with_hint(url, Some("release/v1.0")),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_parse_with_hint_mismatch_prefix_fallback() {
+        // Hint is "feature", but the actual segment is "feature-new".
+        // Should NOT match the hint logic (which requires a slash or exact match)
+        // and fall back to standard splitting.
+        let url = "https://github.com/user/repo/tree/feature-new/src";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "feature-new".to_string(),
+            subdirectory: "src".to_string(),
+        });
+        // Even if we hint "feature", it shouldn't incorrectly chop "feature-new"
+        assert_eq!(parse_github_folder_url_with_hint(url, Some("feature")), expected);
+    }
+
+    #[test]
+    fn test_parse_with_hint_blob_url() {
+        // Works for /blob/ URLs (files) as well
+        let url = "https://github.com/user/repo/blob/group/feature/file.rs";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/user/repo.git".to_string(),
+            branch: "group/feature".to_string(),
+            subdirectory: "file.rs".to_string(),
+        });
+        assert_eq!(
+            parse_github_folder_url_with_hint(url, Some("group/feature")),
+            expected
         );
     }
 }
