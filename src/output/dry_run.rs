@@ -9,9 +9,9 @@ use std::io::Write;
 
 /// Writes the output for a dry run (-D).
 ///
-/// This function lists the relative paths of files that would be processed,
-/// sorted alphabetically, without including their content. It is used by
-/// formatters to generate a preview of the operation's scope.
+/// This function lists the relative paths of files that would be processed.
+/// It iterates over the provided files slice in order, without re-sorting.
+/// The caller is responsible for ensuring the files are in the desired display order.
 #[doc(hidden)] // This is a public helper but not intended for direct library use.
 pub(crate) fn write_dry_run_output(
     writer: &mut dyn Write,
@@ -21,11 +21,8 @@ pub(crate) fn write_dry_run_output(
     debug!("Executing dry run output...");
     writeln!(writer, "\n--- Dry Run: Files that would be processed ---")?;
 
-    // Sort the slice of references directly to avoid cloning PathBufs.
-    let mut sorted_files = files.to_vec();
-    sorted_files.sort_by_key(|fi| &fi.relative_path);
-
-    for file_info in sorted_files {
+    // Iterate directly over the provided slice to preserve order.
+    for file_info in files {
         let path_str = format_path_for_display(&file_info.relative_path, opts);
         writeln!(writer, "- {}", path_str)?;
     }
@@ -74,17 +71,20 @@ mod tests {
     }
 
     #[test]
-    fn test_dry_run_output_sorted() -> Result<()> {
+    fn test_dry_run_output_preserves_order() -> Result<()> {
         let opts = create_test_opts(false);
         let fi1 = create_file_info("z_file.txt");
         let fi2 = create_file_info("a_file.rs");
         let fi3 = create_file_info("sub/b_file.md");
-        let files = vec![&fi1, &fi2, &fi3]; // Unsorted input refs
+        
+        // Pass files in a specific non-alphabetical order
+        let files = vec![&fi1, &fi2, &fi3]; 
         let mut writer = Cursor::new(Vec::new());
         write_dry_run_output(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "\n--- Dry Run: Files that would be processed ---\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n--- End Dry Run ---\n";
+        // Expect the output to match the input order exactly
+        let expected = "\n--- Dry Run: Files that would be processed ---\n- z_file.txt\n- a_file.rs\n- sub/b_file.md\n--- End Dry Run ---\n";
         assert_eq!(output, expected);
         Ok(())
     }
