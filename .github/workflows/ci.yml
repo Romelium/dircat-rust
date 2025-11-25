@@ -5,6 +5,27 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Force Run (Ignore changed files)"
+        required: true
+        default: true
+        type: boolean
+      toolchain:
+        description: "Rust Toolchain"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - beta
+          - nightly
+      skip_cache:
+        description: "Disable Rust Cache"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -26,7 +47,8 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          # Use input toolchain if manual, otherwise default to stable
+          toolchain: ${{ inputs.toolchain || 'stable' }}
           components: rustfmt
           cache: false
 
@@ -57,6 +79,8 @@ jobs:
         with:
           main-branch-name: ${{ steps.branch-name.outputs.current_branch }}
           workflow-id: 'ci.yml'
+          # Fallback for manual runs where SHA calculation might fail
+          error-on-no-successful-workflow: false
 
       - name: Get changed files
         id: changed_files
@@ -71,23 +95,37 @@ jobs:
               - Cargo.lock
               - .github/workflows/**
 
+      # --- Logic Helper ---
+      # We define a step output to consolidate the "Should we run?" logic.
+      # We run if: Code changed OR it is a manual run with force_run=true
+      - name: Determine Run Status
+        id: check
+        run: |
+          if [[ "${{ steps.changed_files.outputs.code_any_changed }}" == "true" ]] || [[ "${{ inputs.force_run }}" == "true" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
       # --- Setup ---
       - name: Install Rust toolchain
-        if: steps.changed_files.outputs.code_any_changed == 'true'
+        if: steps.check.outputs.should_run == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
-          cache: true
+          toolchain: ${{ inputs.toolchain || 'stable' }}
+          # Disable cache if skip_cache is true
+          cache: ${{ inputs.skip_cache != true }}
           components: clippy
 
       - name: Install cargo-hack & cargo-nextest
-        if: steps.changed_files.outputs.code_any_changed == 'true'
+        if: steps.check.outputs.should_run == 'true'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack, cargo-nextest
 
       - name: Configure Nextest
-        if: steps.changed_files.outputs.code_any_changed == 'true'
+        if: steps.check.outputs.should_run == 'true'
         shell: bash
         run: |
           mkdir -p .config
@@ -103,27 +141,24 @@ jobs:
 
       # --- Execution ---
       - name: Linting (cargo clippy)
-        if: steps.changed_files.outputs.code_any_changed == 'true'
-        # Note: setup-rust-toolchain handles the Problem Matcher for Clippy automatically
+        if: steps.check.outputs.should_run == 'true'
         run: cargo hack --each-feature clippy --all-targets -- -D warnings
 
       - name: Run Tests (nextest)
-        if: steps.changed_files.outputs.code_any_changed == 'true'
-        # We run with --profile ci to ensure XML generation
+        if: steps.check.outputs.should_run == 'true'
         run: cargo nextest run --all-features --profile ci
 
       - name: Run Doc Tests
-        if: steps.changed_files.outputs.code_any_changed == 'true'
+        if: steps.check.outputs.should_run == 'true'
         run: cargo test --doc --all-features
 
       - name: Build (Release)
-        if: steps.changed_files.outputs.code_any_changed == 'true'
+        if: steps.check.outputs.should_run == 'true'
         run: cargo build --release --all-features --verbose
 
       # --- Artifact Upload ---
       - name: Upload Test Results
-        # Run if code changed, even if previous steps failed (so we see WHY they failed)
-        if: steps.changed_files.outputs.code_any_changed == 'true' && !cancelled()
+        if: steps.check.outputs.should_run == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
         with:
           # Naming convention is critical here for the reporter regex
