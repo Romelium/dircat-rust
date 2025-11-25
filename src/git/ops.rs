@@ -259,19 +259,3 @@ pub fn update_repo(
     info!("Cached repository updated successfully.");
     Ok(())
 }
-
-#[cfg(test)]
-mod security_tests {
-    use super::*;
-
-    #[test]
-    fn test_fetch_options_disable_submodules() {
-        // We can't inspect the internal state of FetchOptions directly via public API,
-        // but we can ensure the function runs without panic and returns a valid object.
-        // The actual enforcement is done by libgit2.
-        let _options = create_fetch_options(None, None);
-        // If we could inspect `submodule_fetch_mode`, we would assert it is `Ignore`.
-        // This test primarily ensures the configuration code path is executed.
-        assert!(true);
-    }
-}

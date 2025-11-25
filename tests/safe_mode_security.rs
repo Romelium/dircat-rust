@@ -138,22 +138,6 @@ fn test_security_dns_rebinding_prevention() {
 }
 
 // --- 6. Git Protocol Redirection ---
-// This verifies the configuration is applied, though we can't easily simulate a redirecting server here.
-#[cfg(feature = "git")]
-#[test]
-fn test_security_git_redirects_disabled() {
-    // We can't inspect the internal state of git2::FetchOptions easily.
-    // However, we can verify that our `create_fetch_options` helper compiles and runs.
-    // The actual enforcement is done by libgit2 based on the flag we set in `src/git/ops.rs`.
-
-    #[allow(unused_imports)]
-    use dircat::git::update_repo; // Just to ensure the module is accessible
-
-    // We'll rely on the fact that we modified `src/git/ops.rs` to set `follow_redirects(git2::RemoteRedirect::None)`.
-    // A real test would require a mock git server returning 301.
-    // For this suite, we assume the code change in `src/git/ops.rs` covers it.
-    assert!(true);
-}
 
 // --- 7. TOCTOU (Time-of-Check Time-of-Use) Simulation ---
 #[test]
