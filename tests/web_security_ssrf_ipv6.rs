@@ -28,12 +28,12 @@ fn test_validate_input_blocks_ipv4_mapped_ipv6() {
 #[test]
 fn test_validate_input_blocks_octal_ipv4() {
     let config = SafeModeConfig::strict();
-    
+
     // 0177.0.0.1 is octal for 127.0.0.1
-    // The URL parser or DNS resolver might normalize this. 
+    // The URL parser or DNS resolver might normalize this.
     // If it resolves, it must be blocked. If it fails to parse, that's also secure.
     let res = config.validate_input("https://0177.0.0.1/repo");
-    
+
     if let Ok(Some(ip)) = res {
         panic!("Security Fail: Octal IP {} was allowed!", ip);
     }
@@ -43,10 +43,10 @@ fn test_validate_input_blocks_octal_ipv4() {
 #[test]
 fn test_validate_input_blocks_decimal_ipv4() {
     let config = SafeModeConfig::strict();
-    
+
     // 2130706433 is integer for 127.0.0.1
     let res = config.validate_input("https://2130706433/repo");
-    
+
     if let Ok(Some(ip)) = res {
         panic!("Security Fail: Decimal IP {} was allowed!", ip);
     }

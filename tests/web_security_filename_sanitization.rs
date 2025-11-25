@@ -58,13 +58,19 @@ async fn test_web_scan_handles_xss_filenames_safely() {
     // We expect the raw string to contain the escaped version or the raw chars inside quotes.
     // In JSON: "<" becomes "\u003c" or just "<" inside a string.
     // The critical part is that the response is valid JSON.
-    let v: serde_json::Value = serde_json::from_str(&json_str).expect("Response was not valid JSON");
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Response was not valid JSON");
 
-    let found = v.as_array().unwrap().iter().any(|f| {
-        f["relative_path"].as_str() == Some(malicious_name)
-    });
+    let found = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f["relative_path"].as_str() == Some(malicious_name));
 
-    assert!(found, "Malicious filename was not correctly preserved in JSON output");
+    assert!(
+        found,
+        "Malicious filename was not correctly preserved in JSON output"
+    );
 }
 
 #[tokio::test]
@@ -110,5 +116,6 @@ async fn test_web_scan_handles_control_chars_in_filename() {
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
     // Ensure it parses as valid JSON (serde handles control char escaping automatically)
-    let _v: serde_json::Value = serde_json::from_slice(&body).expect("Invalid JSON from control chars");
+    let _v: serde_json::Value =
+        serde_json::from_slice(&body).expect("Invalid JSON from control chars");
 }
