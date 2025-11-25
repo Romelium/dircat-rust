@@ -1,15 +1,5 @@
 #![cfg(feature = "web")]
 
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-};
-use dircat::web::{create_router, GenerateRequest};
-use http_body_util::BodyExt;
-use std::fs;
-use tempfile::tempdir;
-use tower::util::ServiceExt;
-
 #[tokio::test]
 #[cfg(unix)] // Backslashes are valid filename characters on Unix, making this test deterministic
 async fn test_web_generate_handles_backslash_in_filename() {

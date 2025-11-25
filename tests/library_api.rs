@@ -46,7 +46,8 @@ impl TestHarness {
 /// Helper to build the config and resolve the input path from a builder.
 fn build_and_resolve(builder: ConfigBuilder) -> (Config, ResolvedInput) {
     let config = builder.build().unwrap();
-    let resolved = config::resolve_input(&config.input_path, &None, None, &None, None).unwrap();
+    let resolved =
+        config::resolve_input(&config.input_path, &None, None, &None, None, None).unwrap();
     (config, resolved)
 }
 
@@ -142,6 +143,7 @@ fn test_process_iterator_reads_and_filters_content() -> anyhow::Result<()> {
         files_to_process.into_iter(),
         &config.processing,
         &harness.token,
+        None,
     )
     .collect::<Result<Vec<_>, Error>>()?;
 
@@ -176,6 +178,7 @@ fn test_process_iterator_includes_binary_when_configured() -> anyhow::Result<()>
         files_to_process.into_iter(),
         &config.processing,
         &harness.token,
+        None,
     )
     .collect::<Result<Vec<_>, Error>>()?;
 
@@ -207,6 +210,7 @@ fn test_process_iterator_handles_io_error() -> anyhow::Result<()> {
         files_to_process.into_iter(),
         &config.processing,
         &harness.token,
+        None,
     );
 
     // With parallel processing, order is not guaranteed. Collect all results and inspect.
@@ -304,6 +308,7 @@ fn test_process_iterator_handles_cancellation() {
         files_to_process.into_iter(),
         &config.processing,
         &harness.token,
+        None,
     )
     .collect();
 
@@ -323,6 +328,7 @@ fn test_process_with_empty_iterator() -> anyhow::Result<()> {
         files_to_process.into_iter(),
         &config.processing,
         &harness.token,
+        None,
     )
     .collect::<Result<Vec<_>, Error>>()?;
 
@@ -347,7 +353,7 @@ fn test_discover_and_process_chaining() -> anyhow::Result<()> {
 
     // --- The Streaming Pipeline ---
     let discovered_iter = discover(&config.discovery, &resolved, &harness.token)?;
-    let processed_iter = process_files(discovered_iter, &config.processing, &harness.token);
+    let processed_iter = process_files(discovered_iter, &config.processing, &harness.token, None);
     let mut final_files: Vec<FileInfo> = processed_iter.collect::<Result<Vec<_>, Error>>()?;
     // -----------------------------
 

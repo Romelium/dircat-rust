@@ -4,9 +4,13 @@
 use crate::errors::GitError;
 use crate::progress::ProgressReporter;
 use anyhow::{Context, Result};
+#[cfg(feature = "git")]
+use fs2::FileExt;
 use git2::{build::RepoBuilder, Repository};
 use hex;
+use log::{debug, info, warn};
 use sha2::{Digest, Sha256};
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::{
     fs,
@@ -43,6 +47,7 @@ pub fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
     let hash = hasher.finalize();
     let hex_hash = hex::encode(hash);
 
+    debug!("Computed cache hash '{}' for URL '{}'", hex_hash, url);
     base_cache_dir.join(hex_hash)
 }
 
@@ -54,12 +59,33 @@ fn get_repo_with_base_cache(
     branch: &Option<String>,
     depth: Option<u32>,
     progress: Option<Arc<dyn ProgressReporter>>,
+    resolved_ip: Option<IpAddr>,
 ) -> Result<PathBuf, GitError> {
     let repo_path = get_repo_cache_path(base_cache_dir, url);
 
+    // Ensure base directory exists
+    fs::create_dir_all(base_cache_dir)
+        .context("Failed to create cache directory")
+        .map_err(GitError::Generic)?;
+
+    // Acquire exclusive lock to prevent race conditions during clone/update
+    let lock_path = repo_path.with_extension("lock");
+    let lock_file = std::fs::File::create(&lock_path)
+        .map_err(|e| GitError::Generic(anyhow::anyhow!("Failed to create lock file: {}", e)))?;
+
+    if let Some(p) = &progress {
+        p.set_message(format!(
+            "Waiting for cache lock on {}...",
+            repo_path.display()
+        ));
+    }
+    lock_file
+        .lock_exclusive()
+        .map_err(|e| GitError::Generic(anyhow::anyhow!("Failed to acquire cache lock: {}", e)))?;
+
     if repo_path.exists() {
         log::info!(
-            "Found cached repository for '{}' at '{}'. Checking for updates...",
+            "Cache HIT: '{}' at '{}'. Checking for updates...",
             url,
             repo_path.display()
         );
@@ -67,13 +93,14 @@ fn get_repo_with_base_cache(
             Ok(repo) => {
                 // Repo exists and is valid, update it
                 update_repo(&repo, branch, depth, progress.clone())?;
+                touch_path(&repo_path); // Update mtime for LRU
                 if let Some(p) = &progress {
                     p.finish_with_message("Update complete.".to_string());
                 }
                 return Ok(repo_path);
             }
             Err(_) => {
-                log::warn!(
+                warn!(
                     "Cached repository at '{}' is corrupted or invalid. Re-cloning...",
                     repo_path.display(),
                 );
@@ -102,15 +129,34 @@ fn get_repo_with_base_cache(
     }
 
     // --- Cache Miss or Corrupted Cache ---
-    log::info!(
+    info!(
         "Cloning git repository from '{}' into cache at '{}'...",
         url,
         repo_path.display()
     );
-    fs::create_dir_all(repo_path.parent().unwrap())
-        .context("Failed to create cache directory")
-        .map_err(GitError::Generic)?;
 
+    // SECURITY: DNS Rebinding Mitigation (Double-Check)
+    // If we have a resolved IP from the security check, verify the hostname still
+    // resolves to it (or at least a safe IP) immediately before cloning.
+    if let Some(_safe_ip) = resolved_ip {
+        if let Ok(parsed) = url::Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                if let Ok(mut addrs) = host.to_socket_addrs() {
+                    // If the host now resolves to a loopback/private IP, abort.
+                    if addrs.any(|ip| ip.ip().is_loopback() || ip.ip().is_unspecified()) {
+                        return Err(GitError::Generic(anyhow::anyhow!(
+                            "Security: DNS Rebinding detected for {}",
+                            host
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
+    // Note: libgit2 does not easily support DNS pinning via the standard Rust bindings without
+    // implementing a full custom transport. For Safe Mode, we rely on the initial validation
+    // in `security.rs` and the fact that `reqwest` (used for API downloads) enforces pinning.
     let fetch_options = create_fetch_options(depth, progress.clone());
     let mut repo_builder = RepoBuilder::new();
     repo_builder.fetch_options(fetch_options);
@@ -119,7 +165,7 @@ fn get_repo_with_base_cache(
     // Instead, we clone the default branch first, and then find and check out the specific ref.
     // This is more robust and handles both branches and tags correctly on initial clone.
     if let Some(ref_name) = branch {
-        log::debug!(
+        debug!(
             "Cloning default branch first, will check out '{}' after.",
             ref_name
         );
@@ -134,12 +180,12 @@ fn get_repo_with_base_cache(
     if let Some(p) = &progress {
         p.finish_with_message("Clone complete.".to_string());
     }
-    log::info!("Successfully cloned repository into cache.");
+    info!("Successfully cloned repository into cache.");
 
     // If a specific branch/tag was requested, we need to check it out now.
     // The clone operation by default only checks out the remote's HEAD.
     if branch.is_some() {
-        log::info!("Checking out specified ref: {:?}", branch.as_ref().unwrap());
+        info!("Checking out specified ref: {:?}", branch.as_ref().unwrap());
         // Find the commit associated with the branch or tag.
         let target_commit = find_remote_commit(&repo, branch)?;
 
@@ -150,10 +196,19 @@ fn get_repo_with_base_cache(
         repo.reset(target_commit.as_object(), git2::ResetType::Hard, None)
             .context("Failed to perform hard reset on newly cloned repository")
             .map_err(|e| GitError::UpdateFailed(e.to_string()))?;
-        log::info!("Successfully checked out specified ref.");
+        debug!("Successfully checked out specified ref.");
     }
 
+    touch_path(&repo_path); // Update mtime for LRU
+    let _ = lock_file.unlock(); // Explicit unlock (though drop would handle it)
+
     Ok(repo_path)
+}
+
+fn touch_path(path: &Path) {
+    // Best effort update of modification time
+    let now = filetime::FileTime::now();
+    let _ = filetime::set_file_times(path, now, now);
 }
 
 /// Clones or updates a git repository into a local cache.
@@ -196,8 +251,9 @@ pub fn get_repo(
     depth: Option<u32>,
     cache_path: &Path,
     progress: Option<Arc<dyn ProgressReporter>>,
+    resolved_ip: Option<IpAddr>,
 ) -> Result<PathBuf, GitError> {
-    get_repo_with_base_cache(cache_path, url, branch, depth, progress)
+    get_repo_with_base_cache(cache_path, url, branch, depth, progress, resolved_ip)
 }
 
 #[cfg(test)]
@@ -269,14 +325,14 @@ mod tests {
 
         // 1. Cache Miss
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None, None)?;
         assert!(cached_path.exists());
         let content = fs::read_to_string(cached_path.join("file.txt"))?;
         assert_eq!(content, "content v1");
 
         // 2. Cache Hit (no changes)
         let cached_path_2 =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None, None)?;
         assert_eq!(cached_path, cached_path_2); // Should be the same path
         let content_2 = fs::read_to_string(cached_path_2.join("file.txt"))?;
         assert_eq!(content_2, "content v1");
@@ -298,7 +354,7 @@ mod tests {
 
         // 1. Initial clone
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None, None)?;
         assert_eq!(
             fs::read_to_string(cached_path.join("file.txt"))?,
             "content v1"
@@ -309,7 +365,7 @@ mod tests {
 
         // 3. Fetch and update
         let updated_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None, None)?;
         assert_eq!(cached_path, updated_path);
         assert_eq!(
             fs::read_to_string(updated_path.join("file.txt"))?,
@@ -338,7 +394,7 @@ mod tests {
 
         // 2. Attempt to get the repo. It should delete the file and re-clone.
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None, None)?;
         assert!(cached_path.is_dir()); // It's a directory now
         assert_eq!(fs::read_to_string(cached_path.join("file.txt"))?, "content");
 

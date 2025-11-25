@@ -5,6 +5,7 @@
 //! type-safe manner.
 
 use crate::processing::filters::ContentFilter;
+use crate::security::SafeModeConfig;
 use regex::Regex;
 use std::fmt;
 use std::path::PathBuf;
@@ -66,6 +67,10 @@ pub struct DiscoveryConfig {
     pub process_last: Option<Vec<String>>,
     /// If `true`, only process files matching the `process_last` patterns.
     pub only_last: bool,
+    /// If `true`, enables security restrictions during discovery (e.g. no symlinks).
+    pub safe_mode: bool,
+    /// Maximum number of files to discover in Safe Mode to prevent iteration exhaustion.
+    pub max_file_count: Option<usize>,
 }
 
 /// Configuration options related to processing file content.
@@ -100,6 +105,8 @@ pub struct ProcessingConfig {
     pub counts: bool,
     /// A vector of content filters to be applied sequentially to each file's content.
     pub content_filters: Vec<Box<dyn ContentFilter>>,
+    /// Security configuration for processing (size limits, LFI checks).
+    pub security: Option<SafeModeConfig>,
 }
 
 // Custom Debug implementation for ProcessingConfig
@@ -170,6 +177,8 @@ impl DiscoveryConfig {
             skip_lockfiles: false,
             process_last: None,
             only_last: false,
+            safe_mode: false,
+            max_file_count: None,
         }
     }
 }
@@ -306,11 +315,14 @@ impl Config {
                 skip_lockfiles: false,
                 process_last: None,
                 only_last: false,
+                safe_mode: false,
+                max_file_count: None,
             },
             processing: ProcessingConfig {
                 include_binary: false,
                 counts: false,
                 content_filters: Vec::new(),
+                security: None,
             },
             output: OutputConfig {
                 filename_only_header: false,

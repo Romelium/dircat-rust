@@ -8,6 +8,7 @@ use crate::errors::{Error, Result};
 use crate::processing::filters::ContentFilter;
 
 use super::builder_logic;
+use log::{debug, trace};
 
 /// A builder for creating a `Config` instance from command-line arguments or programmatically.
 ///
@@ -758,6 +759,9 @@ impl ConfigBuilder {
     /// # }
     /// ```
     pub fn build(self) -> Result<Config> {
+        debug!("Building configuration...");
+        trace!("Builder state: {:?}", self);
+
         builder_logic::validate_builder_options(&self)?;
 
         let content_filters = builder_logic::build_content_filters(
@@ -790,12 +794,15 @@ impl ConfigBuilder {
             skip_lockfiles: self.no_lockfiles.unwrap_or(false),
             process_last,
             only_last,
+            safe_mode: false, // Default to false, Web UI will override if needed
+            max_file_count: None,
         };
 
         let processing_config = ProcessingConfig {
             include_binary: self.include_binary.unwrap_or(false),
             counts: self.counts.unwrap_or(false),
             content_filters,
+            security: None, // Default to None
         };
 
         let output_config = OutputConfig {
@@ -806,6 +813,22 @@ impl ConfigBuilder {
             summary: self.summary.unwrap_or(false) || self.counts.unwrap_or(false),
             counts: self.counts.unwrap_or(false),
         };
+
+        debug!(
+            "Config built. Filters active: Ext={:?}, PathRegex={}, FilenameRegex={}, MaxSize={:?}",
+            discovery_config.extensions.as_ref().map(|v| v.len()),
+            discovery_config
+                .path_regex
+                .as_ref()
+                .map(|v| v.len())
+                .unwrap_or(0),
+            discovery_config
+                .filename_regex
+                .as_ref()
+                .map(|v| v.len())
+                .unwrap_or(0),
+            discovery_config.max_size
+        );
 
         let config = Config {
             input_path: self.input_path.unwrap_or_else(|| ".".to_string()),
@@ -822,6 +845,7 @@ impl ConfigBuilder {
             git_cache_path: self.git_cache_path,
         };
 
+        trace!("Final Config: {:#?}", config);
         Ok(config)
     }
 }

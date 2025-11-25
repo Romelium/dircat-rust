@@ -159,5 +159,26 @@ pub enum Commands {
         /// Do not open the browser automatically
         #[arg(long)]
         no_open: bool,
+
+        /// Enable Safe Mode (HTTPS only, no local paths, strict limits).
+        #[arg(long)]
+        safe: bool,
+
+        /// [Safe Mode] Comma-separated list of allowed domains (e.g. "github.com,gitlab.com").
+        /// Pass "*" to allow any domain (HTTPS still enforced).
+        #[arg(long, requires = "safe")]
+        allowed_domains: Option<String>,
+
+        /// [Safe Mode] Max file size to process (e.g. "1M"). Overrides default 10MB.
+        #[arg(long, requires = "safe")]
+        safe_max_file_size: Option<String>,
+
+        /// [Safe Mode] Max repository size allowed on disk (e.g. "500M"). Overrides default 500MB.
+        #[arg(long, requires = "safe")]
+        safe_max_repo_size: Option<String>,
+
+        /// [Safe Mode] Request timeout in seconds. Overrides default 30s.
+        #[arg(long, requires = "safe")]
+        safe_timeout: Option<u64>,
     },
 }

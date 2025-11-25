@@ -6,7 +6,9 @@ use crate::core_types::FileInfo;
 use crate::errors::{Error, Result};
 use crossbeam_channel::unbounded;
 use ignore::WalkState;
-use log::debug;
+use log::info;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 mod entry_processor;
 mod walker;
@@ -71,6 +73,8 @@ pub fn discover_files(
     resolved: &ResolvedInput,
     token: &CancellationToken,
 ) -> Result<(Vec<FileInfo>, Vec<FileInfo>)> {
+    info!("Starting file discovery in: {}", resolved.path.display());
+
     let mut normal_files = Vec::new();
     let mut last_files = Vec::<FileInfo>::new();
 
@@ -87,6 +91,10 @@ pub fn discover_files(
     let resolved_clone = resolved.clone();
     let token_clone = token.clone();
 
+    // Shared atomic counter for the walker threads to track discovered files
+    let file_counter = Arc::new(AtomicUsize::new(0));
+    let file_counter_clone = file_counter.clone();
+
     walker.run(move || {
         // This factory closure is 'static and is called for each thread.
         // We clone the data again for each thread's closure.
@@ -94,13 +102,31 @@ pub fn discover_files(
         let token = token_clone.clone();
         let config = config_clone.clone();
         let resolved = resolved_clone.clone();
+        let file_counter = file_counter_clone.clone();
 
         Box::new(move |entry_result| {
             if token.is_cancelled() {
                 return WalkState::Quit;
             }
+
+            // SECURITY: Check file count limit (fast check)
+            if let Some(limit) = config.max_file_count {
+                if file_counter.load(Ordering::Relaxed) >= limit {
+                    return WalkState::Quit;
+                }
+            }
+
             match process_direntry(entry_result, &config, &resolved) {
                 Ok(Some(file_info)) => {
+                    // Increment counter and check limit again before sending
+                    if let Some(limit) = config.max_file_count {
+                        let current_count = file_counter.fetch_add(1, Ordering::Relaxed);
+                        if current_count >= limit {
+                            log::warn!("Safe Mode: File count limit ({}) reached.", limit);
+                            return WalkState::Quit;
+                        }
+                    }
+
                     if tx.send(file_info).is_err() {
                         log::error!("Receiver dropped, quitting discovery walk.");
                         return WalkState::Quit;
@@ -133,7 +159,7 @@ pub fn discover_files(
     // Using a tuple as a key sorts by the first element, then the second for ties.
     last_files.sort_by_key(|fi| (fi.process_last_order, fi.relative_path.clone()));
 
-    debug!(
+    info!(
         "Discovery complete. Normal files: {}, Last files: {}",
         normal_files.len(),
         last_files.len()

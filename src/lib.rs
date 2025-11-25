@@ -52,7 +52,7 @@
 //! // For more granular control, you could also use the individual stages.
 //! // Note: `process` does not preserve order, so you would need to collect and sort
 //! // the results yourself to match the output of `execute`.
-//! // let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, progress)?;
+//! // let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, progress, None)?;
 //! // let discovered_files = dircat::discover(&config, &resolved, &token)?;
 //! // let mut processed_files: Vec<_> = dircat::process(discovered_files, &config, &token)?.collect::<Result<_,_>>()?;
 //! // processed_files.sort_by_key(|fi| (fi.is_process_last, fi.process_last_order, fi.relative_path.clone()));
@@ -99,6 +99,7 @@ pub mod git;
 pub mod output;
 pub mod processing;
 pub mod progress;
+pub mod security;
 pub mod signal;
 #[cfg(feature = "web")]
 pub mod web;
@@ -375,7 +376,7 @@ pub fn discover(
 /// # fs::write(temp.path().join("c.txt"), "C")?;
 /// # fs::write(temp.path().join("a.rs"), "A")?;
 /// # let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
-/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, None, None)?;
 /// # let token = CancellationToken::new();
 /// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
 /// let processed_iter = process_files(discovered_iter, &config.processing, &token);
@@ -416,7 +417,7 @@ pub fn discover(
 ///     .remove_comments(true)
 ///     .build()?;
 ///
-/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None, None)?;
 /// let token = CancellationToken::new();
 ///
 /// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
@@ -433,8 +434,10 @@ pub fn process<'a>(
     files: impl Iterator<Item = FileInfo> + Send + 'a,
     config: &'a ProcessingConfig,
     token: &'a CancellationToken,
+    root_path: Option<&'a std::path::Path>,
 ) -> impl Iterator<Item = Result<FileInfo>> {
-    processing::process_files(files, config, token)
+    // Default to None for root_path if called directly without context
+    processing::process_files(files, config, token, root_path)
 }
 
 /// Executes the discovery and processing stages of the dircat pipeline.
@@ -488,11 +491,12 @@ pub fn execute(
                 config.git_depth,
                 &config.git_cache_path,
                 progress,
+                None, // No IP pinning for CLI usage (relies on system DNS)
             )?
         }
         #[cfg(not(feature = "git"))]
         {
-            config::resolve_input(&config.input_path, &None, None, &None, progress)?
+            config::resolve_input(&config.input_path, &None, None, &None, progress, None)?
         }
     };
     // Discover files based on config
@@ -538,7 +542,13 @@ pub fn execute(
             .collect()
     } else {
         // For a normal run, process the files.
-        let processed_iter = process(discovered_iter, &config.processing, token);
+        // Pass the resolved path as the root_path for security checks (LFI/Symlink jail)
+        let processed_iter = processing::process_files(
+            discovered_iter,
+            &config.processing,
+            token,
+            Some(&resolved_input.path),
+        );
         processed_iter.collect::<Result<Vec<_>>>()?
     };
 

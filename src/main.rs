@@ -27,16 +27,62 @@ struct AppArgs {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // Initialize logging. Default to 'info' if RUST_LOG is not set.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env().add_directive(
+                if cfg!(debug_assertions) {
+                    "dircat=debug".parse().unwrap()
+                } else {
+                    "dircat=info".parse().unwrap()
+                },
+            ),
+        )
+        .init();
+
+    log::info!("Starting dircat v{}...", env!("CARGO_PKG_VERSION"));
+    log::debug!("Raw arguments: {:?}", std::env::args().collect::<Vec<_>>());
+
+    // SECURITY: Panic Hook to prevent info leaks
+    std::panic::set_hook(Box::new(|info| {
+        let msg = match info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => "Box<Any>",
+        };
+        // Simple redaction for panic messages
+        eprintln!(
+            "Application Error: {}",
+            msg.replace(env!("CARGO_MANIFEST_DIR"), "<redacted>")
+                .replace(std::path::MAIN_SEPARATOR, "/")
+        );
+    }));
 
     // --- Setup ---
     let args = AppArgs::parse();
 
     // --- Handle Subcommands (Web Server) ---
     #[cfg(feature = "web")]
-    if let Some(Commands::Serve { port, no_open }) = &args.command {
+    if let Some(Commands::Serve {
+        port,
+        no_open,
+        safe,
+        allowed_domains,
+        safe_max_file_size,
+        safe_max_repo_size,
+        safe_timeout,
+    }) = &args.command
+    {
         let rt = tokio::runtime::Runtime::new()?;
-        return rt.block_on(web::start_server(*port, !*no_open));
+        return rt.block_on(web::start_server(
+            *port,
+            !*no_open,
+            *safe,
+            allowed_domains.clone(),
+            safe_max_file_size.clone(),
+            safe_max_repo_size.clone(),
+            *safe_timeout,
+        ));
     }
 
     // Decide whether to show a progress bar. Show it if stderr is a TTY.
@@ -57,6 +103,7 @@ fn main() -> Result<()> {
 
     // --- Configuration & Execution ---
     let config = ConfigBuilder::from_cli(args.cli).build()?;
+    log::debug!("Configuration built successfully.");
 
     let token = setup_signal_handler()?;
 

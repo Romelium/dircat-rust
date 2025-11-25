@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tempfile::Builder as TempDirBuilder;
 
@@ -68,10 +69,11 @@ struct RepoInfo {
 pub fn download_directory_via_api(
     url_parts: &ParsedGitUrl,
     branch_override: &Option<String>,
+    resolved_ip: Option<IpAddr>,
 ) -> Result<PathBuf> {
     // 1. Setup
     let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
-    let client = build_reqwest_client()?;
+    let client = build_reqwest_client(resolved_ip, &url_parts.clone_url)?;
     let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
 
     // 2. Resolve branch
@@ -112,7 +114,7 @@ pub fn download_directory_via_api(
 }
 
 /// Builds a `reqwest` client with default headers for GitHub API interaction.
-fn build_reqwest_client() -> Result<Client> {
+fn build_reqwest_client(resolved_ip: Option<IpAddr>, original_url: &str) -> Result<Client> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(ACCEPT, "application/vnd.github.v3+json".parse()?);
     headers.insert(USER_AGENT, "dircat-rust-downloader".parse()?);
@@ -122,7 +124,29 @@ fn build_reqwest_client() -> Result<Client> {
         log::debug!("Using GITHUB_TOKEN for authentication.");
     }
 
-    Ok(Client::builder().default_headers(headers).build()?)
+    let mut builder = Client::builder()
+        .default_headers(headers)
+        .redirect(reqwest::redirect::Policy::none());
+
+    // SECURITY: If we have a pre-resolved IP (from Safe Mode validation), force reqwest to use it.
+    // This prevents DNS Rebinding attacks where the domain points to a safe IP during check
+    // but switches to a private IP during connection.
+    if let Some(ip) = resolved_ip {
+        if let Ok(url) = url::Url::parse(original_url) {
+            if let Some(host) = url.host_str() {
+                log::debug!(
+                    "Security: Forcing connection to {} via pre-resolved IP {}",
+                    host,
+                    ip
+                );
+                // GitHub API uses HTTPS (443)
+                builder = builder.resolve(host, SocketAddr::new(ip, 443));
+            }
+        }
+    }
+
+    // SECURITY: Disable redirects to prevent SSRF via Open Redirects or protocol downgrades
+    Ok(builder.build()?)
 }
 
 /// Fetches the default branch name for a repository.

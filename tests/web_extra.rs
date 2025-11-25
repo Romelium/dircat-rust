@@ -186,3 +186,42 @@ async fn test_web_copy_endpoint_structure() {
             || response.status() == StatusCode::INTERNAL_SERVER_ERROR
     );
 }
+
+#[tokio::test]
+async fn test_web_request_timeout() {
+    // Start server with 0ms timeout
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    // Use custom config to allow local paths (avoiding network hangs) but enforce 0ms timeout
+    let mut config = dircat::security::SafeModeConfig::strict();
+    config.request_timeout = std::time::Duration::from_millis(0);
+    config.allow_local_paths = true;
+
+    let app = dircat::web::create_router_with_config(config);
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let url = format!("http://127.0.0.1:{}", port);
+
+    // Create a dummy local file
+    let temp = tempdir().unwrap();
+    let file_path = temp.path().join("a.txt");
+    fs::write(&file_path, "content").unwrap();
+
+    let client = reqwest::Client::new();
+    // Trigger a scan that would take > 0ms
+    let resp = client
+        .post(format!("{}/api/scan", url))
+        .json(&serde_json::json!({
+            "input_path": temp.path().to_str().unwrap(),
+            "no_gitignore": false, "no_lockfiles": false
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), reqwest::StatusCode::REQUEST_TIMEOUT);
+}

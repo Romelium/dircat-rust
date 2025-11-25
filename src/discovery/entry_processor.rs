@@ -39,7 +39,7 @@ pub(crate) fn process_direntry(
     };
 
     let absolute_path = entry.path().to_path_buf();
-    trace!("Processing entry: {}", absolute_path.display());
+    // trace!("Processing entry: {}", absolute_path.display()); // Moved down to avoid spamming before relative calc
 
     // --- 2. Calculate Relative Path ---
     let relative_path = if resolved.is_file {
@@ -82,7 +82,7 @@ pub(crate) fn process_direntry(
                 absolute_path.clone()
             })
     };
-    trace!("Calculated relative path: {}", relative_path.display());
+    trace!("Checking: {}", relative_path.display());
 
     // --- 2a. Check "process last" status early, as it affects other filters ---
     let (is_last, last_order) = check_process_last(&relative_path, config);
@@ -108,50 +108,52 @@ pub(crate) fn process_direntry(
 
     // --- 4. Filter by File Type ---
     if !is_file_type(&metadata) {
-        trace!("Skipping non-file entry: {}", absolute_path.display());
+        trace!(
+            "Filter [Type]: REJECT (Not a file) -> {}",
+            relative_path.display()
+        );
         return Ok(None);
     }
-    trace!("Entry is a file: {}", absolute_path.display());
+    trace!("Filter [Type]: PASS -> {}", relative_path.display());
+    // trace!("Entry is a file: {}", absolute_path.display());
 
     // --- 5. Filter by Lockfile ---
     if config.skip_lockfiles && is_lockfile(&absolute_path) {
         debug!(
-            "Skipping lockfile due to --no-lockfiles flag: {}",
-            absolute_path.display()
+            "Filter [Lockfile]: REJECT (Lockfile skipped) -> {}",
+            relative_path.display()
         );
         return Ok(None);
     }
-    trace!("File passed lockfile filter: {}", absolute_path.display());
+    trace!("Filter [Lockfile]: PASS -> {}", relative_path.display());
+    // trace!("File passed lockfile filter: {}", absolute_path.display());
 
     // --- 6. Filter by Size ---
     if !passes_size_filter(&metadata, config) {
         debug!(
-            "Skipping file due to size constraint: {} (Size: {} bytes)",
-            absolute_path.display(),
+            "Filter [Size]: REJECT (Too large) -> {} ({} bytes)",
+            relative_path.display(),
             metadata.len()
         );
         return Ok(None);
     }
-    trace!("File passed size filter: {}", absolute_path.display());
+    trace!("Filter [Size]: PASS -> {}", relative_path.display());
+    // trace!("File passed size filter: {}", absolute_path.display());
 
     // --- 7. Filter by Extension ---
     if !passes_extension_filters(&absolute_path, config) {
-        debug!(
-            "Skipping file due to extension filter: {}",
-            absolute_path.display()
-        );
+        debug!("Filter [Extension]: REJECT -> {}", relative_path.display());
         return Ok(None);
     }
-    trace!("File passed extension filter: {}", absolute_path.display());
+    trace!("Filter [Extension]: PASS -> {}", relative_path.display());
+    // trace!("File passed extension filter: {}", absolute_path.display());
 
     // --- 8. Filter by Regex (Path and Filename) ---
     if !passes_regex_filters(&absolute_path, &relative_path, config)? {
-        debug!(
-            "Skipping file due to regex filter: {}",
-            absolute_path.display()
-        );
+        debug!("Filter [Regex]: REJECT -> {}", absolute_path.display());
         return Ok(None);
     }
+    trace!("Filter [Regex]: PASS -> {}", relative_path.display());
     trace!("File passed regex filters: {}", absolute_path.display());
 
     // --- 10. Construct FileInfo ---
@@ -167,7 +169,7 @@ pub(crate) fn process_direntry(
     };
 
     debug!(
-        "Entry passed metadata filters: {}",
+        "Filter [All]: ACCEPT -> {}",
         file_info.relative_path.display()
     );
     Ok(Some(file_info))
@@ -187,8 +189,8 @@ fn passes_regex_filters(
             .iter()
             .any(|re| re.is_match(&relative_path_str));
         if is_excluded {
-            debug!(
-                "Path matched an exclude regex, skipping: {}",
+            trace!(
+                "Filter [Regex]: Path matched exclude regex: {}",
                 relative_path_str
             );
             return Ok(false);
@@ -201,15 +203,18 @@ fn passes_regex_filters(
         let matches = include_path_regex_vec
             .iter()
             .any(|re| re.is_match(&relative_path_str));
-        debug!(
-            "Checking include path regex vector against relative path: regexes={:?}, path={}",
-            include_path_regex_vec, relative_path_str,
-        );
+        // debug!(
+        //     "Checking include path regex vector against relative path: regexes={:?}, path={}",
+        //     include_path_regex_vec, relative_path_str,
+        // );
         if !matches {
-            debug!("Path regex vector did not match relative path");
+            trace!(
+                "Filter [Regex]: Path regex did not match: {}",
+                relative_path_str
+            );
             return Ok(false);
         }
-        debug!("Path regex vector matched relative path");
+        // debug!("Path regex vector matched relative path");
     }
 
     // --- 3. Check Include Filename Regex ---
@@ -219,17 +224,20 @@ fn passes_regex_filters(
             let matches = filename_regex_vec
                 .iter()
                 .any(|re| re.is_match(&filename_str));
-            debug!(
-                "Checking filename regex vector: regexes={:?}, filename={}",
-                filename_regex_vec, filename_str,
-            );
+            // debug!(
+            //     "Checking filename regex vector: regexes={:?}, filename={}",
+            //     filename_regex_vec, filename_str,
+            // );
             if !matches {
-                debug!("Filename regex vector did not match");
+                trace!(
+                    "Filter [Regex]: Filename regex did not match: {}",
+                    filename_str
+                );
                 return Ok(false);
             }
-            debug!("Filename regex vector matched");
+            // debug!("Filename regex vector matched");
         } else {
-            debug!("Path has no filename component, failing filename regex match");
+            trace!("Filter [Regex]: Path has no filename component, failing filename regex match");
             return Ok(false);
         }
     }

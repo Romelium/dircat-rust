@@ -9,7 +9,7 @@ use crate::config::{Config, ProcessingConfig};
 use crate::core_types::FileInfo;
 use crate::errors::{io_error_with_path, Error, Result};
 use crate::filtering::is_likely_text_from_buffer;
-use log::debug;
+use log::{debug, trace};
 use rayon::prelude::*;
 
 use crate::core_types::FileContent;
@@ -17,7 +17,13 @@ pub mod counter;
 pub mod filters;
 pub use counter::calculate_counts;
 use filters::ContentFilter;
-use std::fs;
+use std::fs::File;
+use std::io::Read;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Global memory usage tracker (in bytes) to prevent OOM
+static GLOBAL_MEM_USAGE: AtomicUsize = AtomicUsize::new(0);
+const MAX_GLOBAL_MEM_USAGE: usize = 2 * 1024 * 1024 * 1024; // 2GB Limit
 
 /// A struct holding borrowed configuration relevant to the processing stage.
 ///
@@ -176,6 +182,8 @@ pub(crate) fn process_and_filter_files_internal<'a>(
     files: impl ParallelIterator<Item = FileInfo> + 'a,
     config: &'a ProcessingConfig,
     token: &'a CancellationToken,
+    // Root path needed for LFI check in safe mode
+    root_path: Option<&'a std::path::Path>,
 ) -> impl ParallelIterator<Item = Result<FileInfo>> + 'a {
     files.filter_map(move |mut file_info| {
         // The closure captures `config` and `token` which have lifetime 'a
@@ -185,29 +193,104 @@ pub(crate) fn process_and_filter_files_internal<'a>(
             return Some(Err(Error::Interrupted));
         }
 
-        debug!("Processing file: {}", file_info.absolute_path.display());
+        trace!("Reading content: {}", file_info.absolute_path.display());
 
-        // --- 1. Read File Content (once) ---
-        let content_bytes = match fs::read(&file_info.absolute_path) {
-            Ok(bytes) => bytes,
+        // --- 1. Read File Content (Optimized for Security) ---
+        // Instead of reading the whole file immediately, read the head first to check for binary.
+        let mut file = match File::open(&file_info.absolute_path) {
+            Ok(f) => f,
             Err(e) => {
-                let app_err = io_error_with_path(e, &file_info.absolute_path);
-                return Some(Err(app_err));
+                return Some(Err(io_error_with_path(e, &file_info.absolute_path)));
             }
         };
 
+        // --- SECURITY CHECKS (Moved after open to prevent TOCTOU) ---
+        if let Some(sec) = &config.security {
+            // Get metadata from the OPEN file handle
+            let metadata = match file.metadata() {
+                Ok(m) => m,
+                Err(e) => return Some(Err(io_error_with_path(e, &file_info.absolute_path))),
+            };
+
+            // 1. DoS Protection: Check file size
+            if metadata.len() > sec.max_file_size {
+                log::warn!(
+                    "Safe Mode: Skipping '{}' (size {} > limit {})",
+                    file_info.relative_path.display(),
+                    metadata.len(),
+                    sec.max_file_size
+                );
+                return None;
+            }
+
+            // 2. LFI Protection: Verify file is inside the sandbox
+            if let Some(root) = root_path {
+                if let Err(e) =
+                    sec.validate_file_access(&file_info.absolute_path, root, Some(&file))
+                {
+                    log::error!("{}", e);
+                    return None;
+                }
+            }
+        }
+
+        // Read first 1KB for detection
+        let mut head_buffer = [0u8; 1024];
+        let head_bytes_read = match file.read(&mut head_buffer) {
+            Ok(n) => n,
+            Err(e) => {
+                return Some(Err(io_error_with_path(e, &file_info.absolute_path)));
+            }
+        };
+        debug!(
+            "Read {} bytes from head of '{}'",
+            head_bytes_read,
+            file_info.relative_path.display()
+        );
+
         // --- 2. Perform Binary Check ---
-        let is_binary = !is_likely_text_from_buffer(&content_bytes);
+        let is_binary = !is_likely_text_from_buffer(&head_buffer[..head_bytes_read]);
         file_info.is_binary = is_binary;
 
         // --- 3. Filter Based on Binary Check ---
         if is_binary && !config.include_binary {
-            debug!(
+            trace!(
                 "Skipping binary file: {}",
                 file_info.relative_path.display()
             );
             return None; // Filter out this file by returning None
         }
+
+        // SECURITY: Memory Exhaustion Check
+        let size = file_info.size as usize;
+        let current_usage = GLOBAL_MEM_USAGE.load(Ordering::Relaxed);
+        if current_usage + size > MAX_GLOBAL_MEM_USAGE {
+            log::error!(
+                "OOM Protection: Skipping '{}' (Global memory limit exceeded)",
+                file_info.relative_path.display()
+            );
+            return Some(Err(Error::Generic(anyhow::anyhow!(
+                "Global memory limit exceeded"
+            ))));
+        }
+        GLOBAL_MEM_USAGE.fetch_add(size, Ordering::Relaxed);
+
+        // Read the rest of the file
+        let mut content_bytes = Vec::with_capacity(file_info.size as usize);
+        content_bytes.extend_from_slice(&head_buffer[..head_bytes_read]);
+        let read_result = file.read_to_end(&mut content_bytes);
+
+        // Release memory quota
+        GLOBAL_MEM_USAGE.fetch_sub(size, Ordering::Relaxed);
+
+        if let Err(e) = read_result {
+            return Some(Err(io_error_with_path(e, &file_info.absolute_path)));
+        }
+        trace!(
+            "Full content read for '{}': {} bytes",
+            file_info.relative_path.display(),
+            content_bytes.len()
+        );
 
         // --- 4. Process Content ---
         let original_content_str = String::from_utf8_lossy(&content_bytes).to_string();
@@ -223,7 +306,7 @@ pub(crate) fn process_and_filter_files_internal<'a>(
             } else {
                 file_info.counts = Some(calculate_counts(&original_content_str));
             }
-            debug!(
+            trace!(
                 "Calculated counts for {}: {:?}",
                 file_info.relative_path.display(),
                 file_info.counts
@@ -235,15 +318,18 @@ pub(crate) fn process_and_filter_files_internal<'a>(
         if !is_binary {
             // Apply all configured filters sequentially
             for filter in &config.content_filters {
+                let before_len = processed_content.len();
                 processed_content = filter.apply(&processed_content);
-                debug!(
-                    "Applied filter '{}' to {}",
+                trace!(
+                    "Applied filter '{}' to {} (len: {} -> {})",
                     filter.name(),
-                    file_info.relative_path.display()
+                    file_info.relative_path.display(),
+                    before_len,
+                    processed_content.len()
                 );
             }
         } else {
-            debug!(
+            trace!(
                 "Skipping content filters for binary file {}",
                 file_info.relative_path.display()
             );
@@ -350,10 +436,11 @@ pub fn process_files<'a>(
     files: impl Iterator<Item = FileInfo> + Send + 'a,
     config: &'a ProcessingConfig,
     token: &'a CancellationToken,
+    root_path: Option<&'a std::path::Path>,
 ) -> impl Iterator<Item = Result<FileInfo>> {
     // Bridge the sequential iterator to a parallel one for processing,
     // then collect the results into a vector to return a sequential iterator.
-    process_and_filter_files_internal(files.par_bridge(), config, token)
+    process_and_filter_files_internal(files.par_bridge(), config, token, root_path)
         .collect::<Vec<_>>()
         .into_iter()
 }
@@ -408,6 +495,7 @@ mod tests {
             vec![file_info].into_par_iter(),
             &config.processing,
             &token,
+            None,
         )
         .collect::<Result<_>>()?;
 
@@ -436,6 +524,7 @@ mod tests {
             vec![file_info].into_par_iter(),
             &config.processing,
             &token,
+            None,
         )
         .collect::<Result<_>>()?;
 
@@ -467,6 +556,7 @@ mod tests {
             vec![file_info].into_par_iter(),
             &config.processing,
             &token,
+            None,
         )
         .collect::<Result<_>>()?;
 
@@ -480,5 +570,99 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_global_memory_limit_enforcement() {
+        // 1. Setup
+        let temp = tempdir().unwrap();
+        let file_path = temp.path().join("large_file.txt");
+        let content = vec![b'a'; 1024 * 1024]; // 1MB file
+        fs::write(&file_path, &content).unwrap();
+
+        let file_info = FileInfo {
+            absolute_path: file_path,
+            relative_path: PathBuf::from("large_file.txt"),
+            size: content.len() as u64,
+            ..Default::default()
+        };
+
+        let config = crate::config::ProcessingConfig {
+            include_binary: false,
+            counts: false,
+            content_filters: vec![],
+            security: None,
+        };
+        let token = CancellationToken::new();
+
+        // 2. Artificially inflate global memory usage to just below the limit
+        // MAX is 2GB. Let's set it to MAX - 500KB.
+        // The file is 1MB, so it should fail.
+        let previous_usage =
+            GLOBAL_MEM_USAGE.swap(MAX_GLOBAL_MEM_USAGE - (500 * 1024), Ordering::SeqCst);
+
+        // 3. Attempt processing
+        let result: Vec<_> = process_and_filter_files_internal(
+            vec![file_info].into_par_iter(),
+            &config,
+            &token,
+            None,
+        )
+        .collect();
+
+        // 4. Reset global memory for other tests!
+        GLOBAL_MEM_USAGE.store(previous_usage, Ordering::SeqCst);
+
+        // 5. Assert failure
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_err());
+        assert!(result[0]
+            .as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("Global memory limit exceeded"));
+    }
+
+    #[test]
+    fn test_global_memory_limit_allows_fitting_files() {
+        // 1. Setup
+        let temp = tempdir().unwrap();
+        let file_path = temp.path().join("small_file.txt");
+        let content = vec![b'a'; 100]; // 100 bytes
+        fs::write(&file_path, &content).unwrap();
+
+        let file_info = FileInfo {
+            absolute_path: file_path,
+            relative_path: PathBuf::from("small_file.txt"),
+            size: content.len() as u64,
+            ..Default::default()
+        };
+
+        let config = crate::config::ProcessingConfig {
+            include_binary: false,
+            counts: false,
+            content_filters: vec![],
+            security: None,
+        };
+        let token = CancellationToken::new();
+
+        // 2. Ensure memory usage is low
+        let previous_usage = GLOBAL_MEM_USAGE.swap(0, Ordering::SeqCst);
+
+        // 3. Attempt processing
+        let result: Vec<_> = process_and_filter_files_internal(
+            vec![file_info].into_par_iter(),
+            &config,
+            &token,
+            None,
+        )
+        .collect();
+
+        // 4. Reset
+        GLOBAL_MEM_USAGE.store(previous_usage, Ordering::SeqCst);
+
+        // 5. Assert success
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_ok());
     }
 }

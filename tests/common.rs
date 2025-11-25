@@ -5,7 +5,9 @@ use std::process::Command;
 // Helper function to get the binary command
 #[allow(dead_code)] // This is used by many integration tests, but not all.
 pub fn dircat_cmd() -> Command {
-    Command::new(assert_cmd::cargo::cargo_bin!("dircat"))
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("dircat"));
+    cmd.env("RUST_LOG", "off");
+    cmd
 }
 
 // Potential future helpers for setting up temporary directories/files

@@ -11,6 +11,10 @@ use crate::progress::ProgressReporter;
 use anyhow::{Context, Result as AnyhowResult};
 #[cfg(feature = "git")]
 use git2::Repository;
+use log::trace;
+#[cfg(feature = "git")]
+use log::{debug, info};
+use std::net::IpAddr;
 #[cfg(feature = "git")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -151,21 +155,33 @@ pub fn resolve_input(
     git_depth: Option<u32>,
     git_cache_path_str: &Option<String>,
     progress: Option<Arc<dyn ProgressReporter>>,
+    resolved_ip: Option<IpAddr>,
 ) -> Result<ResolvedInput> {
+    debug!("Resolving input: '{}'", input_path_str);
     let cache_path = determine_cache_dir(git_cache_path_str.as_deref()).map_err(Error::from)?;
 
     let absolute_path = if let Some(parsed_url) =
         git::parse_github_folder_url_with_hint(input_path_str, git_branch.as_deref())
     {
         log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
-        handle_github_folder_url(parsed_url, git_branch, &cache_path, progress)?
+        handle_github_folder_url(parsed_url, git_branch, &cache_path, progress, resolved_ip)?
     } else if git::is_git_url(input_path_str) {
-        git::get_repo(input_path_str, git_branch, git_depth, &cache_path, progress)
-            .map_err(Error::from)?
+        debug!("Input detected as generic Git URL");
+        git::get_repo(
+            input_path_str,
+            git_branch,
+            git_depth,
+            &cache_path,
+            progress,
+            resolved_ip,
+        )
+        .map_err(Error::from)?
     } else {
+        debug!("Input treated as local path");
         resolve_local_input_path(input_path_str).map_err(Error::from)?
     };
 
+    info!("Resolved input path to: {}", absolute_path.display());
     Ok(ResolvedInput {
         is_file: absolute_path.is_file(),
         path: absolute_path,
@@ -182,13 +198,14 @@ fn handle_github_folder_url(
     cli_branch: &Option<String>,
     cache_path: &Path,
     progress: Option<Arc<dyn ProgressReporter>>,
+    resolved_ip: Option<IpAddr>,
 ) -> Result<PathBuf> {
     let repo_cache_path = git::get_repo_cache_path(cache_path, &parsed_url.clone_url);
 
     // Optimization: If a full clone of the repository already exists in the cache,
     // update and use it directly instead of hitting the GitHub API.
     if let Ok(repo) = Repository::open(&repo_cache_path) {
-        log::info!(
+        info!(
             "Found cached repository at '{}'. Updating and using it instead of GitHub API.",
             repo_cache_path.display()
         );
@@ -197,6 +214,10 @@ fn handle_github_folder_url(
 
         let path = repo_cache_path.join(&parsed_url.subdirectory);
         if !path.exists() {
+            log::error!(
+                "Cached repo exists, but subdirectory '{}' is missing.",
+                parsed_url.subdirectory
+            );
             return Err(Error::Git(GitError::SubdirectoryNotFound {
                 path: parsed_url.subdirectory,
                 repo: parsed_url.clone_url,
@@ -206,9 +227,10 @@ fn handle_github_folder_url(
     }
 
     // If no valid cache entry, proceed with API download and its own fallback logic.
-    match git::download_directory_via_api(&parsed_url, cli_branch) {
+    debug!("No cache found. Attempting GitHub API download...");
+    match git::download_directory_via_api(&parsed_url, cli_branch, resolved_ip) {
         Ok(temp_dir_root) => {
-            log::debug!("Successfully downloaded from GitHub API.");
+            debug!("Successfully downloaded from GitHub API.");
             let path = temp_dir_root.join(&parsed_url.subdirectory);
             if !path.exists() {
                 return Err(Error::Git(GitError::SubdirectoryNotFound {
@@ -238,6 +260,7 @@ fn handle_github_folder_url(
                     None, // No shallow clone for fallback
                     cache_path,
                     progress,
+                    resolved_ip,
                 )
                 .map_err(Error::from)?;
                 let path = cloned_repo_root.join(&parsed_url.subdirectory);
@@ -268,6 +291,7 @@ fn handle_github_folder_url(
 
 /// Resolves the input path string to an absolute, canonicalized PathBuf.
 fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
+    trace!("Canonicalizing local path: {}", input_path_str);
     let input_path = PathBuf::from(input_path_str);
     input_path
         .canonicalize()
@@ -333,6 +357,7 @@ pub fn resolve_input(
     _git_depth: Option<u32>,
     _git_cache_path_str: &Option<String>,
     _progress: Option<Arc<dyn ProgressReporter>>,
+    _resolved_ip: Option<IpAddr>,
 ) -> Result<ResolvedInput> {
     // Check for likely URL patterns and return a helpful error if found.
     if input_path_str.starts_with("https://")
@@ -359,8 +384,8 @@ pub fn resolve_input(
 /// Determines the absolute path for the git cache directory.
 ///
 /// The cache directory is determined in the following order of precedence:
-/// 1. The `DIRCAT_TEST_CACHE_DIR` environment variable (for testing purposes).
-/// 2. The path provided via the `--git-cache-path` command-line argument.
+/// 1. The path provided via the `--git-cache-path` command-line argument.
+/// 2. The `DIRCAT_TEST_CACHE_DIR` environment variable (for testing purposes).
 /// 3. The platform-specific default cache directory (e.g., `~/.cache/dircat/repos` on Linux).
 ///
 /// If the chosen directory does not exist, it will be created.
@@ -402,17 +427,11 @@ pub fn resolve_input(
 /// # }
 /// ```
 pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
-    if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
-        let path = PathBuf::from(cache_override);
-        if !path.exists() {
-            std::fs::create_dir_all(&path)?;
-        }
-        return Ok(path);
-    }
-
+    // Priority 1: CLI Path (Explicit user override)
     if let Some(path_str) = cli_path {
         let path = PathBuf::from(path_str);
         // Ensure the directory exists and is absolute.
+        debug!("Using CLI provided git cache path: {}", path.display());
         if !path.exists() {
             std::fs::create_dir_all(&path).with_context(|| {
                 format!(
@@ -429,10 +448,24 @@ pub fn determine_cache_dir(cli_path: Option<&str>) -> AnyhowResult<PathBuf> {
         });
     }
 
+    // Priority 2: Environment Variable (Testing/Global override)
+    if let Ok(cache_override) = std::env::var("DIRCAT_TEST_CACHE_DIR") {
+        let path = PathBuf::from(cache_override);
+        debug!("Using env var DIRCAT_TEST_CACHE_DIR: {}", path.display());
+        if !path.exists() {
+            std::fs::create_dir_all(&path)?;
+        }
+        return Ok(path);
+    }
+
     // Fallback to default project cache directory.
     let proj_dirs = directories::ProjectDirs::from("com", "romelium", "dircat")
         .context("Could not determine project cache directory")?;
     let cache_dir = proj_dirs.cache_dir().join("repos");
+    debug!(
+        "Using default system cache directory: {}",
+        cache_dir.display()
+    );
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir).with_context(|| {
             format!(
@@ -509,7 +542,7 @@ mod tests {
         let temp = tempdir()?;
         let path_str = temp.path().to_str().unwrap();
 
-        let resolved = resolve_input(path_str, &None, None, &None, None)?;
+        let resolved = resolve_input(path_str, &None, None, &None, None, None)?;
 
         assert_eq!(resolved.path, temp.path().canonicalize()?);
         assert_eq!(resolved.display, path_str);
@@ -527,6 +560,7 @@ mod tests {
             &None,
             None,
             &None,
+            None,
             None,
         );
         assert!(result.is_err());
@@ -589,6 +623,7 @@ mod tests {
             None,
             &None, // Pass None for the CLI arg, so it uses the env var
             None,
+            None,
         )?;
 
         assert!(resolved.path.starts_with(cache_dir.path()));
@@ -610,7 +645,7 @@ mod tests {
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_git_url_remote_failure() {
         let invalid_url = "https://github.com/user/this-repo-will-never-exist-probably.git";
-        let result = resolve_input(invalid_url, &None, None, &None, None);
+        let result = resolve_input(invalid_url, &None, None, &None, None, None);
         assert!(matches!(
             result,
             Err(Error::Git(GitError::CloneFailed { .. }))
@@ -622,7 +657,7 @@ mod tests {
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_github_folder_url_success() -> Result<()> {
         let folder_url = "https://github.com/git-fixtures/basic/tree/master/go";
-        let resolved = resolve_input(folder_url, &None, None, &None, None)?;
+        let resolved = resolve_input(folder_url, &None, None, &None, None, None)?;
 
         assert!(resolved.path.is_dir());
         assert!(resolved.path.join("example.go").exists());
@@ -637,7 +672,7 @@ mod tests {
     fn test_resolve_input_git_clone_error_returns_structured_error() {
         // Use a URL that is syntactically valid but points to a non-existent repo
         let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
-        let result = resolve_input(invalid_git_url, &None, None, &None, None);
+        let result = resolve_input(invalid_git_url, &None, None, &None, None, None);
 
         assert!(matches!(
             result,

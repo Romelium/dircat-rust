@@ -15,7 +15,7 @@ categories = ["command-line-utilities"]
 [features]
 default = ["git", "clipboard", "progress", "web"]
 # Enables cloning git repositories and downloading from the GitHub API.
-git = ["git2", "sha2", "hex", "reqwest", "serde", "serde_json"]
+git = ["git2", "sha2", "hex", "reqwest", "serde", "serde_json", "fs2", "filetime"]
 # Enables copying output to the system clipboard.
 clipboard = ["arboard"]
 # Enables the progress bar during long operations like git clones.
@@ -28,10 +28,12 @@ web = ["dep:axum", "dep:tokio", "dep:tower-http", "dep:rust-embed", "dep:open", 
 directories = "5.0"
 # Regex matching for filtering
 regex = "1.12"
+# URL parsing for Safe Mode validation
+url = "2.5"
 # .gitignore handling (respecting ignore rules)
 ignore = "0.4" # Note: Integrates well with walkdir
 # Parsing human-readable byte sizes (e.g., "1M", "512k")
-byte-unit = "5.1"
+byte-unit = "5.2"
 # Glob pattern matching (for --process-last)
 glob = "0.3"
 # Static Regex compilation helper
@@ -54,6 +56,10 @@ git2 = { version = "0.20", features = ["vendored-libgit2", "vendored-openssl"], 
 # Hashing for creating cache directory names
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
+# File locking for concurrent cache access
+fs2 = { version = "0.4", optional = true }
+# Modifying file times for LRU cache eviction
+filetime = { version = "0.2", optional = true }
 
 # --- Performance ---
 # Parallel iteration/processing
@@ -95,6 +101,9 @@ rust-embed = { version = "8.9", optional = true }
 open = { version = "5.3", optional = true }
 mime_guess = { version = "2.0", optional = true }
 
+# Directory traversal for size checks
+walkdir = "2.5"
+
 # --- Logging (Optional but Recommended) ---
 # Logging facade
 log = "0.4"
@@ -102,6 +111,8 @@ log = "0.4"
 env_logger = "0.11"
 # Tracing facade (added for regex.rs instrumentation)
 tracing = "0.1"
+# Subscriber for formatting tracing events (replaces env_logger for web)
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3.23"
 
 # --- Platform Specific (If needed later) ---
@@ -110,6 +121,8 @@ tempfile = "3.23"
 # winapi = "0.3"
 # [target.'cfg(unix)'.dependencies]
 # libc = "0.2"
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52.0", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [[bin]]
 name = "dircat"

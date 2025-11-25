@@ -3,7 +3,7 @@ use crate::config::DiscoveryConfig;
 use anyhow::{Context, Result};
 use glob::Pattern;
 use ignore::{WalkBuilder, WalkParallel};
-use log::debug; // Ensure debug is imported
+use log::{debug, trace}; // Ensure debug is imported
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -12,6 +12,10 @@ pub(super) fn build_walker(
     config: &DiscoveryConfig,
     resolved: &ResolvedInput,
 ) -> Result<(WalkParallel, Option<NamedTempFile>)> {
+    debug!(
+        "Configuring directory walker for: {}",
+        resolved.path.display()
+    );
     let mut walker_builder = WalkBuilder::new(&resolved.path);
     let mut temp_override_file: Option<NamedTempFile> = None;
 
@@ -20,7 +24,7 @@ pub(super) fn build_walker(
     // covered by a .gitignore rule, which is the desired behavior.
     if config.use_gitignore {
         walker_builder.standard_filters(true);
-        debug!("Configuring WalkBuilder: standard_filters enabled.");
+        trace!("Walker: standard_filters enabled (gitignore active).");
 
         if let Some(last_patterns) = &config.process_last {
             // Using OverrideBuilder acts as an inclusion filter, which is not what we want.
@@ -35,7 +39,7 @@ pub(super) fn build_walker(
                     .with_context(|| "Failed to write to temporary override file")?;
             }
             walker_builder.add_custom_ignore_filename(file.path());
-            debug!(
+            trace!(
                 "Added 'process_last' patterns as a custom, high-precedence ignore file: {:?}",
                 file.path()
             );
@@ -45,12 +49,18 @@ pub(super) fn build_walker(
     } else {
         // If gitignore is disabled entirely, then disable standard filters.
         walker_builder.standard_filters(false);
-        debug!("Configuring WalkBuilder: standard_filters disabled (gitignore usage off).");
+        trace!("Walker: standard_filters disabled (gitignore usage off).");
     }
     // Explicitly disable require_git to ensure .gitignore files are
     // processed even if the test environment doesn't look like a full repo.
     walker_builder.require_git(false);
-    debug!("Configuring WalkBuilder: require_git disabled.");
+    // debug!("Configuring WalkBuilder: require_git disabled.");
+
+    // SECURITY: Disable symlink following in Safe Mode to prevent escaping the jail
+    if config.safe_mode {
+        walker_builder.follow_links(false);
+        debug!("Walker: Safe Mode enabled - Symlink following disabled.");
+    }
 
     // The standard_filters(bool) call should handle these implicitly.
     // Explicitly setting them again might interfere or be unnecessary for ignore 0.4+.
@@ -60,9 +70,9 @@ pub(super) fn build_walker(
         // Max depth 1 means only the immediate children of the base_path
         // If base_path is a file, walkdir handles it correctly (yields just the file)
         walker_builder.max_depth(Some(1));
-        debug!("Recursion disabled (max depth: 1).");
+        debug!("Walker: Recursion disabled (max depth: 1).");
     } else {
-        debug!("Recursion enabled (no max depth).");
+        // debug!("Recursion enabled (no max depth).");
     }
 
     // --- Add custom filter ONLY if custom ignore patterns are provided ---
@@ -72,7 +82,7 @@ pub(super) fn build_walker(
             .iter()
             .filter_map(|p| match Pattern::new(p) {
                 Ok(glob) => {
-                    debug!("Compiled custom ignore glob: {}", p);
+                    trace!("Compiled custom ignore glob: {}", p);
                     Some(glob)
                 }
                 Err(e) => {
@@ -84,7 +94,7 @@ pub(super) fn build_walker(
 
         // Only add the filter if there are valid compiled globs
         if !custom_ignore_globs.is_empty() {
-            debug!(
+            trace!(
                 "Adding custom filter_entry for {} patterns.",
                 custom_ignore_globs.len()
             );
@@ -96,7 +106,7 @@ pub(super) fn build_walker(
                 // We only need to check our custom -i patterns.
                 let path = entry.path();
                 // Persistent Debug Log: Log entry being checked by custom filter
-                debug!("Custom filter_entry checking path: {:?}", path);
+                // trace!("Custom filter_entry checking path: {:?}", path);
 
                 // Match globs against the path relative to the *input* path
                 if let Ok(relative_path) = path.strip_prefix(&input_path_clone) {
@@ -106,7 +116,7 @@ pub(super) fn build_walker(
                     {
                         // Persistent Debug Log: Log skip reason
                         debug!(
-                            "Custom filter_entry skipping {:?} matching custom ignore glob (relative path: {:?})",
+                            "Walker: Custom ignore glob matched. Skipping {:?} (rel: {:?})",
                             path, relative_path
                         );
                         return false; // Skip this entry due to custom pattern
@@ -120,7 +130,7 @@ pub(super) fn build_walker(
                     if custom_ignore_globs.iter().any(|glob| glob.matches_path(path)) {
                         // Persistent Debug Log: Log skip reason (fallback)
                         debug!(
-                            "Custom filter_entry skipping {:?} matching custom ignore glob (full path fallback)",
+                            "Walker: Custom ignore glob matched (full path). Skipping {:?}",
                             path
                         );
                         return false; // Skip this entry due to custom pattern
@@ -129,17 +139,17 @@ pub(super) fn build_walker(
 
                 // If not skipped by custom ignore globs, keep the entry
                 // Persistent Debug Log: Log keep reason
-                debug!("Custom filter_entry keeping path: {:?}", path);
+                // trace!("Custom filter_entry keeping path: {:?}", path);
                 true
             });
         } else {
-            debug!("No valid custom ignore patterns compiled, skipping filter_entry setup.");
+            // debug!("No valid custom ignore patterns compiled, skipping filter_entry setup.");
         }
     } else {
-        debug!("No custom ignore patterns provided (-i), skipping filter_entry setup.");
+        // debug!("No custom ignore patterns provided (-i), skipping filter_entry setup.");
     }
 
     // Build the walker
-    debug!("Building the final walker.");
+    // debug!("Building the final walker.");
     Ok((walker_builder.build_parallel(), temp_override_file))
 }
