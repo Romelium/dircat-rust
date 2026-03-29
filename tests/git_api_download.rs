@@ -32,6 +32,26 @@ fn test_api_download_public_directory() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+/// Tests downloading a public remote repository via the API instead of cloning.
+#[test]
+#[ignore = "requires network access and is slow"]
+fn test_api_download_public_repo() -> Result<(), Box<dyn std::error::Error>> {
+    let repo_url = "https://github.com/git-fixtures/basic";
+
+    let temp_cache = tempdir()?;
+
+    dircat_cmd()
+        .arg(repo_url)
+        .arg("--git-download")
+        .env("DIRCAT_TEST_CACHE_DIR", temp_cache.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## File: CHANGELOG"))
+        .stdout(predicate::str::contains("## File: LICENSE"));
+
+    Ok(())
+}
+
 /// Tests downloading a single file from a public remote repository via a blob URL.
 /// This is a slow, network-dependent test.
 #[test]

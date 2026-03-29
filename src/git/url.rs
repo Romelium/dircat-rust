@@ -213,6 +213,22 @@ fn split_at_first_slash(s: &str) -> (String, String) {
     }
 }
 
+/// Parses a GitHub repository URL into its constituent parts.
+///
+/// # Returns
+/// `Some(ParsedGitUrl)` if the URL is a parsable GitHub repository URL, otherwise `None`.
+pub fn parse_github_repo_url(url: &str) -> Option<ParsedGitUrl> {
+    if let Ok((owner, repo)) = parse_clone_url(url) {
+        Some(ParsedGitUrl {
+            clone_url: format!("https://github.com/{}/{}.git", owner, repo),
+            branch: "HEAD".to_string(),
+            subdirectory: "".to_string(),
+        })
+    } else {
+        None
+    }
+}
+
 /// Parses the owner and repository name from a GitHub clone URL.
 ///
 /// This function handles common GitHub URL formats, including `https://...` and `git@...`,
@@ -420,5 +436,19 @@ mod tests {
             parse_github_folder_url_with_hint(url, Some("group/feature")),
             expected
         );
+    }
+
+    #[test]
+    fn test_parse_github_repo_url() {
+        let url = "https://github.com/rust-lang/cargo.git";
+        let expected = Some(ParsedGitUrl {
+            clone_url: "https://github.com/rust-lang/cargo.git".to_string(),
+            branch: "HEAD".to_string(),
+            subdirectory: "".to_string(),
+        });
+        assert_eq!(parse_github_repo_url(url), expected);
+
+        let url2 = "https://github.com/rust-lang/cargo";
+        assert_eq!(parse_github_repo_url(url2), expected);
     }
 }

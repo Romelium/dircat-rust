@@ -147,9 +147,14 @@ fn list_all_files_recursively(
     queue.push_back(url_parts.subdirectory.clone());
 
     while let Some(path) = queue.pop_front() {
+        let path_segment = if path.is_empty() {
+            String::new()
+        } else {
+            format!("/{}", path)
+        };
         let api_url = format!(
-            "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
-            owner, repo, path, branch
+            "https://api.github.com/repos/{}/{}/contents{}?ref={}",
+            owner, repo, path_segment, branch
         );
 
         log::debug!("Fetching directory contents from: {}", api_url);

@@ -324,6 +324,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--git-branch BRANCH`, `--git-ref REF`  | For git URL inputs, check out a specific branch or tag instead of the default. |
 | `--git-depth DEPTH`                     | For git URL inputs, perform a shallow clone with a limited history depth.      |
 | `--git-cache-path PATH`                 | Path to the directory for caching cloned git repositories.                     |
+| `--git-download`                        | For GitHub URL inputs, download the repository via API instead of cloning.     |
 
 #### Filtering Options
 

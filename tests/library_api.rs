@@ -46,7 +46,7 @@ impl TestHarness {
 /// Helper to build the config and resolve the input path from a builder.
 fn build_and_resolve(builder: ConfigBuilder) -> (Config, ResolvedInput) {
     let config = builder.build().unwrap();
-    let resolved = config::resolve_input(&config.input_path, &None, None, &None, None).unwrap();
+    let resolved = config::resolve_input(&config.input_path, &None, None, &None, false, None).unwrap();
     (config, resolved)
 }
 

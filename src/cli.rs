@@ -33,6 +33,11 @@ pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub git_cache_path: Option<String>,
 
+    #[cfg(feature = "git")]
+    /// For GitHub URL inputs, download the repository via API instead of cloning.
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub git_download: bool,
+
     // --- Filtering Options ---
     /// Maximum file size to include (e.g., "1M", "512k"). Files larger than this are skipped.
     #[arg(short = 'm', long, value_name = "BYTES")]

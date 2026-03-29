@@ -49,5 +49,5 @@ pub use clone::{get_repo, get_repo_cache_path};
 pub use ops::update_repo;
 pub use url::{
     is_git_url, parse_clone_url, parse_github_folder_url, parse_github_folder_url_with_hint,
-    ParsedGitUrl,
+    parse_github_repo_url, ParsedGitUrl,
 };

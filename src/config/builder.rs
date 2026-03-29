@@ -47,6 +47,8 @@ pub struct ConfigBuilder {
     pub(crate) git_depth: Option<u32>,
     #[cfg(feature = "git")]
     pub(crate) git_cache_path: Option<String>,
+    #[cfg(feature = "git")]
+    pub(crate) git_download: Option<bool>,
     // --- Filtering Options ---
     pub(crate) max_size: Option<String>,
     pub(crate) no_recursive: Option<bool>,
@@ -98,6 +100,8 @@ impl ConfigBuilder {
             git_depth: cli.git_depth,
             #[cfg(feature = "git")]
             git_cache_path: cli.git_cache_path,
+            #[cfg(feature = "git")]
+            git_download: Some(cli.git_download),
             max_size: cli.max_size,
             no_recursive: Some(cli.no_recursive),
             extensions: cli.extensions,
@@ -208,6 +212,27 @@ impl ConfigBuilder {
     #[must_use]
     pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
         self.git_cache_path = Some(path.into());
+        self
+    }
+
+    /// Sets whether to download the repository via API instead of cloning.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().git_download(true).build()?;
+    /// assert!(config.git_download);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "git")]
+    #[must_use]
+    pub fn git_download(mut self, download: bool) -> Self {
+        self.git_download = Some(download);
         self
     }
 
@@ -820,6 +845,8 @@ impl ConfigBuilder {
             git_depth: self.git_depth,
             #[cfg(feature = "git")]
             git_cache_path: self.git_cache_path,
+            #[cfg(feature = "git")]
+            git_download: self.git_download.unwrap_or(false),
         };
 
         Ok(config)

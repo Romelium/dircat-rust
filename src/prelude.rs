@@ -45,5 +45,5 @@ pub use crate::{execute, run, DircatResult};
 #[cfg(feature = "git")]
 pub use crate::git::{
     download_directory_via_api, get_repo, is_git_url, parse_clone_url, parse_github_folder_url,
-    parse_github_folder_url_with_hint, ParsedGitUrl,
+    parse_github_folder_url_with_hint, parse_github_repo_url, ParsedGitUrl,
 };

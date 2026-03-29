@@ -259,6 +259,9 @@ pub struct Config {
     #[cfg(feature = "git")]
     /// The path to a directory for caching cloned git repositories.
     pub git_cache_path: Option<String>,
+    #[cfg(feature = "git")]
+    /// For GitHub URL inputs, download the repository via API instead of cloning.
+    pub git_download: bool,
 }
 
 // Custom Debug implementation for Config, as Box<dyn ContentFilter> does not implement Debug.
@@ -278,7 +281,8 @@ impl fmt::Debug for Config {
             builder
                 .field("git_branch", &self.git_branch)
                 .field("git_depth", &self.git_depth)
-                .field("git_cache_path", &self.git_cache_path);
+                .field("git_cache_path", &self.git_cache_path)
+                .field("git_download", &self.git_download);
         }
 
         builder.finish()
@@ -328,6 +332,8 @@ impl Config {
             git_depth: None,
             #[cfg(feature = "git")]
             git_cache_path: None,
+            #[cfg(feature = "git")]
+            git_download: false,
         }
     }
 }
