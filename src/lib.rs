@@ -52,7 +52,7 @@
 //! // For more granular control, you could also use the individual stages.
 //! // Note: `process` does not preserve order, so you would need to collect and sort
 //! // the results yourself to match the output of `execute`.
-//! // let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, config.git_download, progress)?;
+//! // let resolved = config::resolve_input(&config.input_path, &config.git_branch, config.git_depth, &config.git_cache_path, &config.git_download_path, config.git_download, progress)?;
 //! // let discovered_files = dircat::discover(&config, &resolved, &token)?;
 //! // let mut processed_files: Vec<_> = dircat::process(discovered_files, &config, &token)?.collect::<Result<_,_>>()?;
 //! // processed_files.sort_by_key(|fi| (fi.is_process_last, fi.process_last_order, fi.relative_path.clone()));
@@ -373,7 +373,7 @@ pub fn discover(
 /// # fs::write(temp.path().join("c.txt"), "C")?;
 /// # fs::write(temp.path().join("a.rs"), "A")?;
 /// # let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
-/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, false, None)?;
+/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// # let token = CancellationToken::new();
 /// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
 /// let processed_iter = process_files(discovered_iter, &config.processing, &token);
@@ -414,7 +414,7 @@ pub fn discover(
 ///     .remove_comments(true)
 ///     .build()?;
 ///
-/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, false, None)?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// let token = CancellationToken::new();
 ///
 /// let discovered_iter = discover(&config.discovery, &resolved, &token).unwrap();
@@ -485,13 +485,14 @@ pub fn execute(
                 &config.git_branch,
                 config.git_depth,
                 &config.git_cache_path,
+                &config.git_download_path,
                 config.git_download,
                 progress,
             )?
         }
         #[cfg(not(feature = "git"))]
         {
-            config::resolve_input(&config.input_path, &None, None, &None, false, progress)?
+            config::resolve_input(&config.input_path, &None, None, &None, &None, false, progress)?
         }
     };
     // Discover files based on config

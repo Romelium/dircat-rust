@@ -57,7 +57,7 @@ struct RepoInfo {
 /// let url = "https://github.com/rust-lang/cargo/tree/master/src/cargo";
 /// if let Some(parsed_url) = parse_github_folder_url(url) {
 ///     // Download the 'src/cargo' directory from the 'master' branch.
-///     let temp_dir_path = download_directory_via_api(&parsed_url, &None)?;
+///     let temp_dir_path = download_directory_via_api(&parsed_url, &None, None)?;
 ///     println!("Downloaded to: {}", temp_dir_path.display());
 ///     // Remember to clean up the temp directory if needed.
 ///     // std::fs::remove_dir_all(temp_dir_path)?;
@@ -68,9 +68,17 @@ struct RepoInfo {
 pub fn download_directory_via_api(
     url_parts: &ParsedGitUrl,
     branch_override: &Option<String>,
+    target_dir: Option<&Path>,
 ) -> Result<PathBuf> {
     // 1. Setup
-    let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
+    let (base_dir, _temp_dir_guard) = if let Some(dir) = target_dir {
+        std::fs::create_dir_all(dir)?;
+        (dir.to_path_buf(), None)
+    } else {
+        let temp_dir = TempDirBuilder::new().prefix("dircat-git-api-").tempdir()?;
+        let path = temp_dir.path().to_path_buf();
+        (path, Some(temp_dir))
+    };
     let client = build_reqwest_client()?;
     let (owner, repo) = parse_clone_url(&url_parts.clone_url)?;
 
@@ -96,19 +104,25 @@ pub fn download_directory_via_api(
 
     if files_to_download.is_empty() {
         // Leak the TempDir to prevent it from being deleted, and return its path.
-        return Ok(temp_dir.keep());
+        if let Some(temp_dir) = _temp_dir_guard {
+            temp_dir.keep();
+        }
+        return Ok(base_dir);
     }
 
     // 4. Download files in parallel
     use rayon::prelude::*;
     files_to_download
         .par_iter()
-        .map(|file_item| download_and_write_file(&client, file_item, temp_dir.path()))
+        .map(|file_item| download_and_write_file(&client, file_item, &base_dir))
         .collect::<Result<()>>()?;
 
     // 5. Return path to temp dir, consuming the TempDir object to prevent deletion.
     // Leak the TempDir to prevent it from being deleted, and return its path.
-    Ok(temp_dir.keep())
+    if let Some(temp_dir) = _temp_dir_guard {
+        temp_dir.keep();
+    }
+    Ok(base_dir)
 }
 
 /// Builds a `reqwest` client with default headers for GitHub API interaction.

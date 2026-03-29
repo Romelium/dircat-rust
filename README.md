@@ -324,6 +324,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--git-branch BRANCH`, `--git-ref REF`  | For git URL inputs, check out a specific branch or tag instead of the default. |
 | `--git-depth DEPTH`                     | For git URL inputs, perform a shallow clone with a limited history depth.      |
 | `--git-cache-path PATH`                 | Path to the directory for caching cloned git repositories.                     |
+| `--git-download-path PATH`              | Path to a directory where the repository will be downloaded or cloned.         |
 | `--git-download`                        | For GitHub URL inputs, download the repository via API instead of cloning.     |
 
 #### Filtering Options
@@ -715,6 +716,9 @@ dircat https://github.com/some/repo.git --git-branch develop
 
 # Perform a shallow clone of depth 1
 dircat https://github.com/some/repo.git --git-depth 1
+
+# Clone the repository into a specific local directory instead of the cache
+dircat https://github.com/some/repo.git --git-download-path ./my-local-repo
 ```
 
 #### Goal: Concatenate only the `src/config` directory from a remote repository

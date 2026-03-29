@@ -260,6 +260,9 @@ pub struct Config {
     /// The path to a directory for caching cloned git repositories.
     pub git_cache_path: Option<String>,
     #[cfg(feature = "git")]
+    /// Path to a directory where the repository will be downloaded or cloned.
+    pub git_download_path: Option<String>,
+    #[cfg(feature = "git")]
     /// For GitHub URL inputs, download the repository via API instead of cloning.
     pub git_download: bool,
 }
@@ -282,6 +285,7 @@ impl fmt::Debug for Config {
                 .field("git_branch", &self.git_branch)
                 .field("git_depth", &self.git_depth)
                 .field("git_cache_path", &self.git_cache_path)
+                .field("git_download_path", &self.git_download_path)
                 .field("git_download", &self.git_download);
         }
 
@@ -332,6 +336,8 @@ impl Config {
             git_depth: None,
             #[cfg(feature = "git")]
             git_cache_path: None,
+            #[cfg(feature = "git")]
+            git_download_path: None,
             #[cfg(feature = "git")]
             git_download: false,
         }

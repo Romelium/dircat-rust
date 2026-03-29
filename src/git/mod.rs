@@ -24,7 +24,7 @@ mod url;
 /// # fn main() -> anyhow::Result<()> {
 /// let url = "https://github.com/rust-lang/cargo/tree/master/src/cargo";
 /// let parsed_url = parse_github_folder_url(url).unwrap();
-/// let temp_dir_path = download_directory_via_api(&parsed_url, &None)?;
+/// let temp_dir_path = download_directory_via_api(&parsed_url, &None, None)?;
 /// println!("Downloaded to: {}", temp_dir_path.display());
 /// // Remember to clean up the temp directory if needed.
 /// # Ok(())
@@ -39,7 +39,7 @@ pub use api::download_directory_via_api;
 /// use dircat::git::get_repo;
 /// use std::path::Path;
 /// # fn main() -> anyhow::Result<()> {
-/// let repo_path = get_repo("https://github.com/rust-lang/cargo.git", &None, None, Path::new("/tmp/dircat-cache"), None)?;
+/// let repo_path = get_repo("https://github.com/rust-lang/cargo.git", &None, None, Path::new("/tmp/dircat-cache"), None, None)?;
 /// println!("Repo is at: {}", repo_path.display());
 /// # Ok(())
 /// # }

@@ -48,6 +48,8 @@ pub struct ConfigBuilder {
     #[cfg(feature = "git")]
     pub(crate) git_cache_path: Option<String>,
     #[cfg(feature = "git")]
+    pub(crate) git_download_path: Option<String>,
+    #[cfg(feature = "git")]
     pub(crate) git_download: Option<bool>,
     // --- Filtering Options ---
     pub(crate) max_size: Option<String>,
@@ -100,6 +102,8 @@ impl ConfigBuilder {
             git_depth: cli.git_depth,
             #[cfg(feature = "git")]
             git_cache_path: cli.git_cache_path,
+            #[cfg(feature = "git")]
+            git_download_path: cli.git_download_path,
             #[cfg(feature = "git")]
             git_download: Some(cli.git_download),
             max_size: cli.max_size,
@@ -212,6 +216,27 @@ impl ConfigBuilder {
     #[must_use]
     pub fn git_cache_path(mut self, path: impl Into<String>) -> Self {
         self.git_cache_path = Some(path.into());
+        self
+    }
+
+    /// Sets the path where the repository will be downloaded or cloned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().git_download_path("/tmp/dircat-download").build()?;
+    /// assert_eq!(config.git_download_path, Some("/tmp/dircat-download".to_string()));
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "git")]
+    #[must_use]
+    pub fn git_download_path(mut self, path: impl Into<String>) -> Self {
+        self.git_download_path = Some(path.into());
         self
     }
 
@@ -845,6 +870,8 @@ impl ConfigBuilder {
             git_depth: self.git_depth,
             #[cfg(feature = "git")]
             git_cache_path: self.git_cache_path,
+            #[cfg(feature = "git")]
+            git_download_path: self.git_download_path,
             #[cfg(feature = "git")]
             git_download: self.git_download.unwrap_or(false),
         };

@@ -46,52 +46,56 @@ pub fn get_repo_cache_path(base_cache_dir: &Path, url: &str) -> PathBuf {
     base_cache_dir.join(hex_hash)
 }
 
-/// Retrieves a git repository, cloning it if not cached, or updating it if it is.
-/// Returns the path to the up-to-date local repository.
-fn get_repo_with_base_cache(
-    base_cache_dir: &Path,
+fn get_repo_at_path(
+    repo_path: &Path,
     url: &str,
     branch: &Option<String>,
     depth: Option<u32>,
+    is_cache: bool,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf, GitError> {
-    let repo_path = get_repo_cache_path(base_cache_dir, url);
-
     if repo_path.exists() {
         log::info!(
-            "Found cached repository for '{}' at '{}'. Checking for updates...",
+            "Found existing repository for '{}' at '{}'. Checking for updates...",
             url,
             repo_path.display()
         );
-        match Repository::open(&repo_path) {
+        match Repository::open(repo_path) {
             Ok(repo) => {
                 // Repo exists and is valid, update it
                 update_repo(&repo, branch, depth, progress.clone())?;
                 if let Some(p) = &progress {
                     p.finish_with_message("Update complete.".to_string());
                 }
-                return Ok(repo_path);
+                return Ok(repo_path.to_path_buf());
             }
-            Err(_) => {
+            Err(e) => {
+                if !is_cache {
+                    return Err(GitError::Generic(anyhow::anyhow!(
+                        "Target directory '{}' exists but is not a valid git repository: {}",
+                        repo_path.display(),
+                        e
+                    )));
+                }
                 log::warn!(
-                    "Cached repository at '{}' is corrupted or invalid. Re-cloning...",
+                    "Repository at '{}' is corrupted or invalid. Re-cloning...",
                     repo_path.display(),
                 );
                 // Robustly remove the corrupted entry, whether it's a file or a directory.
                 if repo_path.is_dir() {
-                    fs::remove_dir_all(&repo_path)
+                    fs::remove_dir_all(repo_path)
                         .with_context(|| {
                             format!(
-                                "Failed to remove corrupted cache directory at '{}'",
+                                "Failed to remove corrupted directory at '{}'",
                                 repo_path.display()
                             )
                         })
                         .map_err(GitError::Generic)?;
                 } else if repo_path.is_file() {
-                    fs::remove_file(&repo_path)
+                    fs::remove_file(repo_path)
                         .with_context(|| {
                             format!(
-                                "Failed to remove corrupted cache file at '{}'",
+                                "Failed to remove corrupted file at '{}'",
                                 repo_path.display()
                             )
                         })
@@ -103,13 +107,15 @@ fn get_repo_with_base_cache(
 
     // --- Cache Miss or Corrupted Cache ---
     log::info!(
-        "Cloning git repository from '{}' into cache at '{}'...",
+        "Cloning git repository from '{}' into '{}'...",
         url,
         repo_path.display()
     );
-    fs::create_dir_all(repo_path.parent().unwrap())
-        .context("Failed to create cache directory")
-        .map_err(GitError::Generic)?;
+    if let Some(parent) = repo_path.parent() {
+        fs::create_dir_all(parent)
+            .context("Failed to create directory")
+            .map_err(GitError::Generic)?;
+    }
 
     let fetch_options = create_fetch_options(depth, progress.clone());
     let mut repo_builder = RepoBuilder::new();
@@ -126,7 +132,7 @@ fn get_repo_with_base_cache(
     }
 
     let repo = repo_builder
-        .clone(url, &repo_path)
+        .clone(url, repo_path)
         .map_err(|e| GitError::CloneFailed {
             url: url.to_string(),
             source: e,
@@ -134,7 +140,7 @@ fn get_repo_with_base_cache(
     if let Some(p) = &progress {
         p.finish_with_message("Clone complete.".to_string());
     }
-    log::info!("Successfully cloned repository into cache.");
+    log::info!("Successfully cloned repository.");
 
     // If a specific branch/tag was requested, we need to check it out now.
     // The clone operation by default only checks out the remote's HEAD.
@@ -153,7 +159,7 @@ fn get_repo_with_base_cache(
         log::info!("Successfully checked out specified ref.");
     }
 
-    Ok(repo_path)
+    Ok(repo_path.to_path_buf())
 }
 
 /// Clones or updates a git repository into a local cache.
@@ -166,6 +172,7 @@ fn get_repo_with_base_cache(
 /// * `branch` - An optional specific git branch or tag to check out. If `None`, the remote's default branch is used.
 /// * `depth` - An optional depth for a shallow clone.
 /// * `cache_path` - The absolute path to the base directory for caching repositories. A subdirectory will be created inside this path.
+/// * `download_path` - An optional path to download/clone the repository into directly.
 /// * `progress` - An optional progress reporter for long operations like cloning and fetching.
 ///
 /// # Returns
@@ -185,7 +192,7 @@ fn get_repo_with_base_cache(
 /// let cache_path = Path::new("/tmp/dircat-cache");
 ///
 /// // Clone the default branch into the cache.
-/// let repo_path = get_repo(url, &None, None, cache_path, None)?;
+/// let repo_path = get_repo(url, &None, None, cache_path, None, None)?;
 /// println!("Repository is at: {}", repo_path.display());
 /// # Ok(())
 /// # }
@@ -195,9 +202,15 @@ pub fn get_repo(
     branch: &Option<String>,
     depth: Option<u32>,
     cache_path: &Path,
+    download_path: Option<&Path>,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf, GitError> {
-    get_repo_with_base_cache(cache_path, url, branch, depth, progress)
+    let (repo_path, is_cache) = if let Some(dp) = download_path {
+        (dp.to_path_buf(), false)
+    } else {
+        (get_repo_cache_path(cache_path, url), true)
+    };
+    get_repo_at_path(&repo_path, url, branch, depth, is_cache, progress)
 }
 
 #[cfg(test)]
@@ -269,14 +282,14 @@ mod tests {
 
         // 1. Cache Miss
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert!(cached_path.exists());
         let content = fs::read_to_string(cached_path.join("file.txt"))?;
         assert_eq!(content, "content v1");
 
         // 2. Cache Hit (no changes)
         let cached_path_2 =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(cached_path, cached_path_2); // Should be the same path
         let content_2 = fs::read_to_string(cached_path_2.join("file.txt"))?;
         assert_eq!(content_2, "content v1");
@@ -298,7 +311,7 @@ mod tests {
 
         // 1. Initial clone
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(
             fs::read_to_string(cached_path.join("file.txt"))?,
             "content v1"
@@ -309,7 +322,7 @@ mod tests {
 
         // 3. Fetch and update
         let updated_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(cached_path, updated_path);
         assert_eq!(
             fs::read_to_string(updated_path.join("file.txt"))?,
@@ -338,7 +351,7 @@ mod tests {
 
         // 2. Attempt to get the repo. It should delete the file and re-clone.
         let cached_path =
-            get_repo_with_base_cache(cache_dir.path(), &remote_url, &None, None, None)?;
+            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert!(cached_path.is_dir()); // It's a directory now
         assert_eq!(fs::read_to_string(cached_path.join("file.txt"))?, "content");
 

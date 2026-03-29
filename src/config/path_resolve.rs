@@ -78,6 +78,7 @@ impl ResolvedInput {
 /// * `git_branch` - The specific git branch/tag to use for git URLs.
 /// * `git_depth` - The depth for a shallow git clone.
 /// * `git_cache_path_str` - The user-specified path for the git cache.
+/// * `git_download_path_str` - The user-specified path for downloading/cloning.
 /// * `progress` - An optional progress reporter for long operations like cloning.
 ///
 /// # Returns
@@ -96,13 +97,13 @@ impl ResolvedInput {
 /// # use dircat::errors::Result;
 /// # fn main() -> Result<()> {
 /// // Resolve a local path string into a structured, absolute path.
-/// let resolved = resolve_input("./src", &None, None, &None, None)?;
+/// let resolved = resolve_input("./src", &None, None, &None, &None, false, None)?;
 ///
 /// assert!(resolved.path.is_absolute());
 /// assert_eq!(resolved.display, "./src");
 ///
 /// // Resolve a git URL (this would perform a clone/update).
-/// let resolved_git = resolve_input("https://github.com/user/repo.git", &None, None, &None, None)?;
+/// let resolved_git = resolve_input("https://github.com/user/repo.git", &None, None, &None, &None, false, None)?;
 /// assert!(resolved_git.path.to_str().unwrap().contains("dircat/repos"));
 /// # Ok(())
 /// # }
@@ -133,6 +134,7 @@ impl ResolvedInput {
 ///     &None, // git_branch
 ///     None,  // git_depth
 ///     &None, // git_cache_path
+///     &None, // git_download_path
 ///     false, // git_download
 ///     progress.clone(),
 /// )?;
@@ -141,7 +143,7 @@ impl ResolvedInput {
 /// assert!(resolved_file.is_file);
 ///
 /// // --- Example 2: Resolve a local directory path ---
-/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, false, progress)?;
+/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, &None, false, progress)?;
 /// assert!(!resolved_dir.is_file);
 /// # Ok(())
 /// # }
@@ -151,22 +153,24 @@ pub fn resolve_input(
     git_branch: &Option<String>,
     git_depth: Option<u32>,
     git_cache_path_str: &Option<String>,
+    git_download_path_str: &Option<String>,
     git_download: bool,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<ResolvedInput> {
     let cache_path = determine_cache_dir(git_cache_path_str.as_deref()).map_err(Error::from)?;
+    let download_path = git_download_path_str.as_ref().map(PathBuf::from);
 
     let absolute_path = if let Some(parsed_url) =
         git::parse_github_folder_url_with_hint(input_path_str, git_branch.as_deref())
     {
         log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
-        handle_github_folder_url(parsed_url, git_branch, &cache_path, progress)?
+        handle_github_folder_url(parsed_url, git_branch, &cache_path, download_path.as_deref(), progress)?
     } else if git_download && git::parse_github_repo_url(input_path_str).is_some() {
         let parsed_url = git::parse_github_repo_url(input_path_str).unwrap();
         log::debug!("Input detected as GitHub repo URL for download: {:?}", parsed_url);
-        handle_github_folder_url(parsed_url, git_branch, &cache_path, progress)?
+        handle_github_folder_url(parsed_url, git_branch, &cache_path, download_path.as_deref(), progress)?
     } else if git::is_git_url(input_path_str) {
-        git::get_repo(input_path_str, git_branch, git_depth, &cache_path, progress)
+        git::get_repo(input_path_str, git_branch, git_depth, &cache_path, download_path.as_deref(), progress)
             .map_err(Error::from)?
     } else {
         resolve_local_input_path(input_path_str).map_err(Error::from)?
@@ -187,32 +191,35 @@ fn handle_github_folder_url(
     parsed_url: git::ParsedGitUrl,
     cli_branch: &Option<String>,
     cache_path: &Path,
+    download_path: Option<&Path>,
     progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<PathBuf> {
-    let repo_cache_path = git::get_repo_cache_path(cache_path, &parsed_url.clone_url);
+    if download_path.is_none() {
+        let repo_cache_path = git::get_repo_cache_path(cache_path, &parsed_url.clone_url);
 
-    // Optimization: If a full clone of the repository already exists in the cache,
-    // update and use it directly instead of hitting the GitHub API.
-    if let Ok(repo) = Repository::open(&repo_cache_path) {
-        log::info!(
-            "Found cached repository at '{}'. Updating and using it instead of GitHub API.",
-            repo_cache_path.display()
-        );
-        // Update the repo to the desired branch/ref.
-        git::update_repo(&repo, cli_branch, None, progress)?;
+        // Optimization: If a full clone of the repository already exists in the cache,
+        // update and use it directly instead of hitting the GitHub API.
+        if let Ok(repo) = Repository::open(&repo_cache_path) {
+            log::info!(
+                "Found cached repository at '{}'. Updating and using it instead of GitHub API.",
+                repo_cache_path.display()
+            );
+            // Update the repo to the desired branch/ref.
+            git::update_repo(&repo, cli_branch, None, progress)?;
 
-        let path = repo_cache_path.join(&parsed_url.subdirectory);
-        if !path.exists() {
-            return Err(Error::Git(GitError::SubdirectoryNotFound {
-                path: parsed_url.subdirectory,
-                repo: parsed_url.clone_url,
-            }));
+            let path = repo_cache_path.join(&parsed_url.subdirectory);
+            if !path.exists() {
+                return Err(Error::Git(GitError::SubdirectoryNotFound {
+                    path: parsed_url.subdirectory,
+                    repo: parsed_url.clone_url,
+                }));
+            }
+            return Ok(path);
         }
-        return Ok(path);
     }
 
     // If no valid cache entry, proceed with API download and its own fallback logic.
-    match git::download_directory_via_api(&parsed_url, cli_branch) {
+    match git::download_directory_via_api(&parsed_url, cli_branch, download_path) {
         Ok(temp_dir_root) => {
             log::debug!("Successfully downloaded from GitHub API.");
             let path = temp_dir_root.join(&parsed_url.subdirectory);
@@ -243,6 +250,7 @@ fn handle_github_folder_url(
                     cli_branch,
                     None, // No shallow clone for fallback
                     cache_path,
+                    download_path, // Use download path for fallback
                     progress,
                 )
                 .map_err(Error::from)?;
@@ -288,7 +296,7 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
 ///
 /// # Arguments
 /// * `input_path_str` - The path string from the user.
-/// * `_git_branch`, `_git_depth`, `_git_cache_path_str`, `_progress` - Unused arguments for API compatibility.
+/// * `_git_branch`, `_git_depth`, `_git_cache_path_str`, `_git_download_path_str`, `_progress` - Unused arguments for API compatibility.
 ///
 /// # Returns
 /// A `Result` containing a `ResolvedInput` struct on success.
@@ -321,6 +329,7 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
 ///     &None, // git_branch
 ///     None,  // git_depth
 ///     &None, // git_cache_path
+///     &None, // git_download_path
 ///     false, // git_download
 ///     progress.clone(),
 /// )?;
@@ -329,7 +338,7 @@ fn resolve_local_input_path(input_path_str: &str) -> AnyhowResult<PathBuf> {
 /// assert!(resolved_file.is_file);
 ///
 /// // --- Example 2: Resolve a local directory path ---
-/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, false, progress)?;
+/// let resolved_dir = resolve_input(temp.path().to_str().unwrap(), &None, None, &None, &None, false, progress)?;
 /// assert!(!resolved_dir.is_file);
 /// # Ok(())
 /// # }
@@ -339,6 +348,7 @@ pub fn resolve_input(
     _git_branch: &Option<String>,
     _git_depth: Option<u32>,
     _git_cache_path_str: &Option<String>,
+    _git_download_path_str: &Option<String>,
     _git_download: bool,
     _progress: Option<Arc<dyn ProgressReporter>>,
 ) -> Result<ResolvedInput> {
@@ -517,7 +527,7 @@ mod tests {
         let temp = tempdir()?;
         let path_str = temp.path().to_str().unwrap();
 
-        let resolved = resolve_input(path_str, &None, None, &None, false, None)?;
+        let resolved = resolve_input(path_str, &None, None, &None, &None, false, None)?;
 
         assert_eq!(resolved.path, temp.path().canonicalize()?);
         assert_eq!(resolved.display, path_str);
@@ -534,6 +544,7 @@ mod tests {
             "non_existent_path_for_dircat_testing",
             &None,
             None,
+            &None,
             &None,
             false,
             None,
@@ -597,6 +608,7 @@ mod tests {
             &None,
             None,
             &None, // Pass None for the CLI arg, so it uses the env var
+            &None, // git_download_path
             false,
             None,
         )?;
@@ -620,7 +632,7 @@ mod tests {
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_git_url_remote_failure() {
         let invalid_url = "https://github.com/user/this-repo-will-never-exist-probably.git";
-        let result = resolve_input(invalid_url, &None, None, &None, false, None);
+        let result = resolve_input(invalid_url, &None, None, &None, &None, false, None);
         assert!(matches!(
             result,
             Err(Error::Git(GitError::CloneFailed { .. }))
@@ -632,7 +644,7 @@ mod tests {
     #[ignore = "requires network access and is slow"]
     fn test_resolve_input_github_folder_url_success() -> Result<()> {
         let folder_url = "https://github.com/git-fixtures/basic/tree/master/go";
-        let resolved = resolve_input(folder_url, &None, None, &None, false, None)?;
+        let resolved = resolve_input(folder_url, &None, None, &None, &None, false, None)?;
 
         assert!(resolved.path.is_dir());
         assert!(resolved.path.join("example.go").exists());
@@ -647,7 +659,7 @@ mod tests {
     fn test_resolve_input_git_clone_error_returns_structured_error() {
         // Use a URL that is syntactically valid but points to a non-existent repo
         let invalid_git_url = "https://github.com/romelium/this-repo-does-not-exist.git";
-        let result = resolve_input(invalid_git_url, &None, None, &None, false, None);
+        let result = resolve_input(invalid_git_url, &None, None, &None, &None, false, None);
 
         assert!(matches!(
             result,

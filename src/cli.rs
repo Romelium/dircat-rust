@@ -34,6 +34,11 @@ pub struct Cli {
     pub git_cache_path: Option<String>,
 
     #[cfg(feature = "git")]
+    /// Path to a directory where the repository will be downloaded or cloned.
+    #[arg(long, value_name = "PATH")]
+    pub git_download_path: Option<String>,
+
+    #[cfg(feature = "git")]
     /// For GitHub URL inputs, download the repository via API instead of cloning.
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub git_download: bool,
