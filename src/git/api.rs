@@ -105,7 +105,7 @@ pub fn download_directory_via_api(
     if files_to_download.is_empty() {
         // Leak the TempDir to prevent it from being deleted, and return its path.
         if let Some(temp_dir) = _temp_dir_guard {
-            temp_dir.keep();
+            let _ = temp_dir.keep();
         }
         return Ok(base_dir);
     }
@@ -120,7 +120,7 @@ pub fn download_directory_via_api(
     // 5. Return path to temp dir, consuming the TempDir object to prevent deletion.
     // Leak the TempDir to prevent it from being deleted, and return its path.
     if let Some(temp_dir) = _temp_dir_guard {
-        temp_dir.keep();
+        let _ = temp_dir.keep();
     }
     Ok(base_dir)
 }

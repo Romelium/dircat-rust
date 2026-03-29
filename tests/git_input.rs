@@ -231,7 +231,9 @@ fn test_show_download_path() -> Result<(), Box<dyn std::error::Error>> {
         .env("DIRCAT_TEST_CACHE_DIR", temp_cache.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(temp_cache.path().to_str().unwrap()))
+        .stdout(predicate::str::contains(
+            temp_cache.path().to_str().unwrap(),
+        ))
         .stdout(predicate::str::contains("## File:").not());
 
     Ok(())

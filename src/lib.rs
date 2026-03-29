@@ -494,7 +494,15 @@ pub fn execute(
         }
         #[cfg(not(feature = "git"))]
         {
-            config::resolve_input(&config.input_path, &None, None, &None, &None, false, progress)?
+            config::resolve_input(
+                &config.input_path,
+                &None,
+                None,
+                &None,
+                &None,
+                false,
+                progress,
+            )?
         }
     };
 
@@ -570,7 +578,10 @@ pub fn execute(
         )
     });
 
-    Ok(DircatResult { files: final_files, resolved_path: resolved_input.path })
+    Ok(DircatResult {
+        files: final_files,
+        resolved_path: resolved_input.path,
+    })
 }
 
 /// Executes the complete dircat pipeline: discover, process, and format.

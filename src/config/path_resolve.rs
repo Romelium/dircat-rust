@@ -164,14 +164,36 @@ pub fn resolve_input(
         git::parse_github_folder_url_with_hint(input_path_str, git_branch.as_deref())
     {
         log::debug!("Input detected as GitHub folder URL: {:?}", parsed_url);
-        handle_github_folder_url(parsed_url, git_branch, &cache_path, download_path.as_deref(), progress)?
+        handle_github_folder_url(
+            parsed_url,
+            git_branch,
+            &cache_path,
+            download_path.as_deref(),
+            progress,
+        )?
     } else if git_download && git::parse_github_repo_url(input_path_str).is_some() {
         let parsed_url = git::parse_github_repo_url(input_path_str).unwrap();
-        log::debug!("Input detected as GitHub repo URL for download: {:?}", parsed_url);
-        handle_github_folder_url(parsed_url, git_branch, &cache_path, download_path.as_deref(), progress)?
+        log::debug!(
+            "Input detected as GitHub repo URL for download: {:?}",
+            parsed_url
+        );
+        handle_github_folder_url(
+            parsed_url,
+            git_branch,
+            &cache_path,
+            download_path.as_deref(),
+            progress,
+        )?
     } else if git::is_git_url(input_path_str) {
-        git::get_repo(input_path_str, git_branch, git_depth, &cache_path, download_path.as_deref(), progress)
-            .map_err(Error::from)?
+        git::get_repo(
+            input_path_str,
+            git_branch,
+            git_depth,
+            &cache_path,
+            download_path.as_deref(),
+            progress,
+        )
+        .map_err(Error::from)?
     } else {
         resolve_local_input_path(input_path_str).map_err(Error::from)?
     };

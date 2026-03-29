@@ -281,15 +281,13 @@ mod tests {
         let cache_dir = tempdir()?;
 
         // 1. Cache Miss
-        let cached_path =
-            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
+        let cached_path = get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert!(cached_path.exists());
         let content = fs::read_to_string(cached_path.join("file.txt"))?;
         assert_eq!(content, "content v1");
 
         // 2. Cache Hit (no changes)
-        let cached_path_2 =
-            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
+        let cached_path_2 = get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(cached_path, cached_path_2); // Should be the same path
         let content_2 = fs::read_to_string(cached_path_2.join("file.txt"))?;
         assert_eq!(content_2, "content v1");
@@ -310,8 +308,7 @@ mod tests {
         let cache_dir = tempdir()?;
 
         // 1. Initial clone
-        let cached_path =
-            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
+        let cached_path = get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(
             fs::read_to_string(cached_path.join("file.txt"))?,
             "content v1"
@@ -321,8 +318,7 @@ mod tests {
         add_commit_to_repo(&remote_repo, "file.txt", "content v2", "Update")?;
 
         // 3. Fetch and update
-        let updated_path =
-            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
+        let updated_path = get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert_eq!(cached_path, updated_path);
         assert_eq!(
             fs::read_to_string(updated_path.join("file.txt"))?,
@@ -350,8 +346,7 @@ mod tests {
         File::create(&expected_cache_path)?.write_all(b"corruption")?;
 
         // 2. Attempt to get the repo. It should delete the file and re-clone.
-        let cached_path =
-            get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
+        let cached_path = get_repo(&remote_url, &None, None, cache_dir.path(), None, None)?;
         assert!(cached_path.is_dir()); // It's a directory now
         assert_eq!(fs::read_to_string(cached_path.join("file.txt"))?, "content");
 
