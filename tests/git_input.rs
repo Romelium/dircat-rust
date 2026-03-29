@@ -212,3 +212,27 @@ fn test_git_clone_specific_tag() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_show_download_path() -> Result<(), Box<dyn std::error::Error>> {
+    let source_repo_dir = setup_local_git_repo()?;
+    let repo_path_str = source_repo_dir.path().to_str().unwrap();
+
+    #[cfg(windows)]
+    let repo_url = format!("file:///{}", repo_path_str.replace('\\', "/"));
+    #[cfg(not(windows))]
+    let repo_url = format!("file://{}", repo_path_str);
+
+    let temp_cache = tempdir()?;
+
+    dircat_cmd()
+        .arg(&repo_url)
+        .arg("--show-download-path")
+        .env("DIRCAT_TEST_CACHE_DIR", temp_cache.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(temp_cache.path().to_str().unwrap()))
+        .stdout(predicate::str::contains("## File:").not());
+
+    Ok(())
+}

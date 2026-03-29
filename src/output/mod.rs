@@ -138,7 +138,7 @@ pub trait OutputFormatter: Send + Sync {
 ///     processed_content: Some("test".to_string()),
 ///     ..Default::default()
 /// };
-/// let result = DircatResult { files: vec![file] };
+/// let result = DircatResult { files: vec![file], resolved_path: PathBuf::from("/abs") };
 ///
 /// // 2. Instantiate the formatter and configure output options.
 /// use dircat::OutputFormatter; // Import the trait to use its methods

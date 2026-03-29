@@ -51,6 +51,8 @@ pub struct ConfigBuilder {
     pub(crate) git_download_path: Option<String>,
     #[cfg(feature = "git")]
     pub(crate) git_download: Option<bool>,
+    #[cfg(feature = "git")]
+    pub(crate) show_download_path: Option<bool>,
     // --- Filtering Options ---
     pub(crate) max_size: Option<String>,
     pub(crate) no_recursive: Option<bool>,
@@ -106,6 +108,8 @@ impl ConfigBuilder {
             git_download_path: cli.git_download_path,
             #[cfg(feature = "git")]
             git_download: Some(cli.git_download),
+            #[cfg(feature = "git")]
+            show_download_path: Some(cli.show_download_path),
             max_size: cli.max_size,
             no_recursive: Some(cli.no_recursive),
             extensions: cli.extensions,
@@ -258,6 +262,27 @@ impl ConfigBuilder {
     #[must_use]
     pub fn git_download(mut self, download: bool) -> Self {
         self.git_download = Some(download);
+        self
+    }
+
+    /// Sets whether to print the download path and exit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dircat::config::ConfigBuilder;
+    /// # use dircat::errors::Result;
+    /// # #[cfg(feature = "git")]
+    /// # fn main() -> Result<()> {
+    /// let config = ConfigBuilder::new().show_download_path(true).build()?;
+    /// assert!(config.show_download_path);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "git")]
+    #[must_use]
+    pub fn show_download_path(mut self, show: bool) -> Self {
+        self.show_download_path = Some(show);
         self
     }
 
@@ -874,6 +899,8 @@ impl ConfigBuilder {
             git_download_path: self.git_download_path,
             #[cfg(feature = "git")]
             git_download: self.git_download.unwrap_or(false),
+            #[cfg(feature = "git")]
+            show_download_path: self.show_download_path.unwrap_or(false),
         };
 
         Ok(config)

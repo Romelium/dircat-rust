@@ -326,6 +326,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--git-cache-path PATH`                 | Path to the directory for caching cloned git repositories.                     |
 | `--git-download-path PATH`              | Path to a directory where the repository will be downloaded or cloned.         |
 | `--git-download`                        | For GitHub URL inputs, download the repository via API instead of cloning.     |
+| `--show-download-path`                  | Print the path where the git repository is cached or downloaded and exit.      |
 
 #### Filtering Options
 

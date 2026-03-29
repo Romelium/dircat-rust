@@ -265,6 +265,9 @@ pub struct Config {
     #[cfg(feature = "git")]
     /// For GitHub URL inputs, download the repository via API instead of cloning.
     pub git_download: bool,
+    #[cfg(feature = "git")]
+    /// Print the path where the git repository is cached or downloaded and exit.
+    pub show_download_path: bool,
 }
 
 // Custom Debug implementation for Config, as Box<dyn ContentFilter> does not implement Debug.
@@ -286,7 +289,8 @@ impl fmt::Debug for Config {
                 .field("git_depth", &self.git_depth)
                 .field("git_cache_path", &self.git_cache_path)
                 .field("git_download_path", &self.git_download_path)
-                .field("git_download", &self.git_download);
+                .field("git_download", &self.git_download)
+                .field("show_download_path", &self.show_download_path);
         }
 
         builder.finish()
@@ -340,6 +344,8 @@ impl Config {
             git_download_path: None,
             #[cfg(feature = "git")]
             git_download: false,
+            #[cfg(feature = "git")]
+            show_download_path: false,
         }
     }
 }

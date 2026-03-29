@@ -43,6 +43,11 @@ pub struct Cli {
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub git_download: bool,
 
+    #[cfg(feature = "git")]
+    /// Print the path where the git repository is cached or downloaded and exit.
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub show_download_path: bool,
+
     // --- Filtering Options ---
     /// Maximum file size to include (e.g., "1M", "512k"). Files larger than this are skipped.
     #[arg(short = 'm', long, value_name = "BYTES")]

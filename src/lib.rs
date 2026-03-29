@@ -177,6 +177,8 @@ pub struct DircatResult {
     /// The sorting order is: normal files alphabetically by relative path, followed by
     /// files matching `--last` patterns in the order they were specified.
     pub files: Vec<FileInfo>,
+    /// The resolved, absolute path to the directory or file that was processed.
+    pub resolved_path: std::path::PathBuf,
 }
 
 impl DircatResult {
@@ -206,7 +208,7 @@ impl DircatResult {
     ///     processed_content: Some("test".to_string()),
     ///     counts: None, is_process_last: false, process_last_order: None, is_binary: false,
     /// };
-    /// let result = DircatResult { files: vec![file] };
+    /// let result = DircatResult { files: vec![file], resolved_path: PathBuf::from("/abs") };
     ///
     /// // 2. Choose a formatter and configure output options.
     /// let formatter = MarkdownFormatter;
@@ -263,7 +265,7 @@ impl DircatResult {
     ///     size: 4, processed_content: None, counts: None,
     ///     is_process_last: false, process_last_order: None, is_binary: false,
     /// };
-    /// let result = DircatResult { files: vec![file] };
+    /// let result = DircatResult { files: vec![file], resolved_path: PathBuf::from("/abs") };
     ///
     /// // 2. Choose a formatter and configure output options.
     /// let formatter = MarkdownFormatter;
@@ -495,6 +497,15 @@ pub fn execute(
             config::resolve_input(&config.input_path, &None, None, &None, &None, false, progress)?
         }
     };
+
+    #[cfg(feature = "git")]
+    if config.show_download_path {
+        return Ok(DircatResult {
+            files: vec![],
+            resolved_path: resolved_input.path,
+        });
+    }
+
     // Discover files based on config
     let discovered_iter = discover(&config.discovery, &resolved_input, token)?;
 
@@ -559,7 +570,7 @@ pub fn execute(
         )
     });
 
-    Ok(DircatResult { files: final_files })
+    Ok(DircatResult { files: final_files, resolved_path: resolved_input.path })
 }
 
 /// Executes the complete dircat pipeline: discover, process, and format.
@@ -606,6 +617,12 @@ pub fn run(
 ) -> Result<()> {
     // Execute the core logic to get the processed files.
     let result = execute(config, token, progress)?;
+
+    #[cfg(feature = "git")]
+    if config.show_download_path {
+        println!("{}", result.resolved_path.display());
+        return Ok(());
+    }
 
     // Check if any files were found. If not, this is an error condition for a full run.
     if result.files.is_empty() {
