@@ -324,7 +324,7 @@ impl DircatResult {
 ///     .input_path(temp.path().to_str().unwrap())
 ///     .build()?;
 ///
-/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, false, None)?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// let token = CancellationToken::new();
 ///
 /// let discovered_files: Vec<_> = discover(&config.discovery, &resolved, &token)?.collect();

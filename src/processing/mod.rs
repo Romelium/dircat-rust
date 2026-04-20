@@ -284,7 +284,7 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 /// # fs::write(temp.path().join("a.rs"), "A")?;
 /// # fs::write(temp.path().join("c.txt"), "C")?;
 /// # let config = ConfigBuilder::new().input_path(temp.path().to_str().unwrap()).build()?;
-/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// # let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// # let token = CancellationToken::new();
 /// let discovered_iter = discover(&config.discovery, &resolved, &token)?;
 /// let processed_iter = process_files(discovered_iter, &config.processing, &token);
@@ -334,7 +334,7 @@ pub(crate) fn process_and_filter_files_internal<'a>(
 ///     .remove_comments(true)
 ///     .build()?;
 ///
-/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// let token = CancellationToken::new();
 ///
 /// let discovered_iter = discover(&config.discovery, &resolved, &token)?;

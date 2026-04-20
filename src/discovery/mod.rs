@@ -56,7 +56,7 @@ use walker::build_walker;
 ///     .build()?;
 ///
 /// // 3. Resolve the input path and create a cancellation token.
-/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, None)?;
+/// let resolved = config::resolve_input(&config.input_path, &None, None, &None, &None, false, None)?;
 /// let token = CancellationToken::new();
 ///
 /// // 4. Discover the files.
