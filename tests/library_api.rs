@@ -361,32 +361,41 @@ fn test_discover_and_process_chaining() -> anyhow::Result<()> {
         )
     });
 
-    assert_eq!(final_files.len(), 2);
+    assert_eq!(final_files.len(), 3);
 
     assert_eq!(
         final_files[0]
             .relative_path
             .to_string_lossy()
             .replace('\\', "/"),
-        "src/main.rs"
+        ".gitignore"
     );
-    assert_eq!(
-        final_files[0].processed_content,
-        Some("fn main(){}".to_string())
-    );
+    assert_eq!(final_files[0].processed_content, Some("*.log".to_string()));
 
     assert_eq!(
         final_files[1]
             .relative_path
             .to_string_lossy()
             .replace('\\', "/"),
-        "README.md"
+        "src/main.rs"
     );
     assert_eq!(
         final_files[1].processed_content,
+        Some("fn main(){}".to_string())
+    );
+
+    assert_eq!(
+        final_files[2]
+            .relative_path
+            .to_string_lossy()
+            .replace('\\', "/"),
+        "README.md"
+    );
+    assert_eq!(
+        final_files[2].processed_content,
         Some("# Project".to_string())
     );
-    assert!(final_files[1].is_process_last);
+    assert!(final_files[2].is_process_last);
 
     Ok(())
 }

@@ -83,10 +83,10 @@ fn test_error_no_files_found() -> Result<(), Box<dyn std::error::Error>> {
     // Create a directory but no files matching default criteria
     let sub = temp.path().join("sub");
     fs::create_dir(&sub)?;
-    fs::write(sub.join(".hidden"), "content")?; // Hidden file, ignored by default
+    fs::File::create(sub.join("binary.bin"))?.write_all(b"Bin\0Data")?; // Binary file, ignored by default
 
     dircat_cmd()
-        .current_dir(temp.path()) // Run in the temp dir with only hidden files/dirs
+        .current_dir(temp.path()) // Run in the temp dir with only binary files
         .assert()
         .success() // Should still succeed, but print message to stderr
         .stdout("") // No files processed, so stdout should be empty

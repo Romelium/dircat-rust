@@ -53,6 +53,8 @@ fn test_dir_with_only_ignored_files() -> Result<(), Box<dyn std::error::Error>> 
 
     dircat_cmd()
         // Default behavior respects .gitignore
+        .arg("-i")
+        .arg(".gitignore") // Ignore the .gitignore file itself for this test
         .current_dir(temp.path())
         .assert()
         .success()

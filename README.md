@@ -340,7 +340,7 @@ Below are the most common options. For a full, definitive list, run `dircat --he
 | `--exclude-regex REGEX` | `-X` | Exclude files whose full path matches any of these regexes (case-insensitive, repeatable). | `-X "tests/.*|.*\.log$"` |
 | `--regex REGEX`    | `-r`  | Include *only* files whose full path matches any of these regexes (case-insensitive, repeatable).       | `-r "src/.*\.rs$"`          |
 | `--filename-regex REGEX` | `-d` | Include *only* files whose filename matches any of these regexes (case-insensitive, repeatable). | `-d "^test_.*"`             |
-| `--no-gitignore`   | `-t`  | Process all files, ignoring `.gitignore`, `.ignore`, hidden files, etc.                                 | `-t`                        |
+| `--no-gitignore`   | `-t`  | Process all files, ignoring `.gitignore`, `.ignore`, etc. (hidden files are included by default).       | `-t`                        |
 | `--include-binary` | `-B`   | Include files detected as binary/non-text (default is to skip them).                                    | `--include-binary`          |
 | `--no-lockfiles`   | `-K`   | Skip common lockfiles (e.g., `Cargo.lock`, `package-lock.json`).                                        | `--no-lockfiles`            |
 

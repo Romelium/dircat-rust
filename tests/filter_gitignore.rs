@@ -44,9 +44,12 @@ fn test_respects_gitignore_by_default() -> Result<(), Box<dyn std::error::Error>
         .stdout(predicate::str::contains(obj_content).not()) // Ignore target/ content
         .stdout(predicate::str::contains("## File: app.log").not()) // Ignore *.log header
         .stdout(predicate::str::contains(log_content).not()) // Ignore *.log content
-        // Also ensure .gitignore and .git are not listed (hidden files ignored by default)
-        .stdout(predicate::str::contains("## File: .gitignore").not())
-        .stdout(predicate::str::contains("## File: .git").not());
+        // .gitignore is a hidden file but should now be included by default
+        .stdout(predicate::str::contains("## File: .gitignore"))
+        // .git is still ignored by the custom filter entry logic
+        .stdout(predicate::function(|output: &str| {
+            !output.contains("## File: .git\n") && !output.contains("## File: .git\r")
+        }));
 
     temp.close()?;
     Ok(())
@@ -97,7 +100,7 @@ fn test_no_gitignore_flag() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_respects_hidden_files_by_default() -> Result<(), Box<dyn std::error::Error>> {
+fn test_includes_hidden_files_by_default() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempdir()?;
     let hidden_content = "Hidden";
     let visible_content = "Visible";
@@ -105,14 +108,14 @@ fn test_respects_hidden_files_by_default() -> Result<(), Box<dyn std::error::Err
     fs::write(temp.path().join("visible.txt"), visible_content)?;
 
     dircat_cmd()
-        // No -t flag, should skip hidden files
+        // Hidden files should be included by default now
         .current_dir(temp.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("## File: visible.txt")) // Keep visible header
         .stdout(predicate::str::contains(visible_content)) // Keep visible content
-        .stdout(predicate::str::contains("## File: .hidden.txt").not()) // Ignore hidden header
-        .stdout(predicate::str::contains(hidden_content).not()); // Ignore hidden content
+        .stdout(predicate::str::contains("## File: .hidden.txt")) // Include hidden header
+        .stdout(predicate::str::contains(hidden_content)); // Include hidden content
 
     temp.close()?;
     Ok(())
@@ -127,7 +130,7 @@ fn test_no_gitignore_includes_hidden_files() -> Result<(), Box<dyn std::error::E
     fs::write(temp.path().join("visible.txt"), visible_content)?;
 
     dircat_cmd()
-        .arg("-t") // -t should also disable the default hidden file filter
+        .arg("-t")
         .current_dir(temp.path())
         .assert()
         .success()

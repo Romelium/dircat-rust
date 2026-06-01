@@ -20,7 +20,9 @@ pub(super) fn build_walker(
     // covered by a .gitignore rule, which is the desired behavior.
     if config.use_gitignore {
         walker_builder.standard_filters(true);
-        debug!("Configuring WalkBuilder: standard_filters enabled.");
+        // Explicitly include hidden files (like .github, .env) by default
+        walker_builder.hidden(false);
+        debug!("Configuring WalkBuilder: standard_filters enabled, hidden files included.");
 
         if let Some(last_patterns) = &config.process_last {
             // Using OverrideBuilder acts as an inclusion filter, which is not what we want.
@@ -45,6 +47,8 @@ pub(super) fn build_walker(
     } else {
         // If gitignore is disabled entirely, then disable standard filters.
         walker_builder.standard_filters(false);
+        // Ensure hidden files are also explicitly included
+        walker_builder.hidden(false);
         debug!("Configuring WalkBuilder: standard_filters disabled (gitignore usage off).");
     }
     // Explicitly disable require_git to ensure .gitignore files are
@@ -65,78 +69,85 @@ pub(super) fn build_walker(
         debug!("Recursion enabled (no max depth).");
     }
 
-    // --- Add custom filter ONLY if custom ignore patterns are provided ---
+    // --- Determine if .git should be explicitly traversed ---
+    let mut explicitly_wants_git = resolved.path.to_string_lossy().contains(".git");
+    if let Some(lasts) = &config.process_last {
+        if lasts.iter().any(|p| p.contains(".git")) {
+            explicitly_wants_git = true;
+        }
+    }
+    if let Some(regexes) = &config.path_regex {
+        if regexes.iter().any(|r| r.as_str().contains(".git")) {
+            explicitly_wants_git = true;
+        }
+    }
+
+    // --- Compile custom ignore glob patterns from -i ---
+    let mut custom_ignore_globs: Vec<(Pattern, Option<Pattern>)> = Vec::new();
     if let Some(ignore_patterns) = &config.ignore_patterns {
-        // Compile custom ignore glob patterns from -i
-        let custom_ignore_globs: Vec<Pattern> = ignore_patterns
+        custom_ignore_globs = ignore_patterns
             .iter()
             .filter_map(|p| match Pattern::new(p) {
                 Ok(glob) => {
                     debug!("Compiled custom ignore glob: {}", p);
-                    Some(glob)
+                    let is_recursive = !p.contains('/') && !p.contains('\\');
+                    let recursive_glob = if is_recursive {
+                        Pattern::new(&format!("**/{}", p)).ok()
+                    } else {
+                        None
+                    };
+                    Some((glob, recursive_glob))
                 }
                 Err(e) => {
                     log::warn!("Invalid ignore glob pattern '{}': {}", p, e);
-                    None // Skip invalid patterns
+                    None
                 }
             })
             .collect();
+    }
 
-        // Only add the filter if there are valid compiled globs
-        if !custom_ignore_globs.is_empty() {
-            debug!(
-                "Adding custom filter_entry for {} patterns.",
-                custom_ignore_globs.len()
-            );
-            // Clone data needed by the closure
-            let input_path_clone = resolved.path.clone();
+    let has_custom_ignores = !custom_ignore_globs.is_empty();
 
-            walker_builder.filter_entry(move |entry| {
-                // This closure only runs if standard filters passed the entry.
-                // We only need to check our custom -i patterns.
-                let path = entry.path();
-                // Persistent Debug Log: Log entry being checked by custom filter
-                debug!("Custom filter_entry checking path: {:?}", path);
+    // --- Add custom filter entry ---
+    // We add the filter entry if we have custom ignores OR if we need to filter out .git
+    if has_custom_ignores || !explicitly_wants_git {
+        debug!(
+            "Adding custom filter_entry (has_custom_ignores: {}, explicitly_wants_git: {})",
+            has_custom_ignores, explicitly_wants_git
+        );
+        let input_path_clone = resolved.path.clone();
 
-                // Match globs against the path relative to the *input* path
+        walker_builder.filter_entry(move |entry| {
+            let path = entry.path();
+
+            // 1. Skip .git directory by default unless specifically requested
+            if !explicitly_wants_git && entry.file_name() == ".git" {
+                debug!("Custom filter_entry skipping .git directory: {:?}", path);
+                return false;
+            }
+
+            // 2. Custom ignore patterns
+            if has_custom_ignores {
                 if let Ok(relative_path) = path.strip_prefix(&input_path_clone) {
-                    if custom_ignore_globs
-                        .iter()
-                        .any(|glob| glob.matches_path(relative_path))
-                    {
-                        // Persistent Debug Log: Log skip reason
+                    if custom_ignore_globs.iter().any(|(glob, rec_glob)| {
+                        glob.matches_path(relative_path)
+                            || rec_glob
+                                .as_ref()
+                                .is_some_and(|g| g.matches_path(relative_path))
+                    }) {
                         debug!(
-                            "Custom filter_entry skipping {:?} matching custom ignore glob (relative path: {:?})",
-                            path, relative_path
+                            "Custom filter_entry skipping {:?} matching custom ignore glob",
+                            relative_path
                         );
-                        return false; // Skip this entry due to custom pattern
-                    }
-                } else {
-                    // Fallback: Match against full path if stripping fails
-                    // Persistent Debug Log: Log fallback attempt
-                    debug!(
-                        "Custom filter_entry: Failed to strip prefix, matching against full path: {:?}", path
-                    );
-                    if custom_ignore_globs.iter().any(|glob| glob.matches_path(path)) {
-                        // Persistent Debug Log: Log skip reason (fallback)
-                        debug!(
-                            "Custom filter_entry skipping {:?} matching custom ignore glob (full path fallback)",
-                            path
-                        );
-                        return false; // Skip this entry due to custom pattern
+                        return false;
                     }
                 }
+            }
 
-                // If not skipped by custom ignore globs, keep the entry
-                // Persistent Debug Log: Log keep reason
-                debug!("Custom filter_entry keeping path: {:?}", path);
-                true
-            });
-        } else {
-            debug!("No valid custom ignore patterns compiled, skipping filter_entry setup.");
-        }
+            true
+        });
     } else {
-        debug!("No custom ignore patterns provided (-i), skipping filter_entry setup.");
+        debug!("No custom ignores and .git is explicitly wanted, skipping filter_entry setup.");
     }
 
     // Build the walker
