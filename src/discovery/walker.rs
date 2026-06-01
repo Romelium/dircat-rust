@@ -4,8 +4,16 @@ use anyhow::{Context, Result};
 use glob::Pattern;
 use ignore::{WalkBuilder, WalkParallel};
 use log::debug; // Ensure debug is imported
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::io::Write;
 use tempfile::NamedTempFile;
+
+static WANTS_GIT_RE: Lazy<Regex> = Lazy::new(|| {
+    // Matches `.git` specifically as a discrete path component or glob/regex token.
+    // Protects against matching `.github`, `.gitignore`, `my_git_file`, etc.
+    Regex::new(r"(?i)(?:^|/|\\|\[|\(|\||\^|\s|\*|\?|\+|\{|,)\\?\.git(?:$|/|\\|\]|\)|\||\$|\s|\*|\?|\+|\}|,)").unwrap()
+});
 
 /// Configures and builds the `ignore::WalkBuilder` based on `Config`.
 pub(super) fn build_walker(
@@ -70,14 +78,16 @@ pub(super) fn build_walker(
     }
 
     // --- Determine if .git should be explicitly traversed ---
-    let mut explicitly_wants_git = resolved.path.to_string_lossy().contains(".git");
+    // Check if the root path itself contains a ".git" component
+    let mut explicitly_wants_git = resolved.path.components().any(|c| c.as_os_str() == ".git");
+
     if let Some(lasts) = &config.process_last {
-        if lasts.iter().any(|p| p.contains(".git")) {
+        if lasts.iter().any(|p| WANTS_GIT_RE.is_match(p)) {
             explicitly_wants_git = true;
         }
     }
     if let Some(regexes) = &config.path_regex {
-        if regexes.iter().any(|r| r.as_str().contains(".git")) {
+        if regexes.iter().any(|r| WANTS_GIT_RE.is_match(r.as_str())) {
             explicitly_wants_git = true;
         }
     }

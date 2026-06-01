@@ -234,3 +234,31 @@ fn test_symlinks_are_ignored_by_default() -> Result<(), Box<dyn std::error::Erro
     temp.close()?;
     Ok(())
 }
+
+#[test]
+fn test_github_directory_does_not_trigger_git_traversal() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempdir()?;
+    let github_dir = temp.path().join(".github").join("workflows");
+    let git_dir = temp.path().join(".git");
+    fs::create_dir_all(&github_dir)?;
+    fs::create_dir_all(&git_dir)?;
+
+    fs::write(github_dir.join("ci.yml"), "CI")?;
+    fs::write(git_dir.join("config"), "git config")?;
+
+    // Processing `.github/*` last should properly skip `.git` traversal
+    dircat_cmd()
+        .arg("-z")
+        .arg(".github/workflows/*")
+        .current_dir(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "## File: .github/workflows/ci.yml",
+        ))
+        .stdout(predicate::str::contains("## File: .git/config").not());
+
+    temp.close()?;
+    Ok(())
+}
