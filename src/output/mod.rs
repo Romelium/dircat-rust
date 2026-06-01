@@ -359,11 +359,11 @@ pub(crate) mod tests {
         assert!(output_str.starts_with("## File: b.txt"));
         assert!(output_str.contains("```\n\n## File: a.rs"));
         assert!(output_str.contains("```\n\n---\nProcessed Files: (2)\n")); // Summary header
-        assert!(output_str.contains("- a.rs (L:1 C:9 W:2)\n")); // Summary items sorted
+        assert!(output_str.contains("- a.rs (L:1 C:9 W:2)\n")); // Summary items
         assert!(output_str.contains("- b.txt (L:1 C:9 W:2)\n"));
 
         // Check summary is at the end
-        assert!(output_str.ends_with("- b.txt (L:1 C:9 W:2)\n"));
+        assert!(output_str.ends_with("- a.rs (L:1 C:9 W:2)\n"));
 
         Ok(())
     }

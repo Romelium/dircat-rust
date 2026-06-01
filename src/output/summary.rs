@@ -11,8 +11,8 @@ use std::io::Write;
 /// Writes the summary section (list of processed files, optionally with counts)
 /// to the output writer.
 ///
-/// The list of files is sorted alphabetically by relative path before being
-/// written.
+/// The list of files is printed in the order they are provided (which matches
+/// the order they appear in the main document).
 pub(crate) fn write_summary(
     writer: &mut dyn Write,
     files: &[&FileInfo], // Takes refs to avoid cloning
@@ -27,11 +27,8 @@ pub(crate) fn write_summary(
         files.len()
     )?;
 
-    // Sort the slice of references directly to avoid cloning PathBufs.
-    let mut sorted_files = files.to_vec();
-    sorted_files.sort_by_key(|fi| &fi.relative_path);
-
-    for file_info in sorted_files {
+    // The files slice is already sorted in the correct processing order.
+    for file_info in files {
         let path_str = format_path_for_display(&file_info.relative_path, opts);
         if opts.counts {
             if let Some(counts) = file_info.counts {
@@ -110,12 +107,12 @@ mod tests {
         let fi1 = create_file_info("z_file.txt", None, false);
         let fi2 = create_file_info("a_file.rs", None, false);
         let fi3 = create_file_info("sub/b_file.md", None, false);
-        let files = vec![&fi1, &fi2, &fi3]; // Unsorted input refs
+        let files = vec![&fi1, &fi2, &fi3];
         let mut writer = Cursor::new(Vec::new());
         write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "---\nProcessed Files: (3)\n- a_file.rs\n- sub/b_file.md\n- z_file.txt\n";
+        let expected = "---\nProcessed Files: (3)\n- z_file.txt\n- a_file.rs\n- sub/b_file.md\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -140,7 +137,7 @@ mod tests {
         write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "---\nProcessed Files: (2)\n- a_file.rs (L:1 C:5 W:1)\n- z_file.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- z_file.txt (L:10 C:100 W:20)\n- a_file.rs (L:1 C:5 W:1)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -161,7 +158,7 @@ mod tests {
         write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "---\nProcessed Files: (2)\n- a_file.rs (Counts not available)\n- z_file.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- z_file.txt (L:10 C:100 W:20)\n- a_file.rs (Counts not available)\n";
         assert_eq!(output, expected);
         Ok(())
     }
@@ -176,7 +173,7 @@ mod tests {
         write_summary(&mut writer, &files, &opts)?;
 
         let output = String::from_utf8(writer.into_inner())?;
-        let expected = "---\nProcessed Files: (2)\n- `another.rs`\n- `file with space.txt`\n"; // Paths are backticked and sorted
+        let expected = "---\nProcessed Files: (2)\n- `file with space.txt`\n- `another.rs`\n"; // Paths are backticked
         assert_eq!(output, expected);
         Ok(())
     }
@@ -221,7 +218,7 @@ mod tests {
 
         let output = String::from_utf8(writer.into_inner())?;
         // Expect different format for binary file count
-        let expected = "---\nProcessed Files: (2)\n- binary.bin (Binary C:256)\n- text.txt (L:10 C:100 W:20)\n";
+        let expected = "---\nProcessed Files: (2)\n- text.txt (L:10 C:100 W:20)\n- binary.bin (Binary C:256)\n";
         assert_eq!(output, expected);
         Ok(())
     }

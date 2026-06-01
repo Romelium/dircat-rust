@@ -29,7 +29,7 @@ fn test_summary() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(predicate::str::contains(content_a)) // Check content present
         .stdout(predicate::str::contains(content_z))
         .stdout(predicate::str::contains("\n---\nProcessed Files: (2)\n")) // Check summary header
-        .stdout(predicate::str::contains("- sub/a.rs\n")) // Check summary items (sorted alphabetically)
+        .stdout(predicate::str::contains("- sub/a.rs\n")) // Check summary items (matches document order)
         .stdout(predicate::str::contains("- z.txt\n"));
 
     temp.close()?;
@@ -79,7 +79,7 @@ fn test_summary_with_counts_and_binary() -> Result<(), Box<dyn std::error::Error
             String::from_utf8_lossy(binary_content).as_ref(),
         ))
         .stdout(predicate::str::contains("\n---\nProcessed Files: (2)\n"))
-        // Check summary items (sorted alphabetically) with correct formats
+        // Check summary items (matches document order) with correct formats
         .stdout(predicate::str::contains("- binary.bin (Binary C:11)\n"))
         .stdout(predicate::str::contains("- text.txt (L:1 C:7 W:2)\n"));
 
